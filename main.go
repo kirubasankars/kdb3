@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var kdb *KDB
+var kdb *KDBEngine
 
 func NotOK(err error, w http.ResponseWriter) {
 	var (
@@ -63,7 +63,11 @@ func main() {
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(list)
+			if len(list) > 0 {
+				json.NewEncoder(w).Encode(list)
+			} else {
+				w.Write([]byte("[]"))
+			}
 		}
 	}).Methods("GET")
 
@@ -119,7 +123,6 @@ func main() {
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		}
-
 	}).Methods("GET", "PUT", "POST", "DELETE")
 
 	router.HandleFunc("/{db}/_compact", func(w http.ResponseWriter, r *http.Request) {
@@ -147,9 +150,40 @@ func main() {
 		ddocID := "_design/" + vars["ddocid"]
 		view := vars["view"]
 		selectName := vars["select"]
+		r.ParseForm()
 		rs, _ := kdb.SelectView(name, ddocID, view, selectName, r.Form, false)
 		w.WriteHeader(http.StatusCreated)
 		w.Write(rs)
+	}).Methods("GET", "POST")
+
+	router.HandleFunc("/{db}/_design/{ddocid}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		name := vars["db"]
+		id := "_design/" + vars["ddocid"]
+		if r.Method == "GET" {
+			rev := r.FormValue("rev")
+			var jsondoc string
+			if rev != "" {
+				jsondoc = `{"_id" : "` + id + `", "_rev": "` + rev + `"}`
+			} else {
+				jsondoc = `{"_id" : "` + id + `"}`
+			}
+			doc, err := ParseDocument([]byte(jsondoc))
+			if err != nil {
+				NotOK(err, w)
+				return
+			}
+
+			if err := kdb.GetDocument(name, doc, true); err != nil {
+				NotOK(err, w)
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			w.Write(doc.value)
+			if len(doc.value) > 0 {
+				w.Write([]byte("\n"))
+			}
+		}
 	}).Methods("GET", "POST")
 
 	router.HandleFunc("/{db}/{id}", func(w http.ResponseWriter, r *http.Request) {

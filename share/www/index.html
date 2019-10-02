@@ -1,21 +1,21 @@
 <!DOCTYPE html>
 <html>
-<header>
-    <script src="./_utils/vue.js" type="text/javascript"></script>
-</header>
+
+<head>
+    <link rel="stylesheet" href="_utils/bootstrap-reboot.css">
+    <link rel="stylesheet" href="_utils/main.css">
+</head>
 
 <body>
-    <div id="app">
-        {{ message }}
+    <div class="app-container closedNav">
+        <div class="navbar"></div>
+        <div class="dashboard">
+            <div class="toppanel">
+                <div class="header"></div>
+            </div>
+            <div class="contentpanel"></div>
+        </div>
     </div>
-    <script>
-        var app = new Vue({
-            el: '#app',
-            data: {
-                message: 'Hello Vue!'
-            }
-        })
-    </script>
 </body>
 
 </html>
