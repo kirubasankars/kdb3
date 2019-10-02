@@ -67,6 +67,16 @@ func ParseDocument(value []byte) (*Document, error) {
 		revID = fields[1]
 	}
 
+	if v.Exists("_id") {
+		v.Del("_id")
+	}
+	if v.Exists("_rev") {
+		v.Del("_rev")
+	}
+
+	var b []byte
+	value = v.MarshalTo(b)
+
 	doc := &Document{}
 	doc.id = id
 	doc.revNumber = revNumber
@@ -78,11 +88,15 @@ func ParseDocument(value []byte) (*Document, error) {
 }
 
 func (doc *Document) CalculateRev() {
+
 	doc.revNumber = doc.revNumber + 1
 	doc.revID = RandomUUID()
-	doc.jval.Set("_rev", fastjson.MustParse("\""+strconv.Itoa(doc.revNumber)+"-"+doc.revID+"\""))
-	var b []byte
-	doc.value = doc.jval.MarshalTo(b)
+	meta := fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.id, formatRev(doc.revNumber, doc.revID))
+
+	data := make([]byte, len(meta))
+	copy(data, meta)
+	data = append(data, doc.value[1:]...)
+	doc.value = data
 }
 
 func (doc Document) MarshalBinary() ([]byte, error) {

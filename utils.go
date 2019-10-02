@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"net"
 )
@@ -31,4 +32,8 @@ func getMacAddr() (addr string) {
 		}
 	}
 	return
+}
+
+func formatRev(revNumber int, revID string) string {
+	return fmt.Sprintf("%d-%s", revNumber, revID)
 }

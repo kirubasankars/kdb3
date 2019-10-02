@@ -71,7 +71,7 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 }
 
 func validatename(name string) bool {
-	if len(name) <= 0 {
+	if len(name) <= 0 && strings.Contains(name, "$") {
 		return false
 	}
 	return true
