@@ -19,26 +19,17 @@ func NotOK(err error, w http.ResponseWriter) {
 		reason     = ""
 	)
 
-	switch errr := err.Error(); errr {
-	case "db_exists":
+	switch {
+	case err.Error() == "db_exists" || err.Error() == "invalid_db_name" || err.Error() == "mismatched_rev":
 		statusCode = http.StatusPreconditionFailed
-		reason = "database already exists"
-	case "db_not_found":
+		reason = errorString(err)
+	case err.Error() == "db_not_found" || err.Error() == "doc_not_found":
 		statusCode = http.StatusNotFound
-		reason = "database is not found"
-	case "invalid_db_name":
-		statusCode = http.StatusPreconditionFailed
-		reason = "invalid database name"
-	case "mismatched_rev":
-		statusCode = http.StatusPreconditionFailed
-		reason = "mismatched rev number"
-	case "doc_not_found":
-		statusCode = http.StatusNotFound
-		reason = "document not found"
+		reason = errorString(err)
 	}
 	if statusCode == 0 {
 		statusCode = http.StatusInternalServerError
-		reason = "unknown error"
+		reason = errorString(err)
 	}
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "reason": reason})
