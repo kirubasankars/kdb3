@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,14 +18,14 @@ type Database struct {
 	updateSeqNumber int
 	updateSeqID     string
 
-	dbPath          string
-	viewPath        string
+	dbPath   string
+	viewPath string
+	con      *sql.DB
+	mux      sync.Mutex
+	seqGen   *SequenceGenarator
+
 	views           map[string]*View
 	designDocuments map[string]*DesignDocument
-	db              *sql.DB
-
-	mux    sync.Mutex
-	seqGen *SequenceGenarator
 }
 
 func NewDatabase(dbPath, viewPath string) *Database {
@@ -36,16 +35,12 @@ func NewDatabase(dbPath, viewPath string) *Database {
 	return db
 }
 
-func (database *Database) Open(name string, createIfNotExists bool) error {
-	if !validatename(name) {
-		return errors.New("invalid_db_name")
-	}
+func (db *Database) Open(name string, createIfNotExists bool) error {
+	db.name = name
+	db.views = make(map[string]*View)
+	db.designDocuments = make(map[string]*DesignDocument)
 
-	database.name = name
-	database.views = make(map[string]*View)
-	database.designDocuments = make(map[string]*DesignDocument)
-
-	path := filepath.Join(database.dbPath, name+dbExt)
+	path := filepath.Join(db.dbPath, name+dbExt)
 	_, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		if !createIfNotExists {
@@ -57,7 +52,7 @@ func (database *Database) Open(name string, createIfNotExists bool) error {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", path+"?_journal=WAL")
+	con, err := sql.Open("sqlite3", path+"?_journal=WAL")
 	if err != nil {
 		return err
 	}
@@ -86,14 +81,14 @@ func (database *Database) Open(name string, createIfNotExists bool) error {
 			PRIMARY KEY (doc_id, rev_number DESC, rev_id)
 		) WITHOUT ROWID;`
 
-	if _, err = db.Exec(buildSQL); err != nil {
+	if _, err = con.Exec(buildSQL); err != nil {
 		return err
 	}
 
-	database.db = db
+	db.con = con
 
-	database.updateSeqNumber, database.updateSeqID = database.GetLastUpdateSequence()
-	database.seqGen = NewSequenceGenarator(138, database.updateSeqNumber, database.updateSeqID)
+	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
+	db.seqGen = NewSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
 
 	if createIfNotExists {
 		ddoc := &DesignDocument{}
@@ -113,32 +108,32 @@ func (database *Database) Open(name string, createIfNotExists bool) error {
 			panic(err)
 		}
 
-		err = database.PutDocument(designDoc)
+		err = db.PutDocument(designDoc)
 		if err != nil {
 			return err
 		}
 
 	}
 
-	docs, _ := database.GetAllDesignDocuments()
+	docs, _ := db.GetAllDesignDocuments()
 	for _, x := range docs {
 		ddoc := &DesignDocument{}
 		err := json.Unmarshal(x.value, ddoc)
 		if err != nil {
 			panic("invalid_design_document " + x.id)
 		}
-		database.designDocuments[x.id] = ddoc
+		db.designDocuments[x.id] = ddoc
 	}
 
 	return nil
 }
 
-func (database *Database) Close() error {
-	for idx := range database.views {
-		view := database.views[idx]
+func (db *Database) Close() error {
+	for idx := range db.views {
+		view := db.views[idx]
 		view.Close()
 	}
-	return database.db.Close()
+	return db.con.Close()
 }
 
 func JSONMarshal(t interface{}) ([]byte, error) {
@@ -149,10 +144,10 @@ func JSONMarshal(t interface{}) ([]byte, error) {
 	return buffer.Bytes(), err
 }
 
-func (database *Database) PutDocument(newDoc *Document) error {
-	db := database.db
+func (db *Database) PutDocument(newDoc *Document) error {
+	con := db.con
 
-	tx, err := db.Begin()
+	tx, err := con.Begin()
 	if err != nil {
 		return err
 	}
@@ -185,17 +180,16 @@ func (database *Database) PutDocument(newDoc *Document) error {
 		return err
 	}
 
-	database.mux.Lock()
-	database.updateSeqNumber, database.updateSeqID = database.seqGen.Next()
-	database.mux.Unlock()
+	db.mux.Lock()
+	db.updateSeqNumber, db.updateSeqID = db.seqGen.Next()
+	db.mux.Unlock()
 
-	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, rev_number, rev_id) VALUES(?, ?, ?, ?, ?)", database.updateSeqNumber, database.updateSeqID, newDoc.id, newDoc.revNumber, newDoc.revID); err != nil {
+	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, rev_number, rev_id) VALUES(?, ?, ?, ?, ?)", db.updateSeqNumber, db.updateSeqID, newDoc.id, newDoc.revNumber, newDoc.revID); err != nil {
 		return err
 	}
 
 	if strings.HasPrefix(newDoc.id, "_design/") {
-		database.MarkViewUpdated(newDoc.id, newDoc.value)
-		fmt.Println(newDoc.id)
+		db.MarkViewUpdated(newDoc.id, newDoc.value)
 	}
 
 	tx.Commit()
@@ -203,15 +197,15 @@ func (database *Database) PutDocument(newDoc *Document) error {
 	return nil
 }
 
-func (database *Database) GetDocument(newDoc *Document, includeDoc bool) error {
+func (db *Database) GetDocument(newDoc *Document, includeDoc bool) error {
 
-	db := database.db
+	con := db.con
 
 	var row *sql.Row
 	if newDoc.revNumber >= 0 {
-		row = db.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", newDoc.id, newDoc.revNumber, newDoc.revID)
+		row = con.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", newDoc.id, newDoc.revNumber, newDoc.revID)
 	} else {
-		row = db.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? LIMIT 1", newDoc.id)
+		row = con.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? LIMIT 1", newDoc.id)
 	}
 	row.Scan(&newDoc.id, &newDoc.revNumber, &newDoc.revID, &newDoc.deleted)
 
@@ -220,7 +214,7 @@ func (database *Database) GetDocument(newDoc *Document, includeDoc bool) error {
 	}
 
 	if includeDoc {
-		row := db.QueryRow("SELECT data FROM documents WHERE doc_id = ?", newDoc.id)
+		row := con.QueryRow("SELECT data FROM documents WHERE doc_id = ?", newDoc.id)
 		var data string
 		row.Scan(&data)
 		newDoc.value = []byte(data)
@@ -229,10 +223,10 @@ func (database *Database) GetDocument(newDoc *Document, includeDoc bool) error {
 	return nil
 }
 
-func (database *Database) GetAllDesignDocuments() ([]Document, error) {
-	db := database.db
+func (db *Database) GetAllDesignDocuments() ([]Document, error) {
+	con := db.con
 	var ddocs []Document
-	rows, err := db.Query("SELECT doc_id, data FROM documents WHERE doc_id like '_design/%'")
+	rows, err := con.Query("SELECT doc_id, data FROM documents WHERE doc_id like '_design/%'")
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +248,7 @@ func (database *Database) GetAllDesignDocuments() ([]Document, error) {
 
 		jsondoc := `{"_id" : "` + docID + `"}`
 		doc, _ := ParseDocument([]byte(jsondoc))
-		err = database.GetDocument(doc, true)
+		err = db.GetDocument(doc, true)
 		if err != nil {
 			return nil, err
 		}
@@ -265,14 +259,14 @@ func (database *Database) GetAllDesignDocuments() ([]Document, error) {
 	return ddocs, nil
 }
 
-func (database *Database) DeleteDocument(newDoc *Document) error {
+func (db *Database) DeleteDocument(newDoc *Document) error {
 	newDoc.deleted = true
-	return database.PutDocument(newDoc)
+	return db.PutDocument(newDoc)
 }
 
-func (database *Database) OpenView(viewName string, ddoc *DesignDocument) error {
+func (db *Database) OpenView(viewName string, ddoc *DesignDocument) error {
 
-	view := NewView(database.dbPath, database.viewPath, database.name, viewName, ddoc)
+	view := NewView(db.dbPath, db.viewPath, db.name, viewName, ddoc)
 
 	if err := view.Open(); err != nil {
 		return err
@@ -280,17 +274,16 @@ func (database *Database) OpenView(viewName string, ddoc *DesignDocument) error 
 
 	name := ddoc.ID + "$" + viewName
 
-	database.views[name] = view
+	db.views[name] = view
 
 	return nil
 }
 
-func (database *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
-
-	view, ok := database.views[name]
+	view, ok := db.views[name]
 	if !ok {
-		ddoc, ok := database.designDocuments[ddocID]
+		ddoc, ok := db.designDocuments[ddocID]
 		if !ok {
 			return nil, errors.New("doc_not_found")
 		}
@@ -299,15 +292,15 @@ func (database *Database) SelectView(ddocID, viewName, selectName string, values
 			return nil, errors.New("view_not_found")
 		}
 
-		err := database.OpenView(viewName, ddoc)
+		err := db.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
-		view = database.views[name]
+		view = db.views[name]
 	}
 
 	if !stale {
-		err := view.Build(database.updateSeqNumber, database.updateSeqID)
+		err := view.Build(db.updateSeqNumber, db.updateSeqID)
 		if err != nil {
 			return nil, err
 		}
@@ -316,11 +309,12 @@ func (database *Database) SelectView(ddocID, viewName, selectName string, values
 	return view.Select(selectName, values), nil
 }
 
-func (database *Database) MarkViewUpdated(ddocID string, value []byte) {
-	for k, x := range database.views {
+func (db *Database) MarkViewUpdated(ddocID string, value []byte) {
+	for k, x := range db.views {
 		if x.designDocID == ddocID {
 			x.Close()
-			delete(database.views, k)
+			delete(db.views, k)
+			os.Remove(filepath.Join(x.viewPath, x.fileName))
 		}
 	}
 	ddoc := &DesignDocument{}
@@ -328,12 +322,12 @@ func (database *Database) MarkViewUpdated(ddocID string, value []byte) {
 	if err != nil {
 		panic("invalid_design_document " + ddocID)
 	}
-	database.designDocuments[ddocID] = ddoc
+	db.designDocuments[ddocID] = ddoc
 }
 
-func (database *Database) GetLastUpdateSequence() (int, string) {
+func (db *Database) GetLastUpdateSequence() (int, string) {
 	sqlGetMaxSeq := "SELECT seq_number, seq_id FROM (SELECT MAX(seq_number) as seq_number, MAX(seq_id)  as seq_id FROM changes WHERE seq_id = (SELECT MAX(seq_id) FROM changes) UNION ALL SELECT 0, '') WHERE seq_number IS NOT NULL LIMIT 1"
-	row := database.db.QueryRow(sqlGetMaxSeq)
+	row := db.con.QueryRow(sqlGetMaxSeq)
 	var (
 		maxSeqNumber int
 		maxSeqID     string
@@ -347,9 +341,9 @@ func (database *Database) GetLastUpdateSequence() (int, string) {
 	return maxSeqNumber, maxSeqID
 }
 
-func (database *Database) GetDocumentCount() int {
+func (db *Database) GetDocumentCount() int {
 	sqlGetCount := "SELECT COUNT(1) FROM documents"
-	row := database.db.QueryRow(sqlGetCount)
+	row := db.con.QueryRow(sqlGetCount)
 	var (
 		count int
 	)
@@ -362,15 +356,15 @@ func (database *Database) GetDocumentCount() int {
 	return count
 }
 
-func (database *Database) Stat() *DBStat {
+func (db *Database) Stat() *DBStat {
 	stat := &DBStat{}
-	stat.DBName = database.name
-	stat.UpdateSeq = strconv.Itoa(database.updateSeqNumber) + "-" + database.updateSeqID
-	stat.DocCount = database.GetDocumentCount()
+	stat.DBName = db.name
+	stat.UpdateSeq = strconv.Itoa(db.updateSeqNumber) + "-" + db.updateSeqID
+	stat.DocCount = db.GetDocumentCount()
 	return stat
 }
 
-func (database *Database) Vacuum() error {
-	_, err := database.db.Exec("VACUUM")
+func (db *Database) Vacuum() error {
+	_, err := db.con.Exec("VACUUM")
 	return err
 }

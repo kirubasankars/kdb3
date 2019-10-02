@@ -2,33 +2,29 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
 )
 
-type Query struct {
-	text   string
-	params []string
-}
-
 type View struct {
-	name                string
-	fileName            string
-	dbName              string
+	name     string
+	fileName string
+	dbName   string
+
 	lastUpdateSeqNumber int
 	lastUpdateSeqID     string
-	designDocID         string
+
+	designDocID string
+
+	viewPath string
+	dbPath   string
+	con      *sql.DB
 
 	setupScripts  []Query
 	deleteScripts []Query
 	updateScripts []Query
 	selectScripts map[string]Query
-
-	viewPath string
-	dbPath   string
-	db       *sql.DB
 }
 
 func NewView(dbPath, viewPath, dbName, viewName string, designDoc *DesignDocument) *View {
@@ -127,13 +123,14 @@ func (view *View) Open() error {
 	row := db.QueryRow(sqlGetViewLastSeq)
 	row.Scan(&view.lastUpdateSeqNumber, &view.lastUpdateSeqID)
 
-	view.db = db
+	view.con = db
 
 	return err
 }
 
 func (view *View) Close() error {
-	return view.db.Close()
+	err := view.con.Close()
+	return err
 }
 
 func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
@@ -142,7 +139,7 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 		return nil
 	}
 
-	db := view.db
+	db := view.con
 
 	tx, err := db.Begin()
 	defer tx.Rollback()
@@ -159,15 +156,14 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 			if p == "end_seq_number" {
 				values[i] = maxSeqNumber
 			}
-			if p == "end_seq_id" {
-				values[i] = maxSeqID
+			if p == "begin_seq_id" {
+				values[i] = view.lastUpdateSeqID
 			}
 			if p == "end_seq_id" {
 				values[i] = maxSeqID
 			}
 		}
 		if _, err = tx.Exec(x.text, values...); err != nil {
-			fmt.Println(err)
 			return err
 		}
 	}
@@ -189,7 +185,6 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 			}
 		}
 		if _, err = tx.Exec(x.text, values...); err != nil {
-			fmt.Println(err)
 			return err
 		}
 	}
@@ -219,7 +214,7 @@ func (view *View) Select(name string, values url.Values) []byte {
 		}
 	}
 
-	row := view.db.QueryRow(selectStmt.text, pValues...)
+	row := view.con.QueryRow(selectStmt.text, pValues...)
 	err := row.Scan(&rs)
 	if err != nil {
 		panic(err)
@@ -228,13 +223,13 @@ func (view *View) Select(name string, values url.Values) []byte {
 }
 
 func (view *View) MarkUpdated() {
-	if _, err := view.db.Exec("UPDATE view_meta SET design_doc_updated = true"); err != nil {
+	if _, err := view.con.Exec("UPDATE view_meta SET design_doc_updated = true"); err != nil {
 		panic(err)
 	}
 }
 
 func (view *View) Vacuum() error {
-	if _, err := view.db.Exec("VACUUM"); err != nil {
+	if _, err := view.con.Exec("VACUUM"); err != nil {
 		return err
 	}
 	return nil

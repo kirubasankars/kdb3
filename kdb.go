@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -14,27 +13,27 @@ import (
 
 var dbExt = ".db"
 
-type KDB struct {
+type KDBEngine struct {
 	dbPath   string
 	viewPath string
 
 	dbs map[string]*Database
 }
 
-func NewKDB() (*KDB, error) {
-	kdb := new(KDB)
+func NewKDB() (*KDBEngine, error) {
+	kdb := new(KDBEngine)
 
 	kdb.dbs = make(map[string]*Database)
-	kdb.dbPath = "./data"
-	kdb.viewPath = "./views"
+	kdb.dbPath = "./data/dbs"
+	kdb.viewPath = "./data/mrviews"
 
 	if _, err := os.Stat(kdb.dbPath); os.IsNotExist(err) {
-		if err = os.Mkdir(kdb.dbPath, 0755); err != nil {
+		if err = os.MkdirAll(kdb.dbPath, 0755); err != nil {
 			return nil, err
 		}
 	}
 	if _, err := os.Stat(kdb.viewPath); os.IsNotExist(err) {
-		if err = os.Mkdir(kdb.viewPath, 0755); err != nil {
+		if err = os.MkdirAll(kdb.viewPath, 0755); err != nil {
 			return nil, err
 		}
 	}
@@ -55,7 +54,7 @@ func NewKDB() (*KDB, error) {
 	return kdb, nil
 }
 
-func (kdb *KDB) ListDataBases() ([]string, error) {
+func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 
 	list, err := ioutil.ReadDir(kdb.dbPath)
 	if err != nil {
@@ -78,7 +77,7 @@ func validatename(name string) bool {
 	return true
 }
 
-func (kdb *KDB) Open(name string, createIfNotExists bool) error {
+func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if !validatename(name) {
 		return errors.New("invalid_db_name")
 	}
@@ -94,11 +93,11 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	return nil
 }
 
-func (kdb *KDB) Close(name string) {
+func (kdb *KDBEngine) Close(name string) {
 	kdb.dbs[name].Close()
 }
 
-func (kdb *KDB) Delete(name string) error {
+func (kdb *KDBEngine) Delete(name string) error {
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return errors.New("db_not_found")
@@ -108,14 +107,25 @@ func (kdb *KDB) Delete(name string) error {
 
 	delete(kdb.dbs, name)
 
-	for _, x := range db.views {
-		os.Remove(filepath.Join(kdb.viewPath, x.fileName))
+	list, err := ioutil.ReadDir(kdb.viewPath)
+	if err != nil {
+		return err
 	}
+
+	for idx := range list {
+		name := list[idx].Name()
+		if strings.HasPrefix(name, db.name+"$") {
+			os.Remove(filepath.Join(kdb.viewPath, name))
+		}
+	}
+
+	os.Remove(filepath.Join(kdb.dbPath, name+".db-shm"))
+	os.Remove(filepath.Join(kdb.dbPath, name+".db-wal"))
 
 	return os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
 }
 
-func (kdb *KDB) PutDocument(name string, newDoc *Document) error {
+func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) error {
 
 	db, ok := kdb.dbs[name]
 	if !ok {
@@ -125,7 +135,7 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) error {
 	return db.PutDocument(newDoc)
 }
 
-func (kdb *KDB) GetDocument(name string, newDoc *Document, includeDoc bool) error {
+func (kdb *KDBEngine) GetDocument(name string, newDoc *Document, includeDoc bool) error {
 
 	db, ok := kdb.dbs[name]
 	if !ok {
@@ -135,8 +145,7 @@ func (kdb *KDB) GetDocument(name string, newDoc *Document, includeDoc bool) erro
 	return db.GetDocument(newDoc, includeDoc)
 }
 
-func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	fmt.Println(dbName, designDocID, viewName, selectName)
+func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	db, ok := kdb.dbs[dbName]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -150,12 +159,12 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 	return rs, nil
 }
 
-func (kdb *KDB) DeleteDocument(name string, newDoc *Document) error {
+func (kdb *KDBEngine) DeleteDocument(name string, newDoc *Document) error {
 	newDoc.deleted = true
 	return kdb.PutDocument(name, newDoc)
 }
 
-func (kdb *KDB) DBStat(name string) (*DBStat, error) {
+func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -163,7 +172,7 @@ func (kdb *KDB) DBStat(name string) (*DBStat, error) {
 	return db.Stat(), nil
 }
 
-func (kdb *KDB) Vacuum(name string) error {
+func (kdb *KDBEngine) Vacuum(name string) error {
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return errors.New("db_not_found")

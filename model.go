@@ -18,3 +18,8 @@ type DesignDocumentView struct {
 	Update []string          `json:"update"`
 	Select map[string]string `json:"select"`
 }
+
+type Query struct {
+	text   string
+	params []string
+}
