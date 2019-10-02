@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"strconv"
@@ -10,15 +8,6 @@ import (
 
 	"github.com/valyala/fastjson"
 )
-
-type Document struct {
-	id        string
-	revNumber int
-	revID     string
-	value     []byte
-	deleted   bool
-	jval      *fastjson.Value
-}
 
 func ParseDocument(value []byte) (*Document, error) {
 	v, err := fastjson.ParseBytes(value)
@@ -87,6 +76,15 @@ func ParseDocument(value []byte) (*Document, error) {
 	return doc, nil
 }
 
+type Document struct {
+	id        string
+	revNumber int
+	revID     string
+	value     []byte
+	deleted   bool
+	jval      *fastjson.Value
+}
+
 func (doc *Document) CalculateRev() {
 
 	doc.revNumber = doc.revNumber + 1
@@ -97,33 +95,4 @@ func (doc *Document) CalculateRev() {
 	copy(data, meta)
 	data = append(data, doc.value[1:]...)
 	doc.value = data
-}
-
-func (doc Document) MarshalBinary() ([]byte, error) {
-	var b bytes.Buffer
-	fmt.Fprintln(&b, doc.id, doc.revNumber, doc.revID, doc.deleted)
-	return b.Bytes(), nil
-}
-
-func (doc *Document) UnmarshalBinary(data []byte) error {
-	b := bytes.NewBuffer(data)
-	_, err := fmt.Fscanln(b, &doc.id, &doc.revNumber, &doc.revID, &doc.deleted)
-	return err
-}
-
-func (doc Document) Encode() ([]byte, error) {
-	var data bytes.Buffer
-	enc := gob.NewEncoder(&data)
-	err := enc.Encode(doc)
-	if err != nil {
-		return []byte(""), err
-	}
-	return data.Bytes(), nil
-}
-
-func (doc *Document) Decode(value []byte) error {
-	data := bytes.NewBuffer(value)
-	dec := gob.NewDecoder(data)
-	doc.value = []byte("")
-	return dec.Decode(&doc)
 }
