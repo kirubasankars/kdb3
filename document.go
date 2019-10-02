@@ -89,8 +89,12 @@ func (doc *Document) CalculateRev() {
 
 	doc.revNumber = doc.revNumber + 1
 	doc.revID = RandomUUID()
-	meta := fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.id, formatRev(doc.revNumber, doc.revID))
-
+	var meta string
+	if len(doc.value) == 2 {
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.id, formatRev(doc.revNumber, doc.revID))
+	} else {
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.id, formatRev(doc.revNumber, doc.revID))
+	}
 	data := make([]byte, len(meta))
 	copy(data, meta)
 	data = append(data, doc.value[1:]...)
