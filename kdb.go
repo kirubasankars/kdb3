@@ -71,7 +71,7 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 }
 
 func validatename(name string) bool {
-	if len(name) <= 0 && strings.Contains(name, "$") {
+	if len(name) <= 0 || strings.Contains(name, "$") {
 		return false
 	}
 	return true
@@ -131,18 +131,17 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) error {
 	if !ok {
 		return errors.New("db_not_found")
 	}
-
 	return db.PutDocument(newDoc)
 }
 
-func (kdb *KDBEngine) GetDocument(name string, newDoc *Document, includeDoc bool) error {
+func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
 
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New("db_not_found")
+		return nil, errors.New("db_not_found")
 	}
 
-	return db.GetDocument(newDoc, includeDoc)
+	return db.GetDocument(doc, includeDoc)
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
@@ -159,9 +158,9 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	return rs, nil
 }
 
-func (kdb *KDBEngine) DeleteDocument(name string, newDoc *Document) error {
-	newDoc.deleted = true
-	return kdb.PutDocument(name, newDoc)
+func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) error {
+	doc.Deleted = true
+	return kdb.PutDocument(name, doc)
 }
 
 func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
