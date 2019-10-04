@@ -165,13 +165,14 @@ func main() {
 				return
 			}
 
-			if err := kdb.GetDocument(name, doc, true); err != nil {
+			rec, err := kdb.GetDocument(name, doc, true)
+			if err != nil {
 				NotOK(err, w)
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
-			w.Write(doc.value)
-			if len(doc.value) > 0 {
+			w.Write(rec.Data)
+			if len(rec.Data) > 0 {
 				w.Write([]byte("\n"))
 			}
 		}
@@ -179,7 +180,7 @@ func main() {
 
 	router.HandleFunc("/{db}/{id}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		name := vars["db"]
+		db := vars["db"]
 		id := vars["id"]
 
 		if r.Method == "GET" {
@@ -196,14 +197,15 @@ func main() {
 				return
 			}
 
-			if err := kdb.GetDocument(name, doc, true); err != nil {
+			rec, err := kdb.GetDocument(db, doc, true)
+			if err != nil {
 				NotOK(err, w)
 				return
 			}
 
 			w.WriteHeader(http.StatusAccepted)
-			w.Write(doc.value)
-			if len(doc.value) > 0 {
+			w.Write(rec.Data)
+			if len(rec.Data) > 0 {
 				w.Write([]byte("\n"))
 			}
 		}
@@ -219,7 +221,7 @@ func main() {
 				return
 			}
 
-			if err = kdb.DeleteDocument(name, doc); err != nil {
+			if err = kdb.DeleteDocument(db, doc); err != nil {
 				NotOK(err, w)
 				return
 			}
@@ -239,9 +241,9 @@ func main() {
 				NotOK(err, w)
 				return
 			}
-			doc.id = id
+			doc.ID = id
 
-			if err = kdb.PutDocument(name, doc); err != nil {
+			if err = kdb.PutDocument(db, doc); err != nil {
 				NotOK(err, w)
 				return
 			}

@@ -9,6 +9,34 @@ import (
 	"github.com/valyala/fastjson"
 )
 
+type Document struct {
+	Revision
+	Data []byte
+}
+
+type Revision struct {
+	ID        string
+	RevNumber int
+	RevID     string
+	Deleted   bool
+}
+
+func (doc *Document) CalculateRev() {
+
+	doc.RevNumber = doc.RevNumber + 1
+	doc.RevID = RandomUUID()
+	var meta string
+	if len(doc.Data) == 2 {
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.ID, formatRev(doc.RevNumber, doc.RevID))
+	} else {
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.ID, formatRev(doc.RevNumber, doc.RevID))
+	}
+	data := make([]byte, len(meta))
+	copy(data, meta)
+	data = append(data, doc.Data[1:]...)
+	doc.Data = data
+}
+
 func ParseDocument(value []byte) (*Document, error) {
 	v, err := fastjson.ParseBytes(value)
 	if err != nil {
@@ -67,36 +95,10 @@ func ParseDocument(value []byte) (*Document, error) {
 	value = v.MarshalTo(b)
 
 	doc := &Document{}
-	doc.id = id
-	doc.revNumber = revNumber
-	doc.revID = revID
-	doc.value = value
-	doc.deleted = deleted
-	doc.jval = v
+	doc.ID = id
+	doc.RevNumber = revNumber
+	doc.RevID = revID
+	doc.Deleted = deleted
+	doc.Data = value
 	return doc, nil
-}
-
-type Document struct {
-	id        string
-	revNumber int
-	revID     string
-	value     []byte
-	deleted   bool
-	jval      *fastjson.Value
-}
-
-func (doc *Document) CalculateRev() {
-
-	doc.revNumber = doc.revNumber + 1
-	doc.revID = RandomUUID()
-	var meta string
-	if len(doc.value) == 2 {
-		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.id, formatRev(doc.revNumber, doc.revID))
-	} else {
-		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.id, formatRev(doc.revNumber, doc.revID))
-	}
-	data := make([]byte, len(meta))
-	copy(data, meta)
-	data = append(data, doc.value[1:]...)
-	doc.value = data
 }

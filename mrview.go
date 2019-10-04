@@ -67,17 +67,6 @@ func NewView(dbPath, viewPath, dbName, viewName string, designDoc *DesignDocumen
 	return view
 }
 
-func ParseQuery(query string) (string, []string) {
-	re := regexp.MustCompile(`\$\{(.*?)\}`)
-	o := re.FindAllStringSubmatch(query, -1)
-	var params []string
-	for _, x := range o {
-		params = append(params, x[1])
-	}
-	text := re.ReplaceAllString(query, "?")
-	return text, params
-}
-
 func (view *View) Open() error {
 	view.fileName = view.dbName + "$" + view.name + dbExt
 	viewFilePath := filepath.Join(view.viewPath, view.fileName)
@@ -233,4 +222,15 @@ func (view *View) Vacuum() error {
 		return err
 	}
 	return nil
+}
+
+func ParseQuery(query string) (string, []string) {
+	re := regexp.MustCompile(`\$\{(.*?)\}`)
+	o := re.FindAllStringSubmatch(query, -1)
+	var params []string
+	for _, x := range o {
+		params = append(params, x[1])
+	}
+	text := re.ReplaceAllString(query, "?")
+	return text, params
 }
