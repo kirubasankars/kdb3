@@ -91,8 +91,8 @@ func TestPutDocument(t *testing.T) {
 		t.Error(err)
 	}
 
-	doc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
-	err = kdb.PutDocument("testdb", doc)
+	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
@@ -108,13 +108,13 @@ func TestGetDocument(t *testing.T) {
 	}
 
 	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	_, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	_, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
@@ -179,39 +179,39 @@ func TestDeleteDocument(t *testing.T) {
 	}
 
 	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	doc, err := kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
 
-	rev := formatRev(inputDoc.RevNumber, inputDoc.RevID)
+	rev := formatRev(doc.RevNumber, doc.RevID)
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_rev":"` + rev + `"}`))
-	err = kdb.DeleteDocument("testdb", inputDoc)
+	doc, err = kdb.DeleteDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error("unable to delete doc", err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1"}`))
-	_, err = kdb.GetDocument("testdb", inputDoc, true)
+	doc, err = kdb.GetDocument("testdb", inputDoc, true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","test":2}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":2}`))
-	err = kdb.PutDocument("testdb", inputDoc)
+	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err.Error() != "mismatched_rev" {
 		t.Error("doc missing")
 	}
@@ -255,6 +255,35 @@ func TestDatabaseStat(t *testing.T) {
 
 	if stat.DocCount != 1 || stat.DBName != "testdb" || stat.UpdateSeq == "" {
 		t.Error("db stat err")
+	}
+
+	err = kdb.Delete("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestGetDesignDocumentAllViews(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
+
+	stat, err := kdb.DBStat("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+
+	if stat.DocCount != 1 {
+		t.Error("db creation err")
+	}
+
+	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views"}`))
+	ddoc, _ := kdb.GetDocument("testdb", doc, true)
+
+	if ddoc.ID != "_design/_views" {
+		t.Error("build in view missing")
 	}
 
 	err = kdb.Delete("testdb")

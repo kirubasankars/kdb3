@@ -125,11 +125,10 @@ func (kdb *KDBEngine) Delete(name string) error {
 	return os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
 }
 
-func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) error {
-
+func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New("db_not_found")
+		return nil, errors.New("db_not_found")
 	}
 	return db.PutDocument(newDoc)
 }
@@ -158,7 +157,7 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	return rs, nil
 }
 
-func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) error {
+func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) (*Document, error) {
 	doc.Deleted = true
 	return kdb.PutDocument(name, doc)
 }

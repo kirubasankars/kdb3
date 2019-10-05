@@ -101,16 +101,19 @@ func main() {
 				NotOK(err, w)
 				return
 			}
-			doc, err := ParseDocument(body)
+
+			input, err := ParseDocument(body)
 			if err != nil {
 				NotOK(err, w)
 				return
 			}
-			err = kdb.PutDocument(name, doc)
+
+			_, err = kdb.PutDocument(name, input)
 			if err != nil {
 				NotOK(err, w)
 				return
 			}
+
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		}
@@ -221,10 +224,12 @@ func main() {
 				return
 			}
 
-			if err = kdb.DeleteDocument(db, doc); err != nil {
+			_, err = kdb.DeleteDocument(db, doc)
+			if err != nil {
 				NotOK(err, w)
 				return
 			}
+
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		}
@@ -243,7 +248,8 @@ func main() {
 			}
 			doc.ID = id
 
-			if err = kdb.PutDocument(db, doc); err != nil {
+			_, err = kdb.PutDocument(db, doc)
+			if err != nil {
 				NotOK(err, w)
 				return
 			}
