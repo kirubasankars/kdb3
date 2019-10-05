@@ -85,11 +85,10 @@ func (db *Database) Open(name string, createIfNotExists bool) error {
 			panic(err)
 		}
 
-		err = db.PutDocument(designDoc)
+		_, err = db.PutDocument(designDoc)
 		if err != nil {
 			return err
 		}
-
 	}
 
 	docs, _ := db.GetAllDesignDocuments()
@@ -117,59 +116,75 @@ func (db *Database) Close() error {
 	return nil
 }
 
-func (db *Database) PutDocument(newDoc *Document) error {
+func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	writer := db.writer
 	err := writer.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	defer writer.Rollback()
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
 	if err != nil && err.Error() != "doc_not_found" {
-		return err
+		return nil, err
 	}
 
 	if currentDoc != nil && !currentDoc.Deleted && (currentDoc.RevNumber != newDoc.RevNumber || currentDoc.RevID != newDoc.RevID) {
-		return errors.New("mismatched_rev")
+		return nil, errors.New("mismatched_rev")
 	}
 
 	if currentDoc != nil && currentDoc.Deleted {
 		newDoc.RevNumber = currentDoc.RevNumber
-		newDoc.CalculateRev()
-	} else {
-		newDoc.CalculateRev()
 	}
+
+	newDoc.CalculateRev()
 
 	if newDoc.Deleted {
 		if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		if err := writer.InsertDocument(newDoc.ID, newDoc.Data); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := writer.InsertRevision(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
-		return err
+		return nil, err
 	}
 
 	db.mux.Lock()
-	db.updateSeqNumber, db.updateSeqID = db.seqGen.Next()
-	db.mux.Unlock()
 
-	if err := writer.InsertChange(db.updateSeqNumber, db.updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
-		return err
+	updateSeqNumber, updateSeqID := db.seqGen.Next()
+
+	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
+		return nil, err
 	}
+
+	if err := writer.Commit(); err != nil {
+		return nil, err
+	}
+
+	db.updateSeqNumber = updateSeqNumber
+	db.updateSeqID = updateSeqID
+
+	db.mux.Unlock()
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
 		db.MarkViewUpdated(newDoc.ID, newDoc.Data)
 	}
 
-	writer.Commit()
+	doc := Document{
+		Revision: Revision{
+			ID:        newDoc.ID,
+			RevNumber: newDoc.RevNumber,
+			RevID:     newDoc.RevID,
+			Deleted:   newDoc.Deleted,
+		},
+	}
 
-	return nil
+	return &doc, nil
 }
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
@@ -193,7 +208,7 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	return db.reader.GetAllDesignDocuments()
 }
 
-func (db *Database) DeleteDocument(doc *Document) error {
+func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 	doc.Deleted = true
 	return db.PutDocument(doc)
 }
