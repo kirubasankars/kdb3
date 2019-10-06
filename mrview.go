@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -80,6 +82,13 @@ func (mgr *ViewManager) Initialize(db *Database) error {
 		}
 	}
 
+	for fileName, ref := range mgr.viewFiles {
+		if ref <= 0 {
+			delete(mgr.viewFiles, fileName)
+			os.Remove(filepath.Join(mgr.viewPath, fileName+dbExt))
+		}
+	}
+
 	return nil
 }
 
@@ -118,6 +127,7 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
 	view, ok := mgr.views[name]
+
 	if !ok {
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
@@ -135,7 +145,7 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 		view = mgr.views[name]
 	}
 
-	if !stale {
+	if view != nil && !stale {
 		err := view.Build(updateSeqNumber, updateSeqID)
 		if err != nil {
 			return nil, err
@@ -168,17 +178,26 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 	if ok {
 		for name, cddv := range currentDDoc.Views {
 			nddv := newDDoc.Views[name]
-			viewName := ddocID + "$" + name
+			viewFileName := ddocID + "$" + name
 			if mgr.CalculateSignature(nddv) != mgr.CalculateSignature(cddv) {
-				if _, ok := mgr.views[viewName]; ok {
-					mgr.views[viewName].Close()
-					delete(mgr.views, name)
+				if _, ok := mgr.views[viewFileName]; ok {
+					mgr.views[viewFileName].Close()
+					delete(mgr.views, viewFileName)
 				}
-				//Delete View File
+
+				newViewFile := mgr.dbName + "$" + mgr.CalculateSignature(nddv)
+				currentViewFile := mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+				mgr.viewFiles[newViewFile]++
+				mgr.viewFiles[currentViewFile]--
+
+				if mgr.viewFiles[currentViewFile] <= 0 {
+					delete(mgr.viewFiles, currentViewFile)
+					os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+				}
 			} else {
-				if _, ok := mgr.views[viewName]; ok {
-					mgr.views[viewName].Close()
-					delete(mgr.views, name)
+				if _, ok := mgr.views[viewFileName]; ok {
+					mgr.views[viewFileName].Close()
+					delete(mgr.views, viewFileName)
 				}
 			}
 		}
@@ -353,11 +372,10 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 	}
 
 	db := view.con
-
 	tx, err := db.Begin()
 	defer tx.Rollback()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
 	for _, x := range view.deleteScripts {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -141,6 +142,7 @@ func main() {
 		rs, _ := kdb.SelectView(name, "_design/_views", "_all_docs", "default", r.Form, false)
 		w.WriteHeader(http.StatusCreated)
 		w.Write(rs)
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	}).Methods("GET", "POST")
 
 	router.HandleFunc("/{db}/_design/{ddocid}/{view}/{select}", func(w http.ResponseWriter, r *http.Request) {
@@ -150,9 +152,12 @@ func main() {
 		view := vars["view"]
 		selectName := vars["select"]
 		r.ParseForm()
+		fmt.Println(name, ddocID, view, selectName)
 		rs, _ := kdb.SelectView(name, ddocID, view, selectName, r.Form, false)
 		w.WriteHeader(http.StatusCreated)
 		w.Write(rs)
+		w.Header().Set("Content-Type", "application/json")
+
 	}).Methods("GET", "POST")
 
 	router.HandleFunc("/{db}/_design/{ddocid}", func(w http.ResponseWriter, r *http.Request) {
