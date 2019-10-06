@@ -9,8 +9,9 @@ type SequenceGenarator struct {
 	charSet []byte
 	len     int
 
-	current []int
-	number  int
+	current   []int
+	number    int
+	endString []int
 }
 
 func NewSequenceGenarator(l int, seedNumber int, seedId string) *SequenceGenarator {
@@ -37,6 +38,7 @@ func NewSequenceGenarator(l int, seedNumber int, seedId string) *SequenceGenarat
 			}
 		}
 	}
+
 	return seq
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -92,9 +93,13 @@ func TestPutDocument(t *testing.T) {
 	}
 
 	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
-	_, err = kdb.PutDocument("testdb", inputDoc)
+	doc, err := kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
+	}
+
+	if doc.RevNumber != 1 {
+		t.Error("rev number missing")
 	}
 
 	kdb.Delete("testdb")
@@ -290,4 +295,70 @@ func TestGetDesignDocumentAllViews(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+type AllDocsViewResult struct {
+	Offset int `json:"offset"`
+	Rows   []struct {
+		Key   string `json:"key"`
+		Value struct {
+			Rev string
+		} `json:"value"`
+		DocID string `json:"doc_id"`
+	} `json:"rows"`
+	TotalRows int `json:"total_rows"`
+}
+
+func TestBuildView(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if _, ok := kdb.dbs["testdb"].viewmgr.views["_design/_views$_all_docs"]; ok {
+		t.Error("view failed")
+	}
+
+	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r := AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if _, ok := kdb.dbs["testdb"].viewmgr.views["_design/_views$_all_docs"]; !ok {
+		t.Error("view failed")
+	}
+
+	if len(r.Rows) != 1 {
+		t.Error("row count failed", r.Rows)
+	}
+
+	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r = AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if len(r.Rows) != 2 {
+		t.Error("row count failed")
+	}
+
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r = AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if len(r.Rows) != 3 {
+		t.Error("row count failed")
+	}
+
+	kdb.Delete("testdb")
 }

@@ -108,14 +108,19 @@ func main() {
 				return
 			}
 
-			_, err = kdb.PutDocument(name, input)
+			doc, err := kdb.PutDocument(name, input)
 			if err != nil {
 				NotOK(err, w)
 				return
 			}
 
+			output := `"_id":"` + doc.ID + `","_rev":"` + formatRev(doc.RevNumber, doc.RevID) + `"`
+			if doc.Deleted {
+				output += `,"_deleted":true`
+			}
+
 			w.WriteHeader(http.StatusAccepted)
-			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+			w.Write([]byte(`{` + output + `}`))
 		}
 	}).Methods("GET", "PUT", "POST", "DELETE")
 

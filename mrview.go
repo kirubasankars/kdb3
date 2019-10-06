@@ -1,25 +1,254 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
+	"errors"
+	"hash/crc32"
+	"io/ioutil"
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 )
 
-type View struct {
-	name     string
-	fileName string
+type ViewManager struct {
+	viewPath string
+	dbPath   string
 	dbName   string
+	views    map[string]*View
+	ddocs    map[string]*DesignDocument
+
+	viewFiles map[string]int
+}
+
+func (mgr *ViewManager) SetupViews(db *Database) error {
+	ddoc := &DesignDocument{}
+	ddoc.ID = "_design/_views"
+	ddoc.Views = make(map[string]*DesignDocumentView)
+	ddv := &DesignDocumentView{}
+	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key TEXT PRIMARY KEY, value TEXT, doc_id TEXT)")
+	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id})")
+	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('rev',JSON_EXTRACT(d.data, '$._rev')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
+	ddv.Select = make(map[string]string)
+	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', 0,'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as rs FROM all_docs WHERE (${key} IS NULL or key = ${key}) ORDER BY key"
+	ddoc.Views["_all_docs"] = ddv
+
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(ddoc)
+
+	designDoc, err := ParseDocument(buffer.Bytes())
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = db.PutDocument(designDoc)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (mgr *ViewManager) Initialize(db *Database) error {
+	docs, _ := db.GetAllDesignDocuments()
+	for _, x := range docs {
+		ddoc := &DesignDocument{}
+		err := json.Unmarshal(x.Data, ddoc)
+		if err != nil {
+			return err
+		}
+		mgr.ddocs[x.ID] = ddoc
+	}
+
+	//load current view files
+	viewFiles, _ := mgr.ListViewFiles()
+	for _, x := range viewFiles {
+		mgr.viewFiles[x] = 0
+	}
+
+	// view file ref counter
+	for _, ddoc := range mgr.ddocs {
+		for _, ddocv := range ddoc.Views {
+			viewFile := mgr.dbName + "$" + mgr.CalculateSignature(ddocv)
+			if _, ok := mgr.viewFiles[viewFile]; ok {
+				mgr.viewFiles[viewFile]++
+			}
+		}
+	}
+
+	return nil
+}
+
+func (mgr *ViewManager) ListViewFiles() ([]string, error) {
+	list, err := ioutil.ReadDir(mgr.viewPath)
+	if err != nil {
+		return nil, err
+	}
+	var viewFiles []string
+	for idx := range list {
+		name := list[idx].Name()
+		if strings.HasPrefix(name, mgr.dbName+"$") && strings.HasSuffix(name, dbExt) {
+			viewFiles = append(viewFiles, strings.ReplaceAll(name, dbExt, ""))
+		}
+	}
+	return viewFiles, nil
+}
+
+func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+	dbFilePath := filepath.Join(mgr.dbPath, mgr.dbName+dbExt)
+	if _, ok := ddoc.Views[viewName]; !ok {
+		return nil
+	}
+	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
+	viewFilePath += "?_journal=MEMORY"
+	view := NewView(dbFilePath, viewFilePath, viewName, ddoc, mgr)
+	if err := view.Open(); err != nil {
+		return err
+	}
+
+	mgr.views[ddoc.ID+"$"+viewName] = view
+
+	return nil
+}
+
+func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	name := ddocID + "$" + viewName
+	view, ok := mgr.views[name]
+	if !ok {
+		ddoc, ok := mgr.ddocs[ddocID]
+		if !ok {
+			return nil, errors.New("doc_not_found")
+		}
+		_, ok = ddoc.Views[viewName]
+		if !ok {
+			return nil, errors.New("view_not_found")
+		}
+
+		err := mgr.OpenView(viewName, ddoc)
+		if err != nil {
+			return nil, err
+		}
+		view = mgr.views[name]
+	}
+
+	if !stale {
+		err := view.Build(updateSeqNumber, updateSeqID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return view.Select(selectName, values), nil
+}
+
+func (mgr *ViewManager) CloseViews() {
+	for _, v := range mgr.views {
+		v.Close()
+	}
+}
+
+func (mgr *ViewManager) VacuumViews() {
+	for _, v := range mgr.views {
+		v.Vacuum()
+	}
+}
+
+func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error {
+	newDDoc := &DesignDocument{}
+	err := json.Unmarshal(value, newDDoc)
+	if err != nil {
+		panic("invalid_design_document " + ddocID)
+	}
+
+	currentDDoc, ok := mgr.ddocs[ddocID]
+	if ok {
+		for name, cddv := range currentDDoc.Views {
+			nddv := newDDoc.Views[name]
+			viewName := ddocID + "$" + name
+			if mgr.CalculateSignature(nddv) != mgr.CalculateSignature(cddv) {
+				if _, ok := mgr.views[viewName]; ok {
+					mgr.views[viewName].Close()
+					delete(mgr.views, name)
+				}
+				//Delete View File
+			} else {
+				if _, ok := mgr.views[viewName]; ok {
+					mgr.views[viewName].Close()
+					delete(mgr.views, name)
+				}
+			}
+		}
+	}
+
+	mgr.ddocs[ddocID] = newDDoc
+
+	return nil
+}
+
+func (mgr *ViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+	content := ""
+	if ddocv != nil {
+		crc32q := crc32.MakeTable(0xD5828281)
+		if ddocv.Select != nil {
+			for _, x := range ddocv.Setup {
+				content += x
+			}
+		}
+		if ddocv.Update != nil {
+			for _, x := range ddocv.Update {
+				content += x
+			}
+		}
+		if ddocv.Delete != nil {
+			for _, x := range ddocv.Delete {
+				content += x
+			}
+		}
+		v := crc32.Checksum([]byte(content), crc32q)
+		return strconv.Itoa(int(v))
+	}
+	return ""
+}
+
+func (mgr *ViewManager) ParseQuery(query string) (string, []string) {
+	re := regexp.MustCompile(`\$\{(.*?)\}`)
+	o := re.FindAllStringSubmatch(query, -1)
+	var params []string
+	for _, x := range o {
+		params = append(params, x[1])
+	}
+	text := re.ReplaceAllString(query, "?")
+	return text, params
+}
+
+func NewViewManager(dbPath, viewPath, dbName string) *ViewManager {
+	mgr := &ViewManager{
+		dbPath:   dbPath,
+		viewPath: viewPath,
+		dbName:   dbName,
+	}
+	mgr.views = make(map[string]*View)
+	mgr.ddocs = make(map[string]*DesignDocument)
+	mgr.viewFiles = make(map[string]int)
+	return mgr
+}
+
+type View struct {
+	name   string
+	dbName string
 
 	lastUpdateSeqNumber int
 	lastUpdateSeqID     string
 
-	designDocID string
+	ddocID string
 
-	viewPath string
-	dbPath   string
-	con      *sql.DB
+	viewFilePath string
+	dbFilePath   string
+	con          *sql.DB
 
 	setupScripts  []Query
 	deleteScripts []Query
@@ -27,40 +256,40 @@ type View struct {
 	selectScripts map[string]Query
 }
 
-func NewView(dbPath, viewPath, dbName, viewName string, designDoc *DesignDocument) *View {
+func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, viewm *ViewManager) *View {
 	view := &View{}
 
-	if _, ok := designDoc.Views[viewName]; !ok {
+	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
 	}
 
-	view.viewPath = viewPath
-	view.dbPath = dbPath
+	view.viewFilePath = viewFilePath
+	view.dbFilePath = dbFilePath
+
 	view.name = viewName
-	view.dbName = dbName
-	view.designDocID = designDoc.ID
+	view.ddocID = ddoc.ID
 
 	view.setupScripts = *new([]Query)
 	view.deleteScripts = *new([]Query)
 	view.updateScripts = *new([]Query)
 	view.selectScripts = make(map[string]Query)
-	designDocView := designDoc.Views[viewName]
+	designDocView := ddoc.Views[viewName]
 
 	for _, x := range designDocView.Setup {
-		text, params := ParseQuery(x)
+		text, params := viewm.ParseQuery(x)
 		view.setupScripts = append(view.setupScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Delete {
-		text, params := ParseQuery(x)
+		text, params := viewm.ParseQuery(x)
 		view.deleteScripts = append(view.deleteScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Update {
-		text, params := ParseQuery(x)
+		text, params := viewm.ParseQuery(x)
 		view.updateScripts = append(view.updateScripts, Query{text: text, params: params})
 	}
 
 	for k, v := range designDocView.Select {
-		text, params := ParseQuery(v)
+		text, params := viewm.ParseQuery(v)
 		view.selectScripts[k] = Query{text: text, params: params}
 	}
 
@@ -68,10 +297,7 @@ func NewView(dbPath, viewPath, dbName, viewName string, designDoc *DesignDocumen
 }
 
 func (view *View) Open() error {
-	view.fileName = view.dbName + "$" + view.name + dbExt
-	viewFilePath := filepath.Join(view.viewPath, view.fileName)
-
-	db, err := sql.Open("sqlite3", viewFilePath+"?_journal=MEMORY")
+	db, err := sql.Open("sqlite3", view.viewFilePath)
 	if err != nil {
 		return err
 	}
@@ -91,13 +317,12 @@ func (view *View) Open() error {
 		return err
 	}
 
-	dbFilePath := filepath.Join(view.dbPath, view.dbName)
-	absoluteDBPath, err := filepath.Abs(dbFilePath)
+	absoluteDBPath, err := filepath.Abs(view.dbFilePath)
 	if err != nil {
 		return err
 	}
 
-	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + ".db' as docsdb;")
+	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + "' as docsdb;")
 	if err != nil {
 		return err
 	}
@@ -118,8 +343,7 @@ func (view *View) Open() error {
 }
 
 func (view *View) Close() error {
-	err := view.con.Close()
-	return err
+	return view.con.Close()
 }
 
 func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
@@ -211,26 +435,9 @@ func (view *View) Select(name string, values url.Values) []byte {
 	return []byte(rs)
 }
 
-func (view *View) MarkUpdated() {
-	if _, err := view.con.Exec("UPDATE view_meta SET design_doc_updated = true"); err != nil {
-		panic(err)
-	}
-}
-
 func (view *View) Vacuum() error {
 	if _, err := view.con.Exec("VACUUM"); err != nil {
 		return err
 	}
 	return nil
-}
-
-func ParseQuery(query string) (string, []string) {
-	re := regexp.MustCompile(`\$\{(.*?)\}`)
-	o := re.FindAllStringSubmatch(query, -1)
-	var params []string
-	for _, x := range o {
-		params = append(params, x[1])
-	}
-	text := re.ReplaceAllString(query, "?")
-	return text, params
 }

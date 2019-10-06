@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -17,30 +14,23 @@ type Database struct {
 	updateSeqNumber int
 	updateSeqID     string
 
-	dbPath   string
-	viewPath string
-	reader   *DataBaseReader
-	writer   *DataBaseWriter
-	mux      sync.Mutex
-	seqGen   *SequenceGenarator
+	dbPath string
+	reader *DataBaseReader
+	writer *DataBaseWriter
+	mux    sync.Mutex
+	seqGen *SequenceGenarator
 
-	views           map[string]*View
-	designDocuments map[string]*DesignDocument
+	viewmgr *ViewManager
 }
 
-func NewDatabase(dbPath, viewPath string) *Database {
-	db := &Database{}
-	db.dbPath = dbPath
-	db.viewPath = viewPath
+func NewDatabase(name, dbPath, viewPath string) *Database {
+	db := &Database{name: name, dbPath: dbPath}
+	db.viewmgr = NewViewManager(dbPath, viewPath, name)
 	return db
 }
 
-func (db *Database) Open(name string, createIfNotExists bool) error {
-	db.name = name
-	db.views = make(map[string]*View)
-	db.designDocuments = make(map[string]*DesignDocument)
-
-	path := filepath.Join(db.dbPath, name+dbExt)
+func (db *Database) Open(createIfNotExists bool) error {
+	path := filepath.Join(db.dbPath, db.name+dbExt)
 	_, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		if !createIfNotExists {
@@ -67,49 +57,24 @@ func (db *Database) Open(name string, createIfNotExists bool) error {
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
 	db.seqGen = NewSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
 
+	viewmgr := db.viewmgr
 	if createIfNotExists {
-		ddoc := &DesignDocument{}
-		ddoc.ID = "_design/_views"
-		ddoc.Views = make(map[string]*DesignDocumentView)
-		ddv := &DesignDocumentView{}
-		ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key TEXT PRIMARY KEY, value TEXT, doc_id TEXT)")
-		ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id})")
-		ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('rev',JSON_EXTRACT(d.data, '$._rev')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
-		ddv.Select = make(map[string]string)
-		ddv.Select["default"] = "SELECT JSON_OBJECT('offset', 0,'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as rs FROM all_docs WHERE (${key} IS NULL or key = ${key}) ORDER BY key"
-		ddoc.Views["_all_docs"] = ddv
-
-		ddocJSON, _ := JSONMarshal(ddoc)
-		designDoc, err := ParseDocument(ddocJSON)
-		if err != nil {
-			panic(err)
-		}
-
-		_, err = db.PutDocument(designDoc)
+		err = viewmgr.SetupViews(db)
 		if err != nil {
 			return err
 		}
 	}
 
-	docs, _ := db.GetAllDesignDocuments()
-	for _, x := range docs {
-		ddoc := &DesignDocument{}
-		err := json.Unmarshal(x.Data, ddoc)
-		if err != nil {
-			panic("invalid_design_document " + x.ID)
-		}
-		db.designDocuments[x.ID] = ddoc
+	err = viewmgr.Initialize(db)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func (db *Database) Close() error {
-	for idx := range db.views {
-		view := db.views[idx]
-		view.Close()
-	}
-
+	db.viewmgr.CloseViews()
 	db.writer.Close()
 	db.reader.Close()
 
@@ -172,7 +137,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	db.mux.Unlock()
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
-		db.MarkViewUpdated(newDoc.ID, newDoc.Data)
+		db.viewmgr.UpdateDesignDocument(newDoc.ID, newDoc.Data)
 	}
 
 	doc := Document{
@@ -187,7 +152,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	return &doc, nil
 }
 
-func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
+func (db *Database) GetDocument(doc *Revision, includeData bool) (*Document, error) {
 
 	reader := db.reader
 
@@ -213,65 +178,8 @@ func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 	return db.PutDocument(doc)
 }
 
-func (db *Database) OpenView(viewName string, ddoc *DesignDocument) error {
-
-	view := NewView(db.dbPath, db.viewPath, db.name, viewName, ddoc)
-
-	if err := view.Open(); err != nil {
-		return err
-	}
-
-	name := ddoc.ID + "$" + viewName
-
-	db.views[name] = view
-
-	return nil
-}
-
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	name := ddocID + "$" + viewName
-	view, ok := db.views[name]
-	if !ok {
-		ddoc, ok := db.designDocuments[ddocID]
-		if !ok {
-			return nil, errors.New("doc_not_found")
-		}
-		_, ok = ddoc.Views[viewName]
-		if !ok {
-			return nil, errors.New("view_not_found")
-		}
-
-		err := db.OpenView(viewName, ddoc)
-		if err != nil {
-			return nil, err
-		}
-		view = db.views[name]
-	}
-
-	if !stale {
-		err := view.Build(db.updateSeqNumber, db.updateSeqID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return view.Select(selectName, values), nil
-}
-
-func (db *Database) MarkViewUpdated(ddocID string, value []byte) {
-	for k, x := range db.views {
-		if x.designDocID == ddocID {
-			x.Close()
-			delete(db.views, k)
-			os.Remove(filepath.Join(x.viewPath, x.fileName))
-		}
-	}
-	ddoc := &DesignDocument{}
-	err := json.Unmarshal(value, ddoc)
-	if err != nil {
-		panic("invalid_design_document " + ddocID)
-	}
-	db.designDocuments[ddocID] = ddoc
+	return db.viewmgr.SelectView(db.updateSeqNumber, db.updateSeqID, ddocID, viewName, selectName, values, stale)
 }
 
 func (db *Database) GetLastUpdateSequence() (int, string) {
@@ -285,19 +193,11 @@ func (db *Database) GetDocumentCount() int {
 func (db *Database) Stat() *DBStat {
 	stat := &DBStat{}
 	stat.DBName = db.name
-	stat.UpdateSeq = strconv.Itoa(db.updateSeqNumber) + "-" + db.updateSeqID
+	stat.UpdateSeq = formatRev(db.updateSeqNumber, db.updateSeqID)
 	stat.DocCount = db.GetDocumentCount()
 	return stat
 }
 
 func (db *Database) Vacuum() error {
 	return db.writer.Vacuum()
-}
-
-func JSONMarshal(t interface{}) ([]byte, error) {
-	buffer := &bytes.Buffer{}
-	encoder := json.NewEncoder(buffer)
-	encoder.SetEscapeHTML(false)
-	err := encoder.Encode(t)
-	return buffer.Bytes(), err
 }
