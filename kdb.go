@@ -81,10 +81,8 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if !validatename(name) {
 		return errors.New("invalid_db_name")
 	}
-
-	db := NewDatabase(kdb.dbPath, kdb.viewPath)
-
-	err := db.Open(name, createIfNotExists)
+	db := NewDatabase(name, kdb.dbPath, kdb.viewPath)
+	err := db.Open(createIfNotExists)
 	if err != nil {
 		return err
 	}
@@ -133,6 +131,11 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	return db.PutDocument(newDoc)
 }
 
+func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) (*Document, error) {
+	doc.Deleted = true
+	return kdb.PutDocument(name, doc)
+}
+
 func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
 
 	db, ok := kdb.dbs[name]
@@ -140,26 +143,7 @@ func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (
 		return nil, errors.New("db_not_found")
 	}
 
-	return db.GetDocument(doc, includeDoc)
-}
-
-func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	db, ok := kdb.dbs[dbName]
-	if !ok {
-		return nil, errors.New("db_not_found")
-	}
-
-	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)
-	if err != nil {
-		return nil, err
-	}
-
-	return rs, nil
-}
-
-func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) (*Document, error) {
-	doc.Deleted = true
-	return kdb.PutDocument(name, doc)
+	return db.GetDocument(&doc.Revision, includeDoc)
 }
 
 func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
@@ -175,11 +159,21 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	if !ok {
 		return errors.New("db_not_found")
 	}
-	for _, x := range db.views {
-		err := x.Vacuum()
-		if err != nil {
-			return err
-		}
-	}
+
+	db.viewmgr.VacuumViews()
 	return db.Vacuum()
+}
+
+func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	db, ok := kdb.dbs[dbName]
+	if !ok {
+		return nil, errors.New("db_not_found")
+	}
+
+	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)
+	if err != nil {
+		return nil, err
+	}
+
+	return rs, nil
 }
