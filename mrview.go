@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -92,8 +91,6 @@ func (mgr *ViewManager) Initialize(db *Database) error {
 		}
 	}
 
-	fmt.Println(mgr.viewFiles)
-
 	return nil
 }
 
@@ -132,7 +129,6 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
 	view, ok := mgr.views[name]
-	fmt.Println(mgr.viewFiles)
 	if !ok {
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
@@ -189,7 +185,6 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 				nextSig         string
 				newViewFile     string
 			)
-			fmt.Println(vname, "update")
 			cddv := currentDDoc.Views[vname]
 			if cddv != nil {
 				currentSig = mgr.CalculateSignature(cddv)
@@ -212,11 +207,9 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 			}
 
 			if _, ok := mgr.viewFiles[newViewFile]; !ok {
-				fmt.Println("new ", newViewFile)
 				mgr.viewFiles[newViewFile] = make(map[string]bool)
 			}
 			if _, ok := mgr.viewFiles[currentViewFile]; !ok {
-				fmt.Println("cur ", currentViewFile)
 				mgr.viewFiles[newViewFile] = make(map[string]bool)
 			}
 
@@ -237,7 +230,6 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 			if _, ok := updatedViews[qualifiedViewName]; !ok {
 
 				currentViewFile := mgr.dbName + "$" + mgr.CalculateSignature(cddv)
-				fmt.Println(currentViewFile, qualifiedViewName, "deleted")
 				delete(mgr.viewFiles[currentViewFile], qualifiedViewName)
 
 				if len(mgr.viewFiles[currentViewFile]) <= 0 {
@@ -420,7 +412,6 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 	tx, err := db.Begin()
 	defer tx.Rollback()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
