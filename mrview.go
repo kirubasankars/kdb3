@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -78,18 +79,20 @@ func (mgr *ViewManager) Initialize(db *Database) error {
 		for vname, ddocv := range ddoc.Views {
 			viewFile := mgr.dbName + "$" + mgr.CalculateSignature(ddocv)
 			qualifiedViewName := ddoc.ID + "$" + vname
-			if _, ok := mgr.viewFiles[viewFile]; ok {
-				mgr.viewFiles[viewFile][qualifiedViewName] = true
+			if _, ok := mgr.viewFiles[viewFile]; !ok {
+				mgr.viewFiles[viewFile] = make(map[string]bool)
 			}
+			(mgr.viewFiles[viewFile])[qualifiedViewName] = true
 		}
 	}
 
-	for fileName, ref := range mgr.viewFiles {
-		if len(ref) <= 0 {
-			delete(mgr.viewFiles, fileName)
-			os.Remove(filepath.Join(mgr.viewPath, fileName+dbExt))
+	for k, x := range mgr.viewFiles {
+		if len(x) <= 0 {
+			fmt.Println("no ref", k)
 		}
 	}
+
+	fmt.Println(mgr.viewFiles)
 
 	return nil
 }
@@ -129,6 +132,7 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
 	view, ok := mgr.views[name]
+	fmt.Println(mgr.viewFiles)
 	if !ok {
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
@@ -146,7 +150,11 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 		view = mgr.views[name]
 	}
 
-	if view != nil && !stale {
+	if view == nil {
+		return nil, errors.New("view_not_found")
+	}
+
+	if !stale {
 		err := view.Build(updateSeqNumber, updateSeqID)
 		if err != nil {
 			return nil, err
@@ -175,55 +183,51 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 		panic("invalid_design_document " + ddocID)
 	}
 
-	currentDDoc, ok := mgr.ddocs[ddocID]
-	if ok {
-		var updatedViews map[string]bool = make(map[string]bool)
-		for vname, nddv := range newDDoc.Views {
-			var (
-				currentSig      string
-				currentViewFile string
-				nextSig         string
-				newViewFile     string
-			)
+	var updatedViews map[string]bool = make(map[string]bool)
+	for vname, nddv := range newDDoc.Views {
+		var (
+			currentSig        string
+			currentViewFile   string
+			nextSig           string
+			nextViewFile      string
+			qualifiedViewName string = ddocID + "$" + vname
+		)
+		currentDDoc, ok := mgr.ddocs[ddocID]
+		if ok {
 			cddv := currentDDoc.Views[vname]
 			if cddv != nil {
 				currentSig = mgr.CalculateSignature(cddv)
 				currentViewFile = mgr.dbName + "$" + currentSig
 			}
-
-			nextSig = mgr.CalculateSignature(nddv)
-			newViewFile = mgr.dbName + "$" + nextSig
-			qualifiedViewName := ddocID + "$" + vname
-
-			if currentSig != nextSig {
-				if _, ok := mgr.views[qualifiedViewName]; ok {
-					mgr.views[qualifiedViewName].Close()
-					delete(mgr.views, qualifiedViewName)
-				}
-
-				if currentSig != "" {
-					delete(mgr.viewFiles[currentViewFile], qualifiedViewName)
-				}
-			}
-
-			if _, ok := mgr.viewFiles[newViewFile]; !ok {
-				mgr.viewFiles[newViewFile] = make(map[string]bool)
-			}
-			if _, ok := mgr.viewFiles[currentViewFile]; !ok {
-				mgr.viewFiles[newViewFile] = make(map[string]bool)
-			}
-
-			mgr.viewFiles[newViewFile][qualifiedViewName] = true
-
-			//To takecare old one
-			if currentViewFile != "" && len(mgr.viewFiles[currentViewFile]) <= 0 {
-				delete(mgr.viewFiles, currentViewFile)
-				os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
-			}
-
-			updatedViews[qualifiedViewName] = true
 		}
 
+		nextSig = mgr.CalculateSignature(nddv)
+		nextViewFile = mgr.dbName + "$" + nextSig
+
+		if _, ok := mgr.viewFiles[nextViewFile]; !ok {
+			mgr.viewFiles[nextViewFile] = make(map[string]bool)
+		}
+
+		mgr.viewFiles[nextViewFile][qualifiedViewName] = true
+
+		if currentSig != nextSig {
+			if _, ok := mgr.views[qualifiedViewName]; ok {
+				mgr.views[qualifiedViewName].Close()
+				delete(mgr.views, qualifiedViewName)
+			}
+		}
+
+		//To takecare old one
+		if currentViewFile != "" && len(mgr.viewFiles[currentViewFile]) <= 0 {
+			delete(mgr.viewFiles, currentViewFile)
+			os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+		}
+
+		updatedViews[qualifiedViewName] = true
+	}
+
+	currentDDoc, ok := mgr.ddocs[ddocID]
+	if ok {
 		//to takecare of missing ones
 		for vname, cddv := range currentDDoc.Views {
 			qualifiedViewName := ddocID + "$" + vname

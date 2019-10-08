@@ -14,6 +14,8 @@ func errorString(err error) string {
 		errString = "mismatched rev number"
 	case "doc_not_found":
 		errString = "document not found"
+	case "view_not_found":
+		errString = "view not found"
 	}
 
 	return errString

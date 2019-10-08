@@ -102,7 +102,6 @@ func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		docs = append(docs, doc)
 	}
 	return docs, nil
