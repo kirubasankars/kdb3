@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -86,13 +85,12 @@ func (mgr *ViewManager) Initialize(db *Database) error {
 		}
 	}
 
-	for k, x := range mgr.viewFiles {
+	for fileName, x := range mgr.viewFiles {
 		if len(x) <= 0 {
-			fmt.Println("no ref", k)
+			delete(mgr.viewFiles, fileName)
+			os.Remove(filepath.Join(mgr.viewPath, fileName+dbExt))
 		}
 	}
-
-	fmt.Println(mgr.viewFiles)
 
 	return nil
 }
@@ -132,7 +130,6 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
 	view, ok := mgr.views[name]
-	fmt.Println(mgr.viewFiles)
 	if !ok {
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {

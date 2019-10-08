@@ -31,6 +31,10 @@ func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber
 		return nil, errors.New("doc_not_found")
 	}
 
+	if doc.Deleted == true {
+		return &doc, errors.New("doc_not_found")
+	}
+
 	return &doc, nil
 }
 
@@ -42,6 +46,10 @@ func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, err
 
 	if doc.ID == "" {
 		return nil, errors.New("doc_not_found")
+	}
+
+	if doc.Deleted == true {
+		return &doc, errors.New("doc_not_found")
 	}
 
 	return &doc, nil
@@ -60,6 +68,10 @@ func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 		return nil, errors.New("doc_not_found")
 	}
 
+	if doc.Deleted == true {
+		return doc, errors.New("doc_not_found")
+	}
+
 	return doc, nil
 }
 
@@ -74,6 +86,10 @@ func (reader *DataBaseReader) GetDocumentByIDandRev(ID string, revNumber int, re
 
 	if doc.ID == "" {
 		return nil, errors.New("doc_not_found")
+	}
+
+	if doc.Deleted == true {
+		return doc, errors.New("doc_not_found")
 	}
 
 	return doc, nil

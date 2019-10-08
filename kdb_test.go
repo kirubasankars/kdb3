@@ -205,8 +205,8 @@ func TestDeleteDocument(t *testing.T) {
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1"}`))
 	doc, err = kdb.GetDocument("testdb", inputDoc, true)
-	if err != nil {
-		t.Error(err)
+	if err == nil || doc.Deleted == false {
+		t.Error("revision missing for deleted doc")
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","test":2}`))
