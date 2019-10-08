@@ -91,19 +91,14 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	return nil
 }
 
-func (kdb *KDBEngine) Close(name string) {
-	kdb.dbs[name].Close()
-}
-
 func (kdb *KDBEngine) Delete(name string) error {
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return errors.New("db_not_found")
 	}
 
-	kdb.Close(name)
-
 	delete(kdb.dbs, name)
+	db.Close()
 
 	list, err := ioutil.ReadDir(kdb.viewPath)
 	if err != nil {
@@ -112,15 +107,16 @@ func (kdb *KDBEngine) Delete(name string) error {
 
 	for idx := range list {
 		name := list[idx].Name()
-		if strings.HasPrefix(name, db.name+"$") {
+		if strings.HasPrefix(name, db.name+"$") && strings.HasSuffix(name, dbExt) {
 			os.Remove(filepath.Join(kdb.viewPath, name))
 		}
 	}
 
 	os.Remove(filepath.Join(kdb.dbPath, name+".db-shm"))
 	os.Remove(filepath.Join(kdb.dbPath, name+".db-wal"))
+	os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
 
-	return os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
+	return nil
 }
 
 func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
