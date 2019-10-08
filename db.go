@@ -77,7 +77,6 @@ func (db *Database) Close() error {
 	db.viewmgr.CloseViews()
 	db.writer.Close()
 	db.reader.Close()
-
 	return nil
 }
 
