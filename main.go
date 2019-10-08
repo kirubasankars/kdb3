@@ -152,17 +152,20 @@ func main() {
 		view := vars["view"]
 		selectName := vars["select"]
 		r.ParseForm()
-		fmt.Println(name, ddocID, view, selectName)
-		rs, _ := kdb.SelectView(name, ddocID, view, selectName, r.Form, false)
+		rs, err := kdb.SelectView(name, ddocID, view, selectName, r.Form, false)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			NotOK(err, w)
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
 		w.Write(rs)
-		w.Header().Set("Content-Type", "application/json")
 
 	}).Methods("GET", "POST")
 
 	router.HandleFunc("/{db}/_design/{ddocid}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		name := vars["db"]
+		db := vars["db"]
 		id := "_design/" + vars["ddocid"]
 		if r.Method == "GET" {
 			rev := r.FormValue("rev")
@@ -178,7 +181,7 @@ func main() {
 				return
 			}
 
-			rec, err := kdb.GetDocument(name, doc, true)
+			rec, err := kdb.GetDocument(db, doc, true)
 			if err != nil {
 				NotOK(err, w)
 				return
@@ -189,7 +192,29 @@ func main() {
 				w.Write([]byte("\n"))
 			}
 		}
-	}).Methods("GET", "POST")
+
+		if r.Method == "DELETE" {
+			r.ParseForm()
+			rev := r.FormValue("rev")
+			jsondoc := fmt.Sprintf(`{"_id" : "%s", "_rev": "%s"}`, id, rev)
+			fmt.Println(jsondoc, rev)
+			doc, err := ParseDocument([]byte(jsondoc))
+			if err != nil {
+				NotOK(err, w)
+				return
+			}
+
+			_, err = kdb.DeleteDocument(db, doc)
+			if err != nil {
+				NotOK(err, w)
+				return
+			}
+
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		}
+
+	}).Methods("GET", "DELETE")
 
 	router.HandleFunc("/{db}/{id}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -200,9 +225,9 @@ func main() {
 			rev := r.FormValue("rev")
 			var jsondoc string
 			if rev != "" {
-				jsondoc = `{"_id" : "` + id + `", "_rev": "` + rev + `"}`
+				jsondoc = fmt.Sprintf(`{"_id" : "%s", "_rev": "%s"}`, id, rev)
 			} else {
-				jsondoc = `{"_id" : "` + id + `"}`
+				jsondoc = fmt.Sprintf(`{"_id" : "%s"}`, id)
 			}
 			doc, err := ParseDocument([]byte(jsondoc))
 			if err != nil {
@@ -224,10 +249,10 @@ func main() {
 		}
 		if r.Method == "DELETE" {
 			rev := r.FormValue("rev")
-			if rev != "" {
+			if rev == "" {
 				rev = r.Header.Get("If-Match")
 			}
-			jsondoc := `{"_id" : ` + id + `, "_rev": "` + rev + `"}`
+			jsondoc := fmt.Sprintf(`{"_id" : "%s", "_rev": "%s"}`, id, rev)
 			doc, err := ParseDocument([]byte(jsondoc))
 			if err != nil {
 				NotOK(err, w)
