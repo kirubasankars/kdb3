@@ -90,7 +90,7 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 		rev_number  INTEGER,
 		rev_id 		TEXT,
 		deleted 	BOOL,
-		PRIMARY KEY (doc_id, rev_number DESC, rev_id)
+		PRIMARY KEY (doc_id, rev_number DESC)
 	) WITHOUT ROWID;`
 
 	if _, err := tx.Exec(buildSQL); err != nil {

@@ -42,6 +42,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var (
 		id        string
 		rev       string
@@ -49,14 +50,18 @@ func ParseDocument(value []byte) (*Document, error) {
 		revID     string
 		deleted   bool
 	)
+
 	if v.Exists("_id") {
 		id = strings.ReplaceAll(v.Get("_id").String(), "\"", "")
-	} else {
+	}
+
+	/* 	else {
 		id = SequentialUUID()
-		v.Set("_id", fastjson.MustParse("\""+id+"\""))
+		v.Set("_id", fastjson.MustParse(fmt.Sprintf(`"%s"`, id)))
 		var b []byte
 		value = v.MarshalTo(b)
-	}
+	} */
+
 	if v.Exists("_rev") {
 		rev = v.Get("_rev").String()
 	} else {
@@ -94,11 +99,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	var b []byte
 	value = v.MarshalTo(b)
 
-	doc := &Document{}
-	doc.ID = id
-	doc.RevNumber = revNumber
-	doc.RevID = revID
-	doc.Deleted = deleted
-	doc.Data = value
+	doc := &Document{Revision: Revision{ID: id, RevNumber: revNumber, RevID: revID, Deleted: deleted}, Data: value}
+
 	return doc, nil
 }

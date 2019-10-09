@@ -14,13 +14,13 @@ type Database struct {
 	updateSeqNumber int
 	updateSeqID     string
 
-	dbPath string
-	reader *DataBaseReader
-	writer *DataBaseWriter
-	mux    sync.Mutex
-	seqGen *SequenceGenarator
-
-	viewmgr *ViewManager
+	dbPath    string
+	reader    *DataBaseReader
+	writer    *DataBaseWriter
+	mux       sync.Mutex
+	changeSeq *ChangeSequenceGenarator
+	idSeq     *IDSequenceGenarator
+	viewmgr   *ViewManager
 }
 
 func NewDatabase(name, dbPath, viewPath string) *Database {
@@ -55,7 +55,8 @@ func (db *Database) Open(createIfNotExists bool) error {
 	db.writer.Commit()
 
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
-	db.seqGen = NewSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
+	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
+	db.idSeq = NewSequenceIDGenarator()
 
 	viewmgr := db.viewmgr
 	if createIfNotExists {
@@ -89,6 +90,10 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	defer writer.Rollback()
 
+	if newDoc.ID == "" {
+		newDoc.ID = db.idSeq.Next()
+	}
+
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
 	if err != nil && err.Error() != "doc_not_found" {
 		return nil, err
@@ -120,7 +125,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.mux.Lock()
 
-	updateSeqNumber, updateSeqID := db.seqGen.Next()
+	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
 	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
 		return nil, err

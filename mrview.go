@@ -183,34 +183,24 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 	var updatedViews map[string]bool = make(map[string]bool)
 	for vname, nddv := range newDDoc.Views {
 		var (
-			currentSig        string
 			currentViewFile   string
-			nextSig           string
-			nextViewFile      string
+			newViewFile       string
 			qualifiedViewName string = ddocID + "$" + vname
 		)
-		currentDDoc, ok := mgr.ddocs[ddocID]
-		if ok {
-			cddv := currentDDoc.Views[vname]
-			if cddv != nil {
-				currentSig = mgr.CalculateSignature(cddv)
-				currentViewFile = mgr.dbName + "$" + currentSig
-			}
+		newViewFile = mgr.dbName + "$" + mgr.CalculateSignature(nddv)
+		if _, ok := mgr.viewFiles[newViewFile]; !ok {
+			mgr.viewFiles[newViewFile] = make(map[string]bool)
+		}
+		mgr.viewFiles[newViewFile][qualifiedViewName] = true
+
+		if _, ok := mgr.views[qualifiedViewName]; ok {
+			mgr.views[qualifiedViewName].Close()
+			delete(mgr.views, qualifiedViewName)
 		}
 
-		nextSig = mgr.CalculateSignature(nddv)
-		nextViewFile = mgr.dbName + "$" + nextSig
-
-		if _, ok := mgr.viewFiles[nextViewFile]; !ok {
-			mgr.viewFiles[nextViewFile] = make(map[string]bool)
-		}
-
-		mgr.viewFiles[nextViewFile][qualifiedViewName] = true
-
-		if currentSig != nextSig {
-			if _, ok := mgr.views[qualifiedViewName]; ok {
-				mgr.views[qualifiedViewName].Close()
-				delete(mgr.views, qualifiedViewName)
+		if currentDDoc, ok := mgr.ddocs[ddocID]; ok {
+			if cddv, _ := currentDDoc.Views[vname]; cddv != nil {
+				currentViewFile = mgr.dbName + "$" + mgr.CalculateSignature(cddv)
 			}
 		}
 
