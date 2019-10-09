@@ -24,7 +24,7 @@ func NotOK(err error, w http.ResponseWriter) {
 	case err.Error() == "db_exists" || err.Error() == "invalid_db_name" || err.Error() == "mismatched_rev":
 		statusCode = http.StatusPreconditionFailed
 		reason = errorString(err)
-	case err.Error() == "db_not_found" || err.Error() == "doc_not_found":
+	case err.Error() == "db_not_found" || err.Error() == "doc_not_found" || err.Error() == "view_not_found":
 		statusCode = http.StatusNotFound
 		reason = errorString(err)
 	}
@@ -181,14 +181,14 @@ func main() {
 				return
 			}
 
-			rec, err := kdb.GetDocument(db, doc, true)
+			doc, err = kdb.GetDocument(db, doc, true)
 			if err != nil {
 				NotOK(err, w)
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
-			w.Write(rec.Data)
-			if len(rec.Data) > 0 {
+			w.Write(doc.Data)
+			if len(doc.Data) > 0 {
 				w.Write([]byte("\n"))
 			}
 		}

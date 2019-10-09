@@ -5,7 +5,7 @@ import (
 )
 
 func TestNewSequence(t *testing.T) {
-	seqGen := NewSequenceGenarator(136, 0, "")
+	seqGen := NewChangeSequenceGenarator(136, 0, "")
 	currentSeqNumber, currentSeqID := seqGen.Next()
 	i := 0
 	for {
