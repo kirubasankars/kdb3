@@ -19,8 +19,10 @@ type Database struct {
 	writer    *DataBaseWriter
 	mux       sync.Mutex
 	changeSeq *ChangeSequenceGenarator
-	idSeq     *IDSequenceGenarator
+	idSeq     *SequenceUUIDGenarator
 	viewmgr   *ViewManager
+
+	versionEnabled int
 }
 
 func NewDatabase(name, dbPath, viewPath string) *Database {
@@ -56,7 +58,8 @@ func (db *Database) Open(createIfNotExists bool) error {
 
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
-	db.idSeq = NewSequenceIDGenarator()
+	db.idSeq = NewSequenceUUIDGenarator()
+	db.versionEnabled = -1
 
 	viewmgr := db.viewmgr
 	if createIfNotExists {
@@ -83,12 +86,6 @@ func (db *Database) Close() error {
 
 func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	writer := db.writer
-	err := writer.Begin()
-	if err != nil {
-		return nil, err
-	}
-
-	defer writer.Rollback()
 
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
@@ -109,9 +106,22 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	newDoc.CalculateRev()
 
+	db.mux.Lock()
+
+	err = writer.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	defer writer.Rollback()
+
+	updateSeqNumber, updateSeqID := db.changeSeq.Next()
+
 	if newDoc.Deleted {
-		if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
-			return nil, err
+		if db.versionEnabled == -1 {
+			if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		if err := writer.InsertDocument(newDoc.ID, newDoc.Data); err != nil {
@@ -122,10 +132,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	if err := writer.InsertRevision(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
 		return nil, err
 	}
-
-	db.mux.Lock()
-
-	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
 	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
 		return nil, err
