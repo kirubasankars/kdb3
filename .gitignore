@@ -13,3 +13,6 @@
 kdb3
 data
 data/**
+*.o
+*.db
+kdb

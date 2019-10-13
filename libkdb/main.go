@@ -1,0 +1,50 @@
+package main
+
+/*
+#cgo CFLAGS: -std=gnu99
+#cgo CFLAGS: -DSQLITE_THREADSAFE=0
+#cgo CFLAGS: -DSQLITE_DEBUG
+#cgo CFLAGS: -DHAVE_USLEEP=1
+#cgo CFLAGS: -DSQLITE_ENABLE_JSON1
+#cgo CFLAGS: -DSQLITE_TRACE_SIZE_LIMIT=15
+#cgo CFLAGS: -DSQLITE_DISABLE_LFS
+#cgo CFLAGS: -DSQLITE_DISABLE_FTS3_UNICODE
+#cgo CFLAGS: -DSQLITE_DISABLE_LTS4_DEFERRED
+#cgo CFLAGS: -DSQLITE_OMIT_DEPRECATED
+#cgo CFLAGS: -DSQLITE_OMIT_DECLTYPE
+#cgo CFLAGS: -DSQLITE_OMIT_PROGRESS_CALLBACK
+#cgo CFLAGS: -DSQLITE_OMIT_SHARED_CACHE
+#cgo CFLAGS: -DSQLITE_OMIT_AUTOINCREMENT
+#cgo CFLAGS: -DSQLITE_OMIT_AUTORESET
+#cgo CFLAGS: -DSQLITE_OMIT_AUTOVACUUM
+#cgo CFLAGS: -DSQLITE_OMIT_COMPLETE
+#cgo CFLAGS: -DSQLITE_OMIT_FOREIGN_KEY
+#cgo CFLAGS: -DSQLITE_OMIT_GET_TABLE
+#cgo CFLAGS: -DSQLITE_OMIT_TRUNCATE_OPTIMIZATION
+#cgo CFLAGS: -DSQLITE_OMIT_TRACE
+#cgo CFLAGS: -DSQLITE_OMIT_INCRBLOB
+#cgo CFLAGS: -DSQLITE_DISABLE_INTRINSIC
+#cgo CFLAGS: -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+#cgo CFLAGS: -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT
+
+#include <stdio.h>
+#include <stdlib.h>
+#include "sqlite3.h"
+#include "kdb.h"
+*/
+import "C"
+import (
+	"fmt"
+	"unsafe"
+)
+
+func main() {
+	var db *C.kouchdb
+
+	dname := C.CString("kiruba.db")
+	defer C.free(unsafe.Pointer(dname))
+	C.kouchdb_open(dname, &db)
+	v := C.kouchdb_version(db)
+	fmt.Println(C.GoString(v))
+	C.kouchdb_close(db)
+}

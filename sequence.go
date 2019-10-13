@@ -81,7 +81,7 @@ func (seq *ChangeSequenceGenarator) Next() (int, string) {
 	return seq.number, string(v)
 }
 
-type IDSequenceGenarator struct {
+type SequenceUUIDGenarator struct {
 	charSet []byte
 	len     int
 
@@ -92,8 +92,8 @@ type IDSequenceGenarator struct {
 	syncLock  sync.Mutex
 }
 
-func NewSequenceIDGenarator() *IDSequenceGenarator {
-	seq := &IDSequenceGenarator{}
+func NewSequenceUUIDGenarator() *SequenceUUIDGenarator {
+	seq := &SequenceUUIDGenarator{}
 	seq.charSet = []byte("0123456789abcdefghijklmnopqrstuvwxyz")
 	seq.len = 6
 	mrand.Seed(1)
@@ -104,7 +104,7 @@ func NewSequenceIDGenarator() *IDSequenceGenarator {
 	return seq
 }
 
-func (seq *IDSequenceGenarator) Next() string {
+func (seq *SequenceUUIDGenarator) Next() string {
 	seq.syncLock.Lock()
 
 	reachedEnd := false

@@ -211,6 +211,7 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 		}
 
 		updatedViews[qualifiedViewName] = true
+
 	}
 
 	currentDDoc, ok := mgr.ddocs[ddocID]
@@ -232,6 +233,18 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 	}
 
 	mgr.ddocs[ddocID] = newDDoc
+
+	return mgr.ValidateDDoc(newDDoc)
+}
+
+func (mgr *ViewManager) ValidateDDoc(ddoc *DesignDocument) error {
+
+	for _, v := range ddoc.Views {
+		for _, x := range v.Setup {
+			//fmt.Println(x)
+			_ = x
+		}
+	}
 
 	return nil
 }
