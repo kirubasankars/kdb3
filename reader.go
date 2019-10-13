@@ -21,7 +21,7 @@ func (reader *DataBaseReader) Open(path string) error {
 func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber int, revID string) (*Document, error) {
 	doc := Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, revNumber, revID)
+	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, revNumber, revID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber
 func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
 	doc := Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM revisions WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID)
+	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID)
 	row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
 
 	if doc.ID == "" {
@@ -58,7 +58,7 @@ func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, err
 func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM revisions WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID, ID)
+	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID, ID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 func (reader *DataBaseReader) GetDocumentByIDandRev(ID string, revNumber int, revID string) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM revisions WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, ID, revNumber, revID)
+	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, ID, revNumber, revID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
 	if err != nil {
 		return nil, err

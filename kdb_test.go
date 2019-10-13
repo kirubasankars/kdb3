@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
 func TestNewKDBEngine(t *testing.T) {
-	kdb, _ := NewKDB()
+	kdb, err := NewKDB()
 	if kdb.dbs == nil {
+		fmt.Println(err)
 		t.Failed()
 	}
 

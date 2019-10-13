@@ -21,8 +21,6 @@ type Database struct {
 	changeSeq *ChangeSequenceGenarator
 	idSeq     *SequenceUUIDGenarator
 	viewmgr   *ViewManager
-
-	versionEnabled int
 }
 
 func NewDatabase(name, dbPath, viewPath string) *Database {
@@ -59,7 +57,6 @@ func (db *Database) Open(createIfNotExists bool) error {
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
 	db.idSeq = NewSequenceUUIDGenarator()
-	db.versionEnabled = -1
 
 	viewmgr := db.viewmgr
 	if createIfNotExists {
@@ -118,22 +115,16 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
 	if newDoc.Deleted {
-		if db.versionEnabled == -1 {
-			if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
-				return nil, err
-			}
+		if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
+			return nil, err
 		}
 	} else {
-		if err := writer.InsertDocument(newDoc.ID, newDoc.Data); err != nil {
+		if err := writer.InsertDocument(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted, newDoc.Data); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := writer.InsertRevision(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
-		return nil, err
-	}
-
-	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
+	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
 		return nil, err
 	}
 

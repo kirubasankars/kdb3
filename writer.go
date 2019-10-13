@@ -42,25 +42,17 @@ func (writer *DataBaseWriter) DeleteDocumentByID(ID string) error {
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertDocument(ID string, data []byte) error {
+func (writer *DataBaseWriter) InsertDocument(ID string, revNumber int, revID string, deleted bool, data []byte) error {
 	tx := writer.tx
-	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, data) VALUES(?, ?)", ID, string(data)); err != nil {
+	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, rev_number, rev_id, deleted, data) VALUES(?, ?, ?, ?, ?)", ID, revNumber, revID, deleted, string(data)); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertRevision(ID string, RevNumber int, RevID string, Deleted bool) error {
+func (writer *DataBaseWriter) InsertChanges(UpdateSeqNumber int, UpdateSeqID string, ID string, RevNumber int, RevID string, Deleted bool) error {
 	tx := writer.tx
-	if _, err := tx.Exec("INSERT INTO revisions (doc_id, rev_number, rev_id, deleted) VALUES(?, ?, ?, ?)", ID, RevNumber, RevID, Deleted); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (writer *DataBaseWriter) InsertChange(UpdateSeqNumber int, UpdateSeqID string, ID string, RevNumber int, RevID string, Deleted bool) error {
-	tx := writer.tx
-	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, rev_number, rev_id) VALUES(?, ?, ?, ?, ?)", UpdateSeqNumber, UpdateSeqID, ID, RevNumber, RevID); err != nil {
+	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, rev_number, rev_id, deleted) VALUES(?, ?, ?, ?, ?, ?)", UpdateSeqNumber, UpdateSeqID, ID, RevNumber, RevID, Deleted); err != nil {
 		return err
 	}
 	return nil
@@ -72,6 +64,9 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 	buildSQL := `
 	CREATE TABLE IF NOT EXISTS documents (
 		doc_id 		TEXT,
+		rev_number  INTEGER, 
+		rev_id 		TEXT,
+		deleted		BOOL,
 		data 		TEXT,
 		PRIMARY KEY (doc_id)
 	) WITHOUT ROWID;
@@ -82,16 +77,12 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 		doc_id 		TEXT, 
 		rev_number  INTEGER, 
 		rev_id 		TEXT, 
+		deleted     BOOL,
 		PRIMARY KEY (seq_number, seq_id)
 	) WITHOUT ROWID;
-
-	CREATE TABLE IF NOT EXISTS revisions (
-		doc_id 		TEXT,
-		rev_number  INTEGER,
-		rev_id 		TEXT,
-		deleted 	BOOL,
-		PRIMARY KEY (doc_id, rev_number DESC)
-	) WITHOUT ROWID;`
+	
+	CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
+		(doc_id, rev_number, rev_id, deleted);`
 
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
