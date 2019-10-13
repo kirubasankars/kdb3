@@ -16,3 +16,5 @@ data/**
 *.o
 *.db
 kdb
+
+**/.DS_Store
