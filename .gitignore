@@ -18,3 +18,5 @@ data/**
 kdb
 
 **/.DS_Store
+
+share/www/ace/**

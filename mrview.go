@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type ViewManager struct {
@@ -23,6 +24,8 @@ type ViewManager struct {
 	ddocs    map[string]*DesignDocument
 
 	viewFiles map[string]map[string]bool
+
+	rwmux sync.RWMutex
 }
 
 func (mgr *ViewManager) SetupViews(db *Database) error {
@@ -55,6 +58,12 @@ func (mgr *ViewManager) SetupViews(db *Database) error {
 }
 
 func (mgr *ViewManager) Initialize(db *Database) error {
+
+	mgr.rwmux = sync.RWMutex{}
+
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+
 	docs, _ := db.GetAllDesignDocuments()
 	for _, x := range docs {
 		ddoc := &DesignDocument{}
@@ -111,6 +120,14 @@ func (mgr *ViewManager) ListViewFiles() ([]string, error) {
 }
 
 func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+
+	if _, ok := mgr.views[ddoc.ID+"$"+viewName]; ok {
+		return errors.New("view_exists")
+	}
+
 	dbFilePath := filepath.Join(mgr.dbPath, mgr.dbName+dbExt)
 	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
@@ -128,10 +145,14 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 }
 
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+
 	name := ddocID + "$" + viewName
+	mgr.rwmux.RLock()
 	view, ok := mgr.views[name]
+	mgr.rwmux.RUnlock()
 
 	if !ok {
+
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
 			return nil, errors.New("doc_not_found")
@@ -145,7 +166,11 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 		if err != nil {
 			return nil, err
 		}
+
+		mgr.rwmux.RLock()
 		view = mgr.views[name]
+		mgr.rwmux.RUnlock()
+
 	}
 
 	if view == nil {
@@ -165,18 +190,26 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 }
 
 func (mgr *ViewManager) CloseViews() {
+	mgr.rwmux.RLock()
+	defer mgr.rwmux.RUnlock()
 	for _, v := range mgr.views {
 		v.Close()
 	}
 }
 
 func (mgr *ViewManager) VacuumViews() {
+	mgr.rwmux.RLock()
+	defer mgr.rwmux.RUnlock()
 	for _, v := range mgr.views {
 		v.Vacuum()
 	}
 }
 
 func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error {
+
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+
 	newDDoc := &DesignDocument{}
 	err := json.Unmarshal(value, newDDoc)
 	if err != nil {
