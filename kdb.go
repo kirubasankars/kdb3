@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -17,13 +18,14 @@ type KDBEngine struct {
 	dbPath   string
 	viewPath string
 
-	dbs map[string]*Database
+	dbs   map[string]*Database
+	rwmux sync.RWMutex
 }
 
 func NewKDB() (*KDBEngine, error) {
 	kdb := new(KDBEngine)
-
 	kdb.dbs = make(map[string]*Database)
+	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
 
@@ -55,7 +57,6 @@ func NewKDB() (*KDBEngine, error) {
 }
 
 func (kdb *KDBEngine) ListDataBases() ([]string, error) {
-
 	list, err := ioutil.ReadDir(kdb.dbPath)
 	if err != nil {
 		return nil, err
@@ -81,6 +82,14 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if !validatename(name) {
 		return errors.New("invalid_db_name")
 	}
+
+	kdb.rwmux.Lock()
+	defer kdb.rwmux.Unlock()
+
+	if _, ok := kdb.dbs[name]; ok {
+		return errors.New("db_exists")
+	}
+
 	db := NewDatabase(name, kdb.dbPath, kdb.viewPath)
 	err := db.Open(createIfNotExists)
 	if err != nil {
@@ -92,6 +101,8 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 }
 
 func (kdb *KDBEngine) Delete(name string) error {
+	kdb.rwmux.Lock()
+	defer kdb.rwmux.Unlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return errors.New("db_not_found")
@@ -120,6 +131,8 @@ func (kdb *KDBEngine) Delete(name string) error {
 }
 
 func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -133,7 +146,8 @@ func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) (*Document, err
 }
 
 func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
-
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -143,6 +157,8 @@ func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (
 }
 
 func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -151,6 +167,8 @@ func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 }
 
 func (kdb *KDBEngine) Vacuum(name string) error {
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return errors.New("db_not_found")
@@ -161,6 +179,8 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[dbName]
 	if !ok {
 		return nil, errors.New("db_not_found")
