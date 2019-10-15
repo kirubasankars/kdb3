@@ -48,6 +48,7 @@ func main() {
 	router.PathPrefix("/_utils").Handler(http.StripPrefix("/_utils", http.FileServer(http.Dir("./share/www/"))))
 
 	router.HandleFunc("/_all_dbs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "GET" {
 			list, err := kdb.ListDataBases()
 			if err != nil {
@@ -66,6 +67,8 @@ func main() {
 	router.HandleFunc("/{db}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		name := vars["db"]
+
+		w.Header().Set("Content-Type", "application/json")
 
 		if r.Method == "GET" {
 			if err := kdb.Open(name, false); err != nil {
@@ -133,6 +136,7 @@ func main() {
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}).Methods("POST")
 
@@ -141,8 +145,8 @@ func main() {
 		name := vars["db"]
 		rs, _ := kdb.SelectView(name, "_design/_views", "_all_docs", "default", r.Form, false)
 		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
 		w.Write(rs)
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	}).Methods("GET", "POST")
 
 	router.HandleFunc("/{db}/_design/{ddocid}/{view}/{select}", func(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +171,7 @@ func main() {
 		vars := mux.Vars(r)
 		db := vars["db"]
 		id := "_design/" + vars["ddocid"]
+		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "GET" {
 			rev := r.FormValue("rev")
 			var jsondoc string
@@ -220,7 +225,7 @@ func main() {
 		vars := mux.Vars(r)
 		db := vars["db"]
 		id := vars["id"]
-
+		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "GET" {
 			rev := r.FormValue("rev")
 			var jsondoc string

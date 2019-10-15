@@ -130,6 +130,7 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	name := ddocID + "$" + viewName
 	view, ok := mgr.views[name]
+
 	if !ok {
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
@@ -158,7 +159,9 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 		}
 	}
 
-	return view.Select(selectName, values), nil
+	//fmt.Println(mgr.viewFiles, mgr.views)
+
+	return view.Select(selectName, values)
 }
 
 func (mgr *ViewManager) CloseViews() {
@@ -179,8 +182,7 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 	if err != nil {
 		panic("invalid_design_document " + ddocID)
 	}
-
-	var updatedViews map[string]bool = make(map[string]bool)
+	var updatedViews map[string]string = make(map[string]string)
 	for vname, nddv := range newDDoc.Views {
 		var (
 			currentViewFile   string
@@ -210,7 +212,7 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 			os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
 		}
 
-		updatedViews[qualifiedViewName] = true
+		updatedViews[qualifiedViewName] = newViewFile
 
 	}
 
@@ -219,9 +221,8 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 		//to takecare of missing ones
 		for vname, cddv := range currentDDoc.Views {
 			qualifiedViewName := ddocID + "$" + vname
-			if _, ok := updatedViews[qualifiedViewName]; !ok {
-
-				currentViewFile := mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+			currentViewFile := mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+			if newViewFile, ok := updatedViews[qualifiedViewName]; !ok || newViewFile != currentViewFile {
 				delete(mgr.viewFiles[currentViewFile], qualifiedViewName)
 
 				if len(mgr.viewFiles[currentViewFile]) <= 0 {
@@ -231,6 +232,8 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 			}
 		}
 	}
+
+	//fmt.Println(mgr.viewFiles, mgr.views)
 
 	mgr.ddocs[ddocID] = newDDoc
 
@@ -474,7 +477,7 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 	return nil
 }
 
-func (view *View) Select(name string, values url.Values) []byte {
+func (view *View) Select(name string, values url.Values) ([]byte, error) {
 
 	var rs string
 	selectStmt := view.selectScripts[name]
@@ -489,9 +492,9 @@ func (view *View) Select(name string, values url.Values) []byte {
 	row := view.con.QueryRow(selectStmt.text, pValues...)
 	err := row.Scan(&rs)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return []byte(rs)
+	return []byte(rs), nil
 }
 
 func (view *View) Vacuum() error {
