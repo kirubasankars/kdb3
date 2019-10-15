@@ -149,6 +149,15 @@ func main() {
 		w.Write(rs)
 	}).Methods("GET", "POST")
 
+	router.HandleFunc("/{db}/_changes", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		name := vars["db"]
+		rs, _ := kdb.Changes(name)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write(rs)
+	}).Methods("GET", "POST")
+
 	router.HandleFunc("/{db}/_design/{ddocid}/{view}/{select}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		name := vars["db"]

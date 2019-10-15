@@ -86,8 +86,8 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	kdb.rwmux.Lock()
 	defer kdb.rwmux.Unlock()
 
-	if _, ok := kdb.dbs[name]; ok {
-		return errors.New("db_exists")
+	if _, ok := kdb.dbs[name]; ok && !createIfNotExists {
+		return nil
 	}
 
 	db := NewDatabase(name, kdb.dbPath, kdb.viewPath)
@@ -176,6 +176,17 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 
 	db.viewmgr.VacuumViews()
 	return db.Vacuum()
+}
+
+func (kdb *KDBEngine) Changes(name string) ([]byte, error) {
+	kdb.rwmux.RLock()
+	defer kdb.rwmux.RUnlock()
+	db, ok := kdb.dbs[name]
+	if !ok {
+		return nil, errors.New("db_not_found")
+	}
+
+	return db.GetChanges(), nil
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {

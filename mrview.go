@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -277,7 +278,6 @@ func (mgr *ViewManager) ValidateDDoc(ddoc *DesignDocument) error {
 
 	for _, v := range ddoc.Views {
 		for _, x := range v.Setup {
-			//fmt.Println(x)
 			_ = x
 		}
 	}
@@ -420,6 +420,7 @@ func (view *View) Open() error {
 
 	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + "' as docsdb;")
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
