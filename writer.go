@@ -82,19 +82,7 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 	) WITHOUT ROWID;
 	
 	CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
-		(doc_id, rev_number, rev_id, deleted);
-		
-	CREATE VIEW IF NOT EXISTS latest_documents (seq_number, seq_id, doc_id, rev_number, rev_id, rev, deleted, data) AS 
-		WITH 
-			latest_revs (doc_id, rev_number, rev_id, seq_number, seq_id) AS
-			(	
-				select doc_id, max(rev_number) as rev_number, rev_id, seq_number, seq_id from changes group by doc_id
-			),
-			latest_docs (seq_number, seq_id, doc_id, rev_number, rev_id, rev, deleted, data) AS
-			(
-				SELECT seq_number, seq_id, doc_id, rev_number, r.rev_id, printf('%d-%s',rev_number, r.rev_id) as rev, deleted, data FROM latest_revs r LEFT JOIN documents d USING (doc_id, rev_number)  WHERE d.deleted IS NOT NULL 
-			)
-			SELECT * FROM latest_docs;`
+		(doc_id, rev_number, rev_id, deleted);`
 
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err

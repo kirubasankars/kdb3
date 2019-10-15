@@ -23,7 +23,7 @@ func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber
 
 	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, revNumber, revID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
-	if err != nil {
+	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
 
@@ -42,7 +42,10 @@ func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, err
 	doc := Document{}
 
 	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID)
-	row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
+	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
+	if err != nil && err.Error() != "sql: no rows in result set" {
+		return nil, err
+	}
 
 	if doc.ID == "" {
 		return nil, errors.New("doc_not_found")
@@ -60,7 +63,7 @@ func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 
 	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID, ID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
-	if err != nil {
+	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
 
@@ -80,7 +83,7 @@ func (reader *DataBaseReader) GetDocumentByIDandRev(ID string, revNumber int, re
 
 	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, ID, revNumber, revID)
 	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
-	if err != nil {
+	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
 
@@ -121,6 +124,31 @@ func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
 		docs = append(docs, doc)
 	}
 	return docs, nil
+}
+
+func (db *DataBaseReader) GetChanges() []byte {
+	sqlGetChanges := `
+		SELECT 
+			json_object("results",json_group_array(json(v))) 
+		FROM (
+				SELECT 
+					json_object(
+									"seq",printf("%d-%s",seq_number,max(seq_id)),
+									"id", doc_id, 
+									"changes", (SELECT json_group_array(revs) from (SELECT printf("%d-%s",rev_number, rev_id) as revs FROM changes where doc_id = c.doc_id ORDER by seq_id DESC))
+								)  as v FROM changes c GROUP BY doc_id ORDER by seq_id DESC
+			 )`
+	row := db.conn.QueryRow(sqlGetChanges)
+	var (
+		changes []byte
+	)
+
+	err := row.Scan(&changes)
+	if err != nil {
+		panic(err)
+	}
+
+	return changes
 }
 
 func (db *DataBaseReader) GetLastUpdateSequence() (int, string) {

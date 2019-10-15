@@ -187,6 +187,10 @@ func (db *Database) GetLastUpdateSequence() (int, string) {
 	return db.reader.GetLastUpdateSequence()
 }
 
+func (db *Database) GetChanges() []byte {
+	return db.reader.GetChanges()
+}
+
 func (db *Database) GetDocumentCount() int {
 	return db.reader.GetDocumentCount()
 }
