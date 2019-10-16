@@ -148,9 +148,18 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
 	name := ddocID + "$" + viewName
+
 	mgr.rwmux.RLock()
+	unlocked := false
+	runlock := func() {
+		if !unlocked {
+			mgr.rwmux.RUnlock()
+		}
+		unlocked = true
+	}
+	defer runlock()
+
 	view, ok := mgr.views[name]
-	mgr.rwmux.RUnlock()
 
 	if !ok {
 
@@ -163,15 +172,16 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 			return nil, errors.New("view_not_found")
 		}
 
+		runlock()
 		err := mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
 
 		mgr.rwmux.RLock()
-		view = mgr.views[name]
-		mgr.rwmux.RUnlock()
+		defer mgr.rwmux.RUnlock()
 
+		view = mgr.views[name]
 	}
 
 	if view == nil {
