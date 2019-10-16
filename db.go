@@ -84,6 +84,9 @@ func (db *Database) Close() error {
 func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	writer := db.writer
 
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
 	}
@@ -102,8 +105,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	newDoc.CalculateRev()
-
-	db.mux.Lock()
 
 	err = writer.Begin()
 	if err != nil {
@@ -134,8 +135,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.updateSeqNumber = updateSeqNumber
 	db.updateSeqID = updateSeqID
-
-	db.mux.Unlock()
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
 		db.viewmgr.UpdateDesignDocument(newDoc.ID, newDoc.Data)
