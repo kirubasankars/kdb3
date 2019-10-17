@@ -84,9 +84,6 @@ func (db *Database) Close() error {
 func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	writer := db.writer
 
-	db.mux.Lock()
-	defer db.mux.Unlock()
-
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
 	}
@@ -106,14 +103,18 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	newDoc.CalculateRev()
 
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
 	err = writer.Begin()
 	if err != nil {
 		return nil, err
 	}
 
 	defer writer.Rollback()
-	newDoc.RevNumber = 1
+
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
+
 	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
 			return nil, errors.New("doc_conflict")
