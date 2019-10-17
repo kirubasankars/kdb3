@@ -37,3 +37,16 @@ func getMacAddr() (addr string) {
 func formatRev(revNumber int, revID string) string {
 	return fmt.Sprintf("%d-%s", revNumber, revID)
 }
+
+func formatDocString(id string, rev string, deleted bool) string {
+	if rev != "" {
+		if deleted {
+			return fmt.Sprintf(`{"_id" :"%s","_rev":"%s","deleted":true}`, id, rev)
+		}
+		return fmt.Sprintf(`{"_id":"%s","_rev":"%s"}`, id, rev)
+	}
+	if deleted {
+		return fmt.Sprintf(`{"_id" :"%s","deleted":true}`, id)
+	}
+	return fmt.Sprintf(`{"_id":"%s"}`, id)
+}
