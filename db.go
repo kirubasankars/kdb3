@@ -97,7 +97,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	if currentDoc != nil && !currentDoc.Deleted && (currentDoc.RevNumber != newDoc.RevNumber || currentDoc.RevID != newDoc.RevID) {
-		return nil, errors.New("mismatched_rev")
+		return nil, errors.New("doc_conflict")
 	}
 
 	if currentDoc != nil && currentDoc.Deleted {
@@ -112,8 +112,14 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	defer writer.Rollback()
-
+	newDoc.RevNumber = 1
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
+	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
+		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
+			return nil, errors.New("doc_conflict")
+		}
+		return nil, err
+	}
 
 	if newDoc.Deleted {
 		if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
@@ -123,10 +129,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		if err := writer.InsertDocument(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted, newDoc.Data); err != nil {
 			return nil, err
 		}
-	}
-
-	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
-		return nil, err
 	}
 
 	if err := writer.Commit(); err != nil {

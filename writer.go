@@ -82,7 +82,10 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 	) WITHOUT ROWID;
 	
 	CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
-		(doc_id, rev_number, rev_id, deleted);`
+		(doc_id, rev_number, rev_id, deleted);
+		
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_revisions ON changes 
+		(doc_id, rev_number);`
 
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err

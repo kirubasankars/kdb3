@@ -10,8 +10,8 @@ func errorString(err error) string {
 		errString = "database is not found"
 	case "invalid_db_name":
 		errString = "invalid database name"
-	case "mismatched_rev":
-		errString = "mismatched rev number"
+	case "doc_conflict":
+		errString = "document update conflict"
 	case "doc_not_found":
 		errString = "document not found"
 	case "view_not_found":

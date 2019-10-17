@@ -16,8 +16,11 @@ func NotOK(err error, w http.ResponseWriter) {
 	)
 
 	switch {
-	case err.Error() == "db_exists" || err.Error() == "invalid_db_name" || err.Error() == "mismatched_rev":
+	case err.Error() == "db_exists" || err.Error() == "invalid_db_name":
 		statusCode = http.StatusPreconditionFailed
+		reason = errorString(err)
+	case err.Error() == "doc_conflict":
+		statusCode = http.StatusConflict
 		reason = errorString(err)
 	case err.Error() == "db_not_found" || err.Error() == "doc_not_found" || err.Error() == "view_not_found":
 		statusCode = http.StatusNotFound

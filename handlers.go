@@ -106,7 +106,9 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	input.ID = docid
+	if docid != "" {
+		input.ID = docid
+	}
 	doc, err := kdb.PutDocument(db, input)
 	if err != nil {
 		NotOK(err, w)
