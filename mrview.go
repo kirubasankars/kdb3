@@ -177,7 +177,6 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 		if err != nil {
 			return nil, err
 		}
-
 		mgr.rwmux.RLock()
 		defer mgr.rwmux.RUnlock()
 
