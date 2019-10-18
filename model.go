@@ -14,9 +14,9 @@ type DesignDocumentView struct {
 }
 
 type DesignDocument struct {
-	ID    string                         `json:"_id"`
-	Rev   string                         `json:"_rev,omitempty"`
-	Views map[string]*DesignDocumentView `json:"views"`
+	ID      string                         `json:"_id"`
+	Version int                            `json:"_version,omitempty"`
+	Views   map[string]*DesignDocumentView `json:"views"`
 }
 
 type Query struct {

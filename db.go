@@ -93,15 +93,15 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	if currentDoc != nil && !currentDoc.Deleted && (currentDoc.RevNumber != newDoc.RevNumber || currentDoc.RevID != newDoc.RevID) {
+	if currentDoc != nil && !currentDoc.Deleted && currentDoc.Version != newDoc.Version {
 		return nil, errors.New("doc_conflict")
 	}
 
 	if currentDoc != nil && currentDoc.Deleted {
-		newDoc.RevNumber = currentDoc.RevNumber
+		newDoc.Version = currentDoc.Version
 	}
 
-	newDoc.CalculateRev()
+	newDoc.CalculateVersion()
 
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -115,7 +115,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
-	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted); err != nil {
+	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
 			return nil, errors.New("doc_conflict")
 		}
@@ -127,7 +127,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 			return nil, err
 		}
 	} else {
-		if err := writer.InsertDocument(newDoc.ID, newDoc.RevNumber, newDoc.RevID, newDoc.Deleted, newDoc.Data); err != nil {
+		if err := writer.InsertDocument(newDoc.ID, newDoc.Version, newDoc.Deleted, newDoc.Data); err != nil {
 			return nil, err
 		}
 	}
@@ -144,30 +144,27 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	doc := Document{
-		Revision: Revision{
-			ID:        newDoc.ID,
-			RevNumber: newDoc.RevNumber,
-			RevID:     newDoc.RevID,
-			Deleted:   newDoc.Deleted,
-		},
+		ID:      newDoc.ID,
+		Version: newDoc.Version,
+		Deleted: newDoc.Deleted,
 	}
 
 	return &doc, nil
 }
 
-func (db *Database) GetDocument(doc *Revision, includeData bool) (*Document, error) {
+func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.reader
 
 	if includeData {
-		if doc.RevNumber > 0 {
-			return reader.GetDocumentByIDandRev(doc.ID, doc.RevNumber, doc.RevID)
+		if doc.Version > 0 {
+			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
 		}
 		return reader.GetDocumentByID(doc.ID)
 
 	}
-	if doc.RevNumber > 0 {
-		return reader.GetDocumentRevisionByIDandRev(doc.ID, doc.RevNumber, doc.RevID)
+	if doc.Version > 0 {
+		return reader.GetDocumentRevisionByIDandVersion(doc.ID, doc.Version)
 	}
 	return reader.GetDocumentRevisionByID(doc.ID)
 }
@@ -200,7 +197,7 @@ func (db *Database) GetDocumentCount() int {
 func (db *Database) Stat() *DBStat {
 	stat := &DBStat{}
 	stat.DBName = db.name
-	stat.UpdateSeq = formatRev(db.updateSeqNumber, db.updateSeqID)
+	stat.UpdateSeq = formatSeq(db.updateSeqNumber, db.updateSeqID)
 	stat.DocCount = db.GetDocumentCount()
 	return stat
 }

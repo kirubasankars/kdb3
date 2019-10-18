@@ -10,26 +10,20 @@ import (
 )
 
 type Document struct {
-	Revision
-	Data []byte
+	ID      string
+	Version int
+	Deleted bool
+	Data    []byte
 }
 
-type Revision struct {
-	ID        string
-	RevNumber int
-	RevID     string
-	Deleted   bool
-}
+func (doc *Document) CalculateVersion() {
 
-func (doc *Document) CalculateRev() {
-
-	doc.RevNumber = doc.RevNumber + 1
-	doc.RevID = RandomUUID()
+	doc.Version = doc.Version + 1
 	var meta string
 	if len(doc.Data) == 2 {
-		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.ID, formatRev(doc.RevNumber, doc.RevID))
+		meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
 	} else {
-		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.ID, formatRev(doc.RevNumber, doc.RevID))
+		meta = fmt.Sprintf(`{"_id":"%s","_version":%d,`, doc.ID, doc.Version)
 	}
 	data := make([]byte, len(meta))
 	copy(data, meta)
@@ -37,37 +31,26 @@ func (doc *Document) CalculateRev() {
 	doc.Data = data
 }
 
+var parser fastjson.Parser
+
 func ParseDocument(value []byte) (*Document, error) {
-	v, err := fastjson.ParseBytes(value)
+	v, err := parser.ParseBytes(value)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		id        string
-		rev       string
-		revNumber int
-		revID     string
-		deleted   bool
+		id      string
+		version int = 0
+		deleted bool
 	)
 
 	if v.Exists("_id") {
 		id = strings.ReplaceAll(v.Get("_id").String(), "\"", "")
 	}
 
-	/* 	else {
-		id = SequentialUUID()
-		v.Set("_id", fastjson.MustParse(fmt.Sprintf(`"%s"`, id)))
-		var b []byte
-		value = v.MarshalTo(b)
-	} */
-
-	if v.Exists("_rev") {
-		rev = v.Get("_rev").String()
-	} else {
-		rev = ""
-		revNumber = 0
-		revID = ""
+	if v.Exists("_version") {
+		version, _ = strconv.Atoi(v.Get("_version").String())
 	}
 
 	if v.Exists("_deleted") {
@@ -76,30 +59,20 @@ func ParseDocument(value []byte) (*Document, error) {
 		deleted = false
 	}
 
-	if id == "" && rev != "" {
-		return nil, errors.New("invalid_rev")
-	}
-
-	if len(rev) > 0 {
-		fields := strings.Split(strings.ReplaceAll(rev, "\"", ""), "-")
-		revNumber, err = strconv.Atoi(fields[0])
-		if err != nil {
-			return nil, errors.New("invalid_rev")
-		}
-		revID = fields[1]
+	if id == "" && version != 0 {
+		return nil, errors.New("invalid_version")
 	}
 
 	if v.Exists("_id") {
 		v.Del("_id")
 	}
-	if v.Exists("_rev") {
-		v.Del("_rev")
+	if v.Exists("_version") {
+		v.Del("_version")
 	}
 
 	var b []byte
 	value = v.MarshalTo(b)
 
-	doc := &Document{Revision: Revision{ID: id, RevNumber: revNumber, RevID: revID, Deleted: deleted}, Data: value}
-
+	doc := &Document{ID: id, Version: version, Deleted: deleted, Data: value}
 	return doc, nil
 }

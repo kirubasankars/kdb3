@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -114,7 +115,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	output := formatDocString(doc.ID, formatRev(doc.RevNumber, doc.RevID), doc.Deleted)
+	output := formatDocString(doc.ID, doc.Version, doc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -122,13 +123,14 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 }
 
 func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
-	rev := r.FormValue("rev")
+	ver := r.FormValue("version")
 
 	var jsondoc string
-	if rev != "" {
-		jsondoc = formatDocString(docid, rev, false)
+	if ver != "" {
+		version, _ := strconv.Atoi(ver)
+		jsondoc = formatDocString(docid, version, false)
 	} else {
-		jsondoc = formatDocString(docid, "", false)
+		jsondoc = formatDocString(docid, 0, false)
 	}
 
 	doc, err := ParseDocument([]byte(jsondoc))
@@ -149,12 +151,13 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
-	rev := r.FormValue("rev")
+	ver := r.FormValue("version")
 
-	if rev == "" {
-		rev = r.Header.Get("If-Match")
+	if ver == "" {
+		ver = r.Header.Get("If-Match")
 	}
-	jsondoc := formatDocString(docid, rev, true)
+	version, _ := strconv.Atoi(ver)
+	jsondoc := formatDocString(docid, version, true)
 	doc, err := ParseDocument([]byte(jsondoc))
 	if err != nil {
 		NotOK(err, w)
@@ -239,8 +242,8 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	view := vars["view"]
 	selectName := vars["select"]
 	r.ParseForm()
-
-	rs, err := kdb.SelectView(db, ddocID, view, selectName, r.Form, false)
+	stale, _ := strconv.ParseBool(r.FormValue("stale"))
+	rs, err := kdb.SelectView(db, ddocID, view, selectName, r.Form, stale)
 	if err != nil {
 		NotOK(err, w)
 		return

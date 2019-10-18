@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -100,8 +101,8 @@ func TestPutDocument(t *testing.T) {
 		t.Error(err)
 	}
 
-	if doc.RevNumber != 1 {
-		t.Error("rev number missing")
+	if doc.Version != 1 {
+		t.Error("verison missing")
 	}
 
 	kdb.Delete("testdb")
@@ -140,7 +141,7 @@ func TestGetDocument(t *testing.T) {
 		t.Error("doc not found")
 	}
 
-	rev1 := formatRev(outputDoc.RevNumber, outputDoc.RevID)
+	ver := strconv.Itoa(outputDoc.Version)
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2"}`))
 	outputDoc, err = kdb.GetDocument("testdb", inputDoc, true)
@@ -156,7 +157,7 @@ func TestGetDocument(t *testing.T) {
 		t.Error("wrong doc")
 	}
 
-	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_rev":"` + rev1 + `"}`))
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_version":"` + ver + `"}`))
 	outputDoc, err = kdb.GetDocument("testdb", inputDoc, true)
 	if err != nil {
 		t.Error(err)
@@ -191,15 +192,13 @@ func TestDeleteDocument(t *testing.T) {
 		t.Error(err)
 	}
 
-	rev := formatRev(doc.RevNumber, doc.RevID)
-
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
 	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error(err)
 	}
 
-	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_rev":"` + rev + `"}`))
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_version":1}`))
 	doc, err = kdb.DeleteDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error("unable to delete doc", err)
@@ -219,7 +218,7 @@ func TestDeleteDocument(t *testing.T) {
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":2}`))
 	doc, err = kdb.PutDocument("testdb", inputDoc)
-	if err.Error() != "mismatched_rev" {
+	if err.Error() != "doc_conflict" {
 		t.Error("doc missing")
 	}
 
@@ -363,4 +362,22 @@ func TestBuildView(t *testing.T) {
 	}
 
 	kdb.Delete("testdb")
+}
+
+func BenchmarkPutDocument(b *testing.B) {
+	kdb, _ := NewKDB()
+	kdb.Open("testdb", true)
+	inputDoc, _ := ParseDocument([]byte(`{"test":1}`))
+
+	for x := 0; x < b.N; x++ {
+		kdb.PutDocument("testdb", inputDoc)
+	}
+
+	kdb.Delete("testdb")
+}
+
+func BenchmarkParseDocument(b *testing.B) {
+	for x := 0; x < b.N; x++ {
+		ParseDocument([]byte(`{"test":1}`))
+	}
 }

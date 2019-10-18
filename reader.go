@@ -18,11 +18,11 @@ func (reader *DataBaseReader) Open(path string) error {
 	return nil
 }
 
-func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber int, revID string) (*Document, error) {
+func (reader *DataBaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, revNumber, revID)
-	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
+	row := reader.conn.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, Version)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -41,8 +41,8 @@ func (reader *DataBaseReader) GetDocumentRevisionByIDandRev(ID string, revNumber
 func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
 	doc := Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID)
-	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted)
+	row := reader.conn.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -61,8 +61,8 @@ func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, err
 func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY rev_number DESC LIMIT 1", ID, ID)
-	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
+	row := reader.conn.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID, ID)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -78,11 +78,11 @@ func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 	return doc, nil
 }
 
-func (reader *DataBaseReader) GetDocumentByIDandRev(ID string, revNumber int, revID string) (*Document, error) {
+func (reader *DataBaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.conn.QueryRow("SELECT doc_id, rev_number, rev_id, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND rev_number = ? AND rev_id = ? LIMIT 1", ID, ID, revNumber, revID)
-	err := row.Scan(&doc.ID, &doc.RevNumber, &doc.RevID, &doc.Deleted, &doc.Data)
+	row := reader.conn.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, ID, Version)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -129,14 +129,14 @@ func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
 func (db *DataBaseReader) GetChanges() []byte {
 	sqlGetChanges := `
 		SELECT 
-			json_object("results",json_group_array(json(v))) 
+		JSON_OBJECT("results",JSON_GROUP_ARRAY(json(v))) 
 		FROM (
 				SELECT 
-					json_object(
-									"seq",printf("%d-%s",seq_number,max(seq_id)),
-									"id", doc_id, 
-									"changes", (SELECT json_group_array(revs) from (SELECT printf("%d-%s",rev_number, rev_id) as revs FROM changes where doc_id = c.doc_id ORDER by seq_id DESC))
-								)  as v FROM changes c GROUP BY doc_id ORDER by seq_id DESC
+				JSON_OBJECT(
+								"seq",printf("%d-%s",seq_number,max(seq_id)),
+								"id", doc_id, 
+								"changes", (SELECT JSON_GROUP_ARRAY(JSON(version)) from (SELECT JSON_OBJECT('version', version) as version FROM changes where doc_id = c.doc_id ORDER by seq_id DESC))
+							)  as v FROM changes c GROUP BY doc_id ORDER by seq_id DESC
 			 )`
 	row := db.conn.QueryRow(sqlGetChanges)
 	var (

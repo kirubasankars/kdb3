@@ -153,7 +153,7 @@ func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (
 		return nil, errors.New("db_not_found")
 	}
 
-	return db.GetDocument(&doc.Revision, includeDoc)
+	return db.GetDocument(doc, includeDoc)
 }
 
 func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {

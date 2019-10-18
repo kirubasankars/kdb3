@@ -34,16 +34,16 @@ func getMacAddr() (addr string) {
 	return
 }
 
-func formatRev(revNumber int, revID string) string {
-	return fmt.Sprintf("%d-%s", revNumber, revID)
+func formatSeq(seqNumber int, seqID string) string {
+	return fmt.Sprintf("%d-%s", seqNumber, seqID)
 }
 
-func formatDocString(id string, rev string, deleted bool) string {
-	if rev != "" {
+func formatDocString(id string, version int, deleted bool) string {
+	if version != 0 {
 		if deleted {
-			return fmt.Sprintf(`{"_id" :"%s","_rev":"%s","deleted":true}`, id, rev)
+			return fmt.Sprintf(`{"_id" :"%s","_version":%d,"deleted":true}`, id, version)
 		}
-		return fmt.Sprintf(`{"_id":"%s","_rev":"%s"}`, id, rev)
+		return fmt.Sprintf(`{"_id":"%s","_version":%d}`, id, version)
 	}
 	if deleted {
 		return fmt.Sprintf(`{"_id" :"%s","deleted":true}`, id)
