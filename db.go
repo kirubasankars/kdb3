@@ -15,7 +15,7 @@ type Database struct {
 	updateSeqID     string
 
 	dbPath    string
-	reader    *DataBaseReader
+	readers   *DataBaseReaderPool
 	writer    *DataBaseWriter
 	mux       sync.Mutex
 	changeSeq *ChangeSequenceGenarator
@@ -42,11 +42,10 @@ func (db *Database) Open(createIfNotExists bool) error {
 		}
 	}
 
-	db.reader = new(DataBaseReader)
-	db.reader.Open(path + "?_journal=WAL")
-
 	db.writer = new(DataBaseWriter)
 	db.writer.Open(path + "?_journal=WAL")
+
+	db.readers = NewDataBaseReaderPool(path+"?_journal=WAL", 4)
 
 	db.writer.Begin()
 	if err = db.writer.ExecBuildScript(); err != nil {
@@ -77,7 +76,7 @@ func (db *Database) Open(createIfNotExists bool) error {
 func (db *Database) Close() error {
 	db.viewmgr.CloseViews()
 	db.writer.Close()
-	db.reader.Close()
+	db.readers.Close()
 	return nil
 }
 
@@ -154,7 +153,8 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
-	reader := db.reader
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
 
 	if includeData {
 		if doc.Version > 0 {
@@ -170,7 +170,9 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 }
 
 func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
-	return db.reader.GetAllDesignDocuments()
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
+	return reader.GetAllDesignDocuments()
 }
 
 func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
@@ -183,15 +185,21 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 }
 
 func (db *Database) GetLastUpdateSequence() (int, string) {
-	return db.reader.GetLastUpdateSequence()
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
+	return reader.GetLastUpdateSequence()
 }
 
 func (db *Database) GetChanges() []byte {
-	return db.reader.GetChanges()
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
+	return reader.GetChanges()
 }
 
 func (db *Database) GetDocumentCount() int {
-	return db.reader.GetDocumentCount()
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
+	return reader.GetDocumentCount()
 }
 
 func (db *Database) Stat() *DBStat {

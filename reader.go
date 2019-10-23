@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 type DataBaseReader struct {
@@ -176,4 +177,52 @@ func (db *DataBaseReader) GetDocumentCount() int {
 
 func (reader *DataBaseReader) Close() error {
 	return reader.conn.Close()
+}
+
+type DataBaseReaderPool struct {
+	path string
+	pool chan *DataBaseReader
+}
+
+func NewDataBaseReaderPool(path string, max int) *DataBaseReaderPool {
+	return &DataBaseReaderPool{
+		path: path,
+		pool: make(chan *DataBaseReader, max),
+	}
+}
+
+func (p *DataBaseReaderPool) Borrow() *DataBaseReader {
+	var r *DataBaseReader
+	select {
+	case r = <-p.pool:
+	default:
+		r = &DataBaseReader{}
+		err := r.Open(p.path)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+
+	return r
+}
+
+func (p *DataBaseReaderPool) Return(r *DataBaseReader) {
+	select {
+	case p.pool <- r:
+	default:
+	}
+}
+
+func (p *DataBaseReaderPool) Close() {
+	for {
+		var r *DataBaseReader
+		select {
+		case r = <-p.pool:
+			r.Close()
+		default:
+		}
+		if r == nil {
+			break
+		}
+	}
 }
