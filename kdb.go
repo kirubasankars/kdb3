@@ -123,8 +123,9 @@ func (kdb *KDBEngine) Delete(name string) error {
 		}
 	}
 
-	os.Remove(filepath.Join(kdb.dbPath, name+".db-shm"))
-	os.Remove(filepath.Join(kdb.dbPath, name+".db-wal"))
+	fileName := name + dbExt
+	os.Remove(filepath.Join(kdb.dbPath, fileName+"-shm"))
+	os.Remove(filepath.Join(kdb.dbPath, fileName+"-wal"))
 	os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
 
 	return nil

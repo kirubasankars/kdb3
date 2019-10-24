@@ -25,7 +25,11 @@ func NotOK(err error, w http.ResponseWriter) {
 	case err.Error() == "db_not_found" || err.Error() == "doc_not_found" || err.Error() == "view_not_found":
 		statusCode = http.StatusNotFound
 		reason = errorString(err)
+	case err.Error() == "bad_json":
+		statusCode = http.StatusBadRequest
+		reason = errorString(err)
 	}
+
 	if statusCode == 0 {
 		statusCode = http.StatusInternalServerError
 		reason = errorString(err)

@@ -128,17 +128,15 @@ func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
 }
 
 func (db *DataBaseReader) GetChanges() []byte {
-	sqlGetChanges := `
-		SELECT 
-		JSON_OBJECT("results",JSON_GROUP_ARRAY(json(v))) 
-		FROM (
-				SELECT 
-				JSON_OBJECT(
-								"seq",printf("%d-%s",seq_number,max(seq_id)),
-								"id", doc_id, 
-								"changes", (SELECT JSON_GROUP_ARRAY(JSON(version)) from (SELECT JSON_OBJECT('version', version) as version FROM changes where doc_id = c.doc_id ORDER by seq_id DESC))
-							)  as v FROM changes c GROUP BY doc_id ORDER by seq_id DESC
-			 )`
+	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
+	(
+		SELECT printf('%d-%s', seq_number, seq_id) as seq, version, doc_id, deleted FROM changes c ORDER by seq_id DESC
+	),
+	changes_object (obj) as
+	(
+		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', true)  END) as obj FROM all_changes
+	)
+	SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object`
 	row := db.conn.QueryRow(sqlGetChanges)
 	var (
 		changes []byte

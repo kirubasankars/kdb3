@@ -114,7 +114,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
-	if err := writer.InsertChanges(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
+	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
 			return nil, errors.New("doc_conflict")
 		}
@@ -126,7 +126,15 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 			return nil, err
 		}
 	} else {
-		if err := writer.InsertDocument(newDoc.ID, newDoc.Version, newDoc.Deleted, newDoc.Data); err != nil {
+		if err := writer.InsertDocument(newDoc.ID, newDoc.Version, newDoc.Data); err != nil {
+			return nil, err
+		}
+	}
+	if currentDoc != nil {
+		if err := writer.DeleteChange(currentDoc.ID, currentDoc.Version); err != nil {
+			if err != nil {
+				return nil, err
+			}
 			return nil, err
 		}
 	}
