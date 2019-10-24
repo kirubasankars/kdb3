@@ -34,6 +34,12 @@ func NewRouter() *mux.Router {
 
 var routes = Routes{
 	Route{
+		"Info",
+		"GET",
+		"/",
+		Info,
+	},
+	Route{
 		"AllDatabases",
 		"GET",
 		"/_all_dbs",
