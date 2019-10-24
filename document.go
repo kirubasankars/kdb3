@@ -36,7 +36,7 @@ var parser fastjson.Parser
 func ParseDocument(value []byte) (*Document, error) {
 	v, err := parser.ParseBytes(value)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("bad_json")
 	}
 
 	var (

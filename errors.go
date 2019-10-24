@@ -6,6 +6,8 @@ func errorString(err error) string {
 	switch errr := err.Error(); errr {
 	case "db_exists":
 		errString = "database already exists"
+	case "bad_json":
+		errString = "invalid json format"
 	case "db_not_found":
 		errString = "database is not found"
 	case "invalid_db_name":

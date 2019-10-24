@@ -70,6 +70,18 @@ var routes = Routes{
 		DatabaseAllDocs,
 	},
 	Route{
+		"BulkPutDocuments",
+		"POST",
+		"/{db}/_bulk_docs",
+		BulkPutDocuments,
+	},
+	Route{
+		"BulkGetDocuments",
+		"POST",
+		"/{db}/_bulk_gets",
+		BulkGetDocuments,
+	},
+	Route{
 		"DatabaseChanges",
 		"GET",
 		"/{db}/_changes",

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 )
 
 type DataBaseWriter struct {
@@ -42,17 +43,26 @@ func (writer *DataBaseWriter) DeleteDocumentByID(ID string) error {
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertDocument(ID string, Version int, Deleted bool, Data []byte) error {
+func (writer *DataBaseWriter) InsertDocument(ID string, Version int, Data []byte) error {
 	tx := writer.tx
-	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, deleted, data) VALUES(?, ?, ?, ?)", ID, Version, Deleted, string(Data)); err != nil {
+	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, data) VALUES(?, ?, ?)", ID, Version, Data); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertChanges(UpdateSeqNumber int, UpdateSeqID string, ID string, Version int, Deleted bool) error {
+func (writer *DataBaseWriter) InsertChange(UpdateSeqNumber int, UpdateSeqID string, ID string, Version int, Deleted bool) error {
 	tx := writer.tx
 	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?, ?)", UpdateSeqNumber, UpdateSeqID, ID, Version, Deleted); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (writer *DataBaseWriter) DeleteChange(ID string, Version int) error {
+	tx := writer.tx
+	if _, err := tx.Exec("DELETE FROM changes WHERE doc_id = ? AND version = ?", ID, Version); err != nil {
+		fmt.Println(err)
 		return err
 	}
 	return nil
@@ -65,7 +75,6 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 	CREATE TABLE IF NOT EXISTS documents (
 		doc_id 		TEXT,
 		version  INTEGER, 
-		deleted		BOOL,
 		data 		TEXT,
 		PRIMARY KEY (doc_id)
 	) WITHOUT ROWID;
