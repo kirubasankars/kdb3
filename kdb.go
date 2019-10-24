@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -204,4 +205,8 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	}
 
 	return rs, nil
+}
+
+func (kdb *KDBEngine) Info() []byte {
+	return []byte(fmt.Sprintf(`{"version":{"sqlite_version":3.4}}`))
 }
