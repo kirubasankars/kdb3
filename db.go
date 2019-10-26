@@ -15,8 +15,8 @@ type Database struct {
 	updateSeqID     string
 
 	dbPath    string
-	readers   *DataBaseReaderPool
-	writer    *DataBaseWriter
+	readers   *DatabaseReaderPool
+	writer    DatabaseWriter
 	mux       sync.Mutex
 	changeSeq *ChangeSequenceGenarator
 	idSeq     *SequenceUUIDGenarator
@@ -31,24 +31,29 @@ func NewDatabase(name, dbPath, viewPath string) *Database {
 
 func (db *Database) Open(createIfNotExists bool) error {
 	path := filepath.Join(db.dbPath, db.name+dbExt)
-	_, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		if !createIfNotExists {
-			return errors.New("db_not_found")
-		}
+
+	if db.name == ":memory:" {
+		path = "file::memory:?cache=shared"
 	} else {
-		if createIfNotExists {
-			return errors.New("db_exists")
+		_, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			if !createIfNotExists {
+				return errors.New("db_not_found")
+			}
+		} else {
+			if createIfNotExists {
+				return errors.New("db_exists")
+			}
 		}
+		path = path + "?_journal=WAL"
 	}
 
-	db.writer = new(DataBaseWriter)
-	db.writer.Open(path + "?_journal=WAL")
-
-	db.readers = NewDataBaseReaderPool(path+"?_journal=WAL", 4)
+	db.writer = new(DefaultDatabaseWriter)
+	db.writer.Open(path)
+	db.readers = NewDatabaseReaderPool(path, 4)
 
 	db.writer.Begin()
-	if err = db.writer.ExecBuildScript(); err != nil {
+	if err := db.writer.ExecBuildScript(); err != nil {
 		return err
 	}
 	db.writer.Commit()
@@ -59,13 +64,13 @@ func (db *Database) Open(createIfNotExists bool) error {
 
 	viewmgr := db.viewmgr
 	if createIfNotExists {
-		err = viewmgr.SetupViews(db)
+		err := viewmgr.SetupViews(db)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = viewmgr.Initialize(db)
+	err := viewmgr.Initialize(db)
 	if err != nil {
 		return err
 	}
@@ -208,6 +213,12 @@ func (db *Database) GetDocumentCount() int {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 	return reader.GetDocumentCount()
+}
+
+func (db *Database) GetSQLiteVersion() string {
+	reader := db.readers.Borrow()
+	defer db.readers.Return(reader)
+	return reader.GetSQLiteVersion()
 }
 
 func (db *Database) Stat() *DBStat {

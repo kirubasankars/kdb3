@@ -54,6 +54,10 @@ func NewKDB() (*KDBEngine, error) {
 		}
 	}
 
+	if err = kdb.Open(":memory:", false); err != nil {
+		return nil, err
+	}
+
 	return kdb, nil
 }
 
@@ -208,5 +212,8 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	return []byte(fmt.Sprintf(`{"version":{"sqlite_version":3.4}}`))
+	name := ":memory:"
+	db, _ := kdb.dbs[name]
+	version := db.GetSQLiteVersion()
+	return []byte(fmt.Sprintf(`{"version":{"sqlite_version":"%s"}}`, version))
 }

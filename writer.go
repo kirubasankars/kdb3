@@ -5,37 +5,62 @@ import (
 	"fmt"
 )
 
-type DataBaseWriter struct {
-	DataBaseReader
-	conn *sql.DB
-	tx   *sql.Tx
+type DatabaseWriter interface {
+	Open(path string) error
+	Begin() error
+	Commit() error
+	Rollback() error
+	Close() error
+	Vacuum() error
+
+	DeleteDocumentByID(docID string) error
+	InsertDocument(docID string, version int, data []byte) error
+	InsertChange(updateSeqNumber int, updateSeqID string, docID string, version int, deleted bool) error
+	DeleteChange(docID string, version int) error
+	GetDocumentRevisionByID(docID string) (*Document, error)
+	ExecBuildScript() error
 }
 
-func (writer *DataBaseWriter) Open(path string) error {
+type DefaultDatabaseWriter struct {
+	reader DefaultDatabaseReader
+	conn   *sql.DB
+	tx     *sql.Tx
+}
+
+func (writer *DefaultDatabaseWriter) Open(path string) error {
 	con, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return err
 	}
 	writer.conn = con
-	writer.DataBaseReader.conn = con
+	writer.reader.conn = con
 	return nil
 }
 
-func (writer *DataBaseWriter) Begin() error {
+func (writer *DefaultDatabaseWriter) Close() error {
+	err := writer.conn.Close()
+	return err
+}
+
+func (writer *DefaultDatabaseWriter) Begin() error {
 	var err error
 	writer.tx, err = writer.conn.Begin()
 	return err
 }
 
-func (writer *DataBaseWriter) Commit() error {
+func (writer *DefaultDatabaseWriter) Commit() error {
 	return writer.tx.Commit()
 }
 
-func (writer *DataBaseWriter) Rollback() error {
+func (writer *DefaultDatabaseWriter) Rollback() error {
 	return writer.tx.Rollback()
 }
 
-func (writer *DataBaseWriter) DeleteDocumentByID(ID string) error {
+func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
+	return writer.reader.GetDocumentRevisionByID(docID)
+}
+
+func (writer *DefaultDatabaseWriter) DeleteDocumentByID(ID string) error {
 	tx := writer.tx
 	if _, err := tx.Exec("DELETE FROM documents WHERE doc_id = ?", ID); err != nil {
 		return err
@@ -43,7 +68,7 @@ func (writer *DataBaseWriter) DeleteDocumentByID(ID string) error {
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertDocument(ID string, Version int, Data []byte) error {
+func (writer *DefaultDatabaseWriter) InsertDocument(ID string, Version int, Data []byte) error {
 	tx := writer.tx
 	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, data) VALUES(?, ?, ?)", ID, Version, Data); err != nil {
 		return err
@@ -51,7 +76,7 @@ func (writer *DataBaseWriter) InsertDocument(ID string, Version int, Data []byte
 	return nil
 }
 
-func (writer *DataBaseWriter) InsertChange(UpdateSeqNumber int, UpdateSeqID string, ID string, Version int, Deleted bool) error {
+func (writer *DefaultDatabaseWriter) InsertChange(UpdateSeqNumber int, UpdateSeqID string, ID string, Version int, Deleted bool) error {
 	tx := writer.tx
 	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?, ?)", UpdateSeqNumber, UpdateSeqID, ID, Version, Deleted); err != nil {
 		return err
@@ -59,7 +84,7 @@ func (writer *DataBaseWriter) InsertChange(UpdateSeqNumber int, UpdateSeqID stri
 	return nil
 }
 
-func (writer *DataBaseWriter) DeleteChange(ID string, Version int) error {
+func (writer *DefaultDatabaseWriter) DeleteChange(ID string, Version int) error {
 	tx := writer.tx
 	if _, err := tx.Exec("DELETE FROM changes WHERE doc_id = ? AND version = ?", ID, Version); err != nil {
 		fmt.Println(err)
@@ -68,7 +93,7 @@ func (writer *DataBaseWriter) DeleteChange(ID string, Version int) error {
 	return nil
 }
 
-func (writer *DataBaseWriter) ExecBuildScript() error {
+func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	tx := writer.tx
 
 	buildSQL := `
@@ -101,7 +126,7 @@ func (writer *DataBaseWriter) ExecBuildScript() error {
 	return nil
 }
 
-func (writer *DataBaseWriter) Vacuum() error {
+func (writer *DefaultDatabaseWriter) Vacuum() error {
 	_, err := writer.conn.Exec("VACUUM")
 	return err
 }
