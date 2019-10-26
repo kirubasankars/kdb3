@@ -6,11 +6,25 @@ import (
 	"fmt"
 )
 
-type DataBaseReader struct {
+type DatabaseReader interface {
+	Open(path string) error
+	GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error)
+	GetDocumentRevisionByID(ID string) (*Document, error)
+	GetDocumentByID(ID string) (*Document, error)
+	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
+	GetAllDesignDocuments() ([]*Document, error)
+	GetChanges() []byte
+	GetLastUpdateSequence() (int, string)
+	GetDocumentCount() int
+	GetSQLiteVersion() string
+	Close() error
+}
+
+type DefaultDatabaseReader struct {
 	conn *sql.DB
 }
 
-func (reader *DataBaseReader) Open(path string) error {
+func (reader *DefaultDatabaseReader) Open(path string) error {
 	con, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return err
@@ -19,7 +33,7 @@ func (reader *DataBaseReader) Open(path string) error {
 	return nil
 }
 
-func (reader *DataBaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := Document{}
 
 	row := reader.conn.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, Version)
@@ -39,7 +53,7 @@ func (reader *DataBaseReader) GetDocumentRevisionByIDandVersion(ID string, Versi
 	return &doc, nil
 }
 
-func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
 	doc := Document{}
 
 	row := reader.conn.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID)
@@ -59,7 +73,7 @@ func (reader *DataBaseReader) GetDocumentRevisionByID(ID string) (*Document, err
 	return &doc, nil
 }
 
-func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
 	doc := &Document{}
 
 	row := reader.conn.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID, ID)
@@ -79,7 +93,7 @@ func (reader *DataBaseReader) GetDocumentByID(ID string) (*Document, error) {
 	return doc, nil
 }
 
-func (reader *DataBaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := &Document{}
 
 	row := reader.conn.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, ID, Version)
@@ -99,7 +113,7 @@ func (reader *DataBaseReader) GetDocumentByIDandVersion(ID string, Version int) 
 	return doc, nil
 }
 
-func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
+func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
 
 	var docs []*Document
 	rows, err := reader.conn.Query("SELECT doc_id FROM documents WHERE doc_id like '_design/%'")
@@ -127,7 +141,7 @@ func (reader *DataBaseReader) GetAllDesignDocuments() ([]*Document, error) {
 	return docs, nil
 }
 
-func (db *DataBaseReader) GetChanges() []byte {
+func (db *DefaultDatabaseReader) GetChanges() []byte {
 	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
 	(
 		SELECT printf('%d-%s', seq_number, seq_id) as seq, version, doc_id, deleted FROM changes c ORDER by seq_id DESC
@@ -150,7 +164,7 @@ func (db *DataBaseReader) GetChanges() []byte {
 	return changes
 }
 
-func (db *DataBaseReader) GetLastUpdateSequence() (int, string) {
+func (db *DefaultDatabaseReader) GetLastUpdateSequence() (int, string) {
 	sqlGetMaxSeq := "SELECT seq_number, seq_id FROM (SELECT MAX(seq_number) as seq_number, MAX(seq_id)  as seq_id FROM changes WHERE seq_id = (SELECT MAX(seq_id) FROM changes) UNION ALL SELECT 0, '') WHERE seq_number IS NOT NULL LIMIT 1"
 	row := db.conn.QueryRow(sqlGetMaxSeq)
 	var (
@@ -166,35 +180,42 @@ func (db *DataBaseReader) GetLastUpdateSequence() (int, string) {
 	return maxSeqNumber, maxSeqID
 }
 
-func (db *DataBaseReader) GetDocumentCount() int {
+func (db *DefaultDatabaseReader) GetDocumentCount() int {
 	row := db.conn.QueryRow("SELECT COUNT(1) FROM documents")
 	count := 0
 	row.Scan(&count)
 	return count
 }
 
-func (reader *DataBaseReader) Close() error {
+func (db *DefaultDatabaseReader) GetSQLiteVersion() string {
+	row := db.conn.QueryRow("SELECT sqlite_version() as version")
+	version := ""
+	row.Scan(&version)
+	return version
+}
+
+func (reader *DefaultDatabaseReader) Close() error {
 	return reader.conn.Close()
 }
 
-type DataBaseReaderPool struct {
+type DatabaseReaderPool struct {
 	path string
-	pool chan *DataBaseReader
+	pool chan DatabaseReader
 }
 
-func NewDataBaseReaderPool(path string, max int) *DataBaseReaderPool {
-	return &DataBaseReaderPool{
+func NewDatabaseReaderPool(path string, max int) *DatabaseReaderPool {
+	return &DatabaseReaderPool{
 		path: path,
-		pool: make(chan *DataBaseReader, max),
+		pool: make(chan DatabaseReader, max),
 	}
 }
 
-func (p *DataBaseReaderPool) Borrow() *DataBaseReader {
-	var r *DataBaseReader
+func (p *DatabaseReaderPool) Borrow() DatabaseReader {
+	var r DatabaseReader
 	select {
 	case r = <-p.pool:
 	default:
-		r = &DataBaseReader{}
+		r = &DefaultDatabaseReader{}
 		err := r.Open(p.path)
 		if err != nil {
 			fmt.Println(err)
@@ -204,16 +225,16 @@ func (p *DataBaseReaderPool) Borrow() *DataBaseReader {
 	return r
 }
 
-func (p *DataBaseReaderPool) Return(r *DataBaseReader) {
+func (p *DatabaseReaderPool) Return(r DatabaseReader) {
 	select {
 	case p.pool <- r:
 	default:
 	}
 }
 
-func (p *DataBaseReaderPool) Close() {
+func (p *DatabaseReaderPool) Close() {
 	for {
-		var r *DataBaseReader
+		var r DatabaseReader
 		select {
 		case r = <-p.pool:
 			r.Close()

@@ -133,8 +133,15 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
 	}
+
 	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
 	viewFilePath += "?_journal=MEMORY"
+	fmt.Println(mgr.dbName)
+	if mgr.dbName == ":memory:" {
+		viewFilePath = "file:" + mgr.dbName + "$" + mgr.CalculateSignature(ddoc.Views[viewName]) + "?mode=memory&cache=shared"
+	}
+
+	fmt.Println(viewFilePath)
 	view := NewView(dbFilePath, viewFilePath, viewName, ddoc, mgr)
 	if err := view.Open(); err != nil {
 		return err
