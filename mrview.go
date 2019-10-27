@@ -17,7 +17,22 @@ import (
 	"sync"
 )
 
-type ViewManager struct {
+type ViewManager interface {
+	SetupViews(db *Database) error
+	Initialize(db *Database) error
+	ListViewFiles() ([]string, error)
+	OpenView(viewName string, ddoc *DesignDocument) error
+	SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	Close() error
+	Vacuum() error
+	UpdateDesignDocument(ddocID string, value []byte) error
+	ValidateDDoc(ddoc *DesignDocument) error
+	CalculateSignature(ddocv *DesignDocumentView) string
+	ParseQuery(query string) (string, []string)
+	GetView(name string) (*View, bool)
+}
+
+type DefaultViewManager struct {
 	viewPath string
 	dbPath   string
 	dbName   string
@@ -29,7 +44,7 @@ type ViewManager struct {
 	rwmux sync.RWMutex
 }
 
-func (mgr *ViewManager) SetupViews(db *Database) error {
+func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc := &DesignDocument{}
 	ddoc.ID = "_design/_views"
 	ddoc.Views = make(map[string]*DesignDocumentView)
@@ -58,7 +73,7 @@ func (mgr *ViewManager) SetupViews(db *Database) error {
 	return nil
 }
 
-func (mgr *ViewManager) Initialize(db *Database) error {
+func (mgr *DefaultViewManager) Initialize(db *Database) error {
 
 	mgr.rwmux = sync.RWMutex{}
 
@@ -105,7 +120,7 @@ func (mgr *ViewManager) Initialize(db *Database) error {
 	return nil
 }
 
-func (mgr *ViewManager) ListViewFiles() ([]string, error) {
+func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
 	list, err := ioutil.ReadDir(mgr.viewPath)
 	if err != nil {
 		return nil, err
@@ -120,7 +135,7 @@ func (mgr *ViewManager) ListViewFiles() ([]string, error) {
 	return viewFiles, nil
 }
 
-func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
@@ -136,12 +151,11 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 
 	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
 	viewFilePath += "?_journal=MEMORY"
-	fmt.Println(mgr.dbName)
+
 	if mgr.dbName == ":memory:" {
 		viewFilePath = "file:" + mgr.dbName + "$" + mgr.CalculateSignature(ddoc.Views[viewName]) + "?mode=memory&cache=shared"
 	}
 
-	fmt.Println(viewFilePath)
 	view := NewView(dbFilePath, viewFilePath, viewName, ddoc, mgr)
 	if err := view.Open(); err != nil {
 		return err
@@ -152,7 +166,7 @@ func (mgr *ViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
 	return nil
 }
 
-func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (mgr *DefaultViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
 	name := ddocID + "$" + viewName
 
@@ -206,23 +220,33 @@ func (mgr *ViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, vie
 	return view.Select(selectName, values)
 }
 
-func (mgr *ViewManager) CloseViews() {
+func (mgr *DefaultViewManager) Close() error {
 	mgr.rwmux.RLock()
 	defer mgr.rwmux.RUnlock()
 	for _, v := range mgr.views {
 		v.Close()
 	}
+
+	return nil
 }
 
-func (mgr *ViewManager) VacuumViews() {
+func (mgr *DefaultViewManager) GetView(name string) (*View, bool) {
+	if view, ok := mgr.views[name]; true {
+		return view, ok
+	}
+	return nil, false
+}
+
+func (mgr *DefaultViewManager) Vacuum() error {
 	mgr.rwmux.RLock()
 	defer mgr.rwmux.RUnlock()
 	for _, v := range mgr.views {
 		v.Vacuum()
 	}
+	return nil
 }
 
-func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error {
+func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, value []byte) error {
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
@@ -290,7 +314,7 @@ func (mgr *ViewManager) UpdateDesignDocument(ddocID string, value []byte) error 
 	return mgr.ValidateDDoc(newDDoc)
 }
 
-func (mgr *ViewManager) ValidateDDoc(ddoc *DesignDocument) error {
+func (mgr *DefaultViewManager) ValidateDDoc(ddoc *DesignDocument) error {
 
 	for _, v := range ddoc.Views {
 		for _, x := range v.Setup {
@@ -301,7 +325,7 @@ func (mgr *ViewManager) ValidateDDoc(ddoc *DesignDocument) error {
 	return nil
 }
 
-func (mgr *ViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
 	content := ""
 	if ddocv != nil {
 		crc32q := crc32.MakeTable(0xD5828281)
@@ -326,7 +350,7 @@ func (mgr *ViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
 	return ""
 }
 
-func (mgr *ViewManager) ParseQuery(query string) (string, []string) {
+func (mgr *DefaultViewManager) ParseQuery(query string) (string, []string) {
 	re := regexp.MustCompile(`\$\{(.*?)\}`)
 	o := re.FindAllStringSubmatch(query, -1)
 	var params []string
@@ -337,8 +361,8 @@ func (mgr *ViewManager) ParseQuery(query string) (string, []string) {
 	return text, params
 }
 
-func NewViewManager(dbPath, viewPath, dbName string) *ViewManager {
-	mgr := &ViewManager{
+func NewViewManager(dbPath, viewPath, dbName string) *DefaultViewManager {
+	mgr := &DefaultViewManager{
 		dbPath:   dbPath,
 		viewPath: viewPath,
 		dbName:   dbName,
@@ -368,7 +392,7 @@ type View struct {
 	selectScripts map[string]Query
 }
 
-func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, viewm *ViewManager) *View {
+func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, viewm ViewManager) *View {
 	view := &View{}
 
 	if _, ok := ddoc.Views[viewName]; !ok {

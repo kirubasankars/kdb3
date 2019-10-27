@@ -20,7 +20,7 @@ type Database struct {
 	mux       sync.Mutex
 	changeSeq *ChangeSequenceGenarator
 	idSeq     *SequenceUUIDGenarator
-	viewmgr   *ViewManager
+	viewmgr   ViewManager
 }
 
 func NewDatabase(name, dbPath, viewPath string) *Database {
@@ -79,7 +79,7 @@ func (db *Database) Open(createIfNotExists bool) error {
 }
 
 func (db *Database) Close() error {
-	db.viewmgr.CloseViews()
+	db.viewmgr.Close()
 	db.writer.Close()
 	db.readers.Close()
 	return nil
@@ -119,29 +119,9 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
-	if err := writer.InsertChange(updateSeqNumber, updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
-		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
-			return nil, errors.New("doc_conflict")
-		}
+	writer.PutDocument(updateSeqNumber, updateSeqID, newDoc, currentDoc)
+	if err != nil {
 		return nil, err
-	}
-
-	if newDoc.Deleted {
-		if err := writer.DeleteDocumentByID(newDoc.ID); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := writer.InsertDocument(newDoc.ID, newDoc.Version, newDoc.Data); err != nil {
-			return nil, err
-		}
-	}
-	if currentDoc != nil {
-		if err := writer.DeleteChange(currentDoc.ID, currentDoc.Version); err != nil {
-			if err != nil {
-				return nil, err
-			}
-			return nil, err
-		}
 	}
 
 	if err := writer.Commit(); err != nil {
@@ -230,5 +210,6 @@ func (db *Database) Stat() *DBStat {
 }
 
 func (db *Database) Vacuum() error {
+	db.viewmgr.Vacuum()
 	return db.writer.Vacuum()
 }
