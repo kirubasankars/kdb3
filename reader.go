@@ -8,16 +8,20 @@ import (
 
 type DatabaseReader interface {
 	Open(path string) error
+	Close() error
+
 	GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error)
 	GetDocumentRevisionByID(ID string) (*Document, error)
+
 	GetDocumentByID(ID string) (*Document, error)
 	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
+
 	GetAllDesignDocuments() ([]*Document, error)
 	GetChanges() []byte
+
 	GetLastUpdateSequence() (int, string)
 	GetDocumentCount() int
 	GetSQLiteVersion() string
-	Close() error
 }
 
 type DefaultDatabaseReader struct {

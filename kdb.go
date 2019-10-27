@@ -180,7 +180,7 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 		return errors.New("db_not_found")
 	}
 
-	db.viewmgr.VacuumViews()
+	db.viewmgr.Vacuum()
 	return db.Vacuum()
 }
 
