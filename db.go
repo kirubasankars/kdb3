@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,59 +15,66 @@ type Database struct {
 	updateSeqNumber int
 	updateSeqID     string
 
-	dbPath    string
-	readers   *DatabaseReaderPool
-	writer    DatabaseWriter
-	mux       sync.Mutex
+	dbPath  string
+	readers DatabaseReaderPool
+	writer  DatabaseWriter
+	mux     sync.Mutex
+
 	changeSeq *ChangeSequenceGenarator
 	idSeq     *SequenceUUIDGenarator
 	viewmgr   ViewManager
 }
 
-func NewDatabase(name, dbPath, viewPath string) *Database {
-	db := &Database{name: name, dbPath: dbPath}
-	db.viewmgr = NewViewManager(dbPath, viewPath, name)
-	return db
-}
-
-func (db *Database) Open(createIfNotExists bool) error {
-	path := filepath.Join(db.dbPath, db.name+dbExt)
-
+func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Database, error) {
+	path := filepath.Join(dbPath, name+dbExt)
 	_, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		if !createIfNotExists {
-			return errors.New("db_not_found")
+			return nil, errors.New("db_not_found")
 		}
 	} else {
 		if createIfNotExists {
-			return errors.New("db_exists")
+			return nil, errors.New("db_exists")
 		}
 	}
-	path = path + "?_journal=WAL"
 
+	db := &Database{name: name, dbPath: path}
+	db.idSeq = NewSequenceUUIDGenarator()
+
+	connStr := db.dbPath + "?_journal=WAL"
 	db.writer = new(DefaultDatabaseWriter)
-	db.writer.Open(path)
-	db.readers = NewDatabaseReaderPool(path, 4)
+	db.writer.Open(connStr)
+	db.readers = NewDatabaseReaderPool(connStr, 4)
 
-	db.writer.Begin()
-	if err := db.writer.ExecBuildScript(); err != nil {
-		return err
+	if createIfNotExists {
+		db.writer.Begin()
+		if err := db.writer.ExecBuildScript(); err != nil {
+			return nil, err
+		}
+		db.writer.Commit()
+		db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
 	}
-	db.writer.Commit()
+
+	db.viewmgr = NewViewManager(path, viewPath, name)
+
+	if createIfNotExists {
+		err = db.viewmgr.SetupViews(db)
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+
+	}
+
+	return db, nil
+}
+
+func (db *Database) Open() error {
 
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
-	db.idSeq = NewSequenceUUIDGenarator()
 
-	viewmgr := db.viewmgr
-	if createIfNotExists {
-		err := viewmgr.SetupViews(db)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = viewmgr.Initialize(db)
+	err := db.viewmgr.Initialize(db)
 	if err != nil {
 		return err
 	}

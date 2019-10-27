@@ -67,7 +67,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	}
 
 	_, err = db.PutDocument(designDoc)
-	if err != nil {
+	if err != nil && err.Error() != "doc_conflict" {
 		return err
 	}
 	return nil
@@ -144,7 +144,6 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return errors.New("view_exists")
 	}
 
-	dbFilePath := filepath.Join(mgr.dbPath, mgr.dbName+dbExt)
 	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
 	}
@@ -152,11 +151,7 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
 	viewFilePath += "?_journal=MEMORY"
 
-	if mgr.dbName == ":memory:" {
-		viewFilePath = "file:" + mgr.dbName + "$" + mgr.CalculateSignature(ddoc.Views[viewName]) + "?mode=memory&cache=shared"
-	}
-
-	view := NewView(dbFilePath, viewFilePath, viewName, ddoc, mgr)
+	view := NewView(mgr.dbPath, viewFilePath, viewName, ddoc, mgr)
 	if err := view.Open(); err != nil {
 		return err
 	}
