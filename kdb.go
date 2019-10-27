@@ -91,8 +91,11 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 		return nil
 	}
 
-	db := NewDatabase(name, kdb.dbPath, kdb.viewPath)
-	err := db.Open(createIfNotExists)
+	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists)
+	if err != nil {
+		return err
+	}
+	err = db.Open()
 	if err != nil {
 		return err
 	}

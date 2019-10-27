@@ -207,8 +207,8 @@ type DatabaseReaderPool struct {
 	pool chan DatabaseReader
 }
 
-func NewDatabaseReaderPool(path string, max int) *DatabaseReaderPool {
-	return &DatabaseReaderPool{
+func NewDatabaseReaderPool(path string, max int) DatabaseReaderPool {
+	return DatabaseReaderPool{
 		path: path,
 		pool: make(chan DatabaseReader, max),
 	}
