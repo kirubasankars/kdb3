@@ -32,21 +32,17 @@ func NewDatabase(name, dbPath, viewPath string) *Database {
 func (db *Database) Open(createIfNotExists bool) error {
 	path := filepath.Join(db.dbPath, db.name+dbExt)
 
-	if db.name == ":memory:" {
-		path = "file::memory:?cache=shared"
-	} else {
-		_, err := os.Lstat(path)
-		if os.IsNotExist(err) {
-			if !createIfNotExists {
-				return errors.New("db_not_found")
-			}
-		} else {
-			if createIfNotExists {
-				return errors.New("db_exists")
-			}
+	_, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		if !createIfNotExists {
+			return errors.New("db_not_found")
 		}
-		path = path + "?_journal=WAL"
+	} else {
+		if createIfNotExists {
+			return errors.New("db_exists")
+		}
 	}
+	path = path + "?_journal=WAL"
 
 	db.writer = new(DefaultDatabaseWriter)
 	db.writer.Open(path)
@@ -70,7 +66,7 @@ func (db *Database) Open(createIfNotExists bool) error {
 		}
 	}
 
-	err := viewmgr.Initialize(db)
+	err = viewmgr.Initialize(db)
 	if err != nil {
 		return err
 	}

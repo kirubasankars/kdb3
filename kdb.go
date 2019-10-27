@@ -54,10 +54,6 @@ func NewKDB() (*KDBEngine, error) {
 		}
 	}
 
-	if err = kdb.Open(":memory:", false); err != nil {
-		return nil, err
-	}
-
 	return kdb, nil
 }
 
