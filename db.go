@@ -10,9 +10,8 @@ import (
 )
 
 type Database struct {
-	name            string
-	updateSeqNumber int
-	updateSeqID     string
+	name        string
+	updateSeqID string
 
 	dbPath  string
 	readers DatabaseReaderPool
@@ -72,8 +71,8 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 }
 
 func (db *Database) Open() error {
-	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
-	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
+	db.updateSeqID = db.GetLastUpdateSequence()
+	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqID)
 	return nil
 }
 
@@ -116,9 +115,9 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	newDoc.CalculateVersion()
 
-	updateSeqNumber, updateSeqID := db.changeSeq.Next()
+	updateSeqID := db.changeSeq.Next()
 
-	err = writer.PutDocument(updateSeqNumber, updateSeqID, newDoc, currentDoc)
+	err = writer.PutDocument(updateSeqID, newDoc, currentDoc)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +126,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	db.updateSeqNumber = updateSeqNumber
 	db.updateSeqID = updateSeqID
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
@@ -179,7 +177,7 @@ func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 	return db.PutDocument(doc)
 }
 
-func (db *Database) GetLastUpdateSequence() (int, string) {
+func (db *Database) GetLastUpdateSequence() string {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -222,7 +220,7 @@ func (db *Database) GetSQLiteVersion() string {
 func (db *Database) Stat() *DBStat {
 	stat := &DBStat{}
 	stat.DBName = db.name
-	stat.UpdateSeq = formatSeq(db.updateSeqNumber, db.updateSeqID)
+	stat.UpdateSeq = db.updateSeqID
 	stat.DocCount = db.GetDocumentCount()
 	return stat
 }
@@ -233,5 +231,5 @@ func (db *Database) Vacuum() error {
 }
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return db.viewmgr.SelectView(db.updateSeqNumber, db.updateSeqID, ddocID, viewName, selectName, values, stale)
+	return db.viewmgr.SelectView(db.updateSeqID, ddocID, viewName, selectName, values, stale)
 }

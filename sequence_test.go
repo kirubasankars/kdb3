@@ -5,14 +5,13 @@ import (
 )
 
 func TestNewSequence(t *testing.T) {
-	seqGen := NewChangeSequenceGenarator(136, 0, "")
-	currentSeqNumber, currentSeqID := seqGen.Next()
+	seqGen := NewChangeSequenceGenarator(136, "")
+	currentSeqID := seqGen.Next()
 	i := 0
 	for {
-		nextSeqNumber, nextSeqID := seqGen.Next()
+		nextSeqID := seqGen.Next()
 
-		if currentSeqNumber < nextSeqNumber && currentSeqID < nextSeqID {
-			currentSeqNumber = nextSeqNumber
+		if currentSeqID < nextSeqID {
 			currentSeqID = nextSeqID
 		} else {
 			t.Error("seq order missing")

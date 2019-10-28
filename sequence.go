@@ -12,11 +12,10 @@ type ChangeSequenceGenarator struct {
 	len     int
 
 	current   []int
-	number    int
 	endString []int
 }
 
-func NewChangeSequenceGenarator(l int, seedNumber int, seedId string) *ChangeSequenceGenarator {
+func NewChangeSequenceGenarator(l int, seedId string) *ChangeSequenceGenarator {
 	seq := &ChangeSequenceGenarator{}
 	seq.charSet = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz")
 	seq.len = l
@@ -27,7 +26,6 @@ func NewChangeSequenceGenarator(l int, seedNumber int, seedId string) *ChangeSeq
 			seq.current = append(seq.current, mrand.Intn(63))
 		}
 	} else {
-		seq.number = seedNumber
 		if l != len(seedId) {
 			panic("seed value has to match len")
 		}
@@ -44,7 +42,7 @@ func NewChangeSequenceGenarator(l int, seedNumber int, seedId string) *ChangeSeq
 	return seq
 }
 
-func (seq *ChangeSequenceGenarator) Next() (int, string) {
+func (seq *ChangeSequenceGenarator) Next() string {
 
 	reachedEnd := false
 	for i := seq.len - 1; i >= 0; i-- {
@@ -59,7 +57,7 @@ func (seq *ChangeSequenceGenarator) Next() (int, string) {
 		seq.current[i] = t
 
 		if i == 0 && reachedEnd {
-			return 0, ""
+			return ""
 		}
 
 		if !reachedEnd {
@@ -72,13 +70,7 @@ func (seq *ChangeSequenceGenarator) Next() (int, string) {
 		v = append(v, seq.charSet[seq.current[i]])
 	}
 
-	seq.number++
-
-	if seq.number >= 16773120 {
-		seq.number = 1
-	}
-
-	return seq.number, string(v)
+	return string(v)
 }
 
 type SequenceUUIDGenarator struct {
