@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -52,33 +51,29 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 			return nil, err
 		}
 		db.writer.Commit()
-		db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
 	}
 
+	db.Open()
 	db.viewmgr = NewViewManager(path, viewPath, name)
+
+	err = db.viewmgr.Initialize(db)
+	if err != nil {
+		return nil, err
+	}
 
 	if createIfNotExists {
 		err = db.viewmgr.SetupViews(db)
 		if err != nil {
-			fmt.Println(err)
 			return nil, err
 		}
-
 	}
 
 	return db, nil
 }
 
 func (db *Database) Open() error {
-
 	db.updateSeqNumber, db.updateSeqID = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqNumber, db.updateSeqID)
-
-	err := db.viewmgr.Initialize(db)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 

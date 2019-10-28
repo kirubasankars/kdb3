@@ -95,10 +95,6 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if err != nil {
 		return err
 	}
-	err = db.Open()
-	if err != nil {
-		return err
-	}
 	kdb.dbs[name] = db
 
 	return nil
