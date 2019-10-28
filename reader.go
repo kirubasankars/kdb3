@@ -161,7 +161,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 func (db *DefaultDatabaseReader) GetChanges() []byte {
 	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
 	(
-		SELECT printf('%d-%s', seq_number, seq_id) as seq, version, doc_id, deleted FROM changes c ORDER by seq_id DESC
+		SELECT seq_id as seq, version, doc_id, deleted FROM changes c ORDER by seq_id DESC
 	),
 	changes_object (obj) as
 	(
