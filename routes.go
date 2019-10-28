@@ -138,6 +138,12 @@ var routes = Routes{
 	Route{
 		"SelectView",
 		"GET",
+		"/{db}/_design/{docid}/{view}",
+		SelectView,
+	},
+	Route{
+		"SelectView",
+		"GET",
 		"/{db}/_design/{docid}/{view}/{select}",
 		SelectView,
 	},

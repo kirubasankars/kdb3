@@ -306,6 +306,9 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	ddocID := "_design/" + vars["docid"]
 	view := vars["view"]
 	selectName := vars["select"]
+	if selectName == "" {
+		selectName = "default"
+	}
 	r.ParseForm()
 	stale, _ := strconv.ParseBool(r.FormValue("stale"))
 	rs, err := kdb.SelectView(db, ddocID, view, selectName, r.Form, stale)
