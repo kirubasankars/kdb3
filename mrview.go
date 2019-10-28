@@ -22,7 +22,7 @@ type ViewManager interface {
 	Initialize(db *Database) error
 	ListViewFiles() ([]string, error)
 	OpenView(viewName string, ddoc *DesignDocument) error
-	SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
 	UpdateDesignDocument(ddocID string, value []byte) error
@@ -50,8 +50,8 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key TEXT PRIMARY KEY, value TEXT, doc_id TEXT)")
-	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id})")
-	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('version',JSON_EXTRACT(d.data, '$._version')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_number > ${begin_seq_number} AND seq_id > ${begin_seq_id} AND seq_number <= ${end_seq_number} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
+	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id})")
+	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('version',JSON_EXTRACT(d.data, '$._version')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', 0,'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as rs FROM (SELECT * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddoc.Views["_all_docs"] = ddv
@@ -67,7 +67,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	}
 
 	_, err = db.PutDocument(designDoc)
-	if err != nil && err.Error() != "doc_conflict" {
+	if err != nil {
 		return err
 	}
 	return nil
@@ -161,7 +161,7 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqNumber int, updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
 	name := ddocID + "$" + viewName
 
@@ -204,7 +204,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqNumber int, updateSeqID, ddoc
 	}
 
 	if !stale {
-		err := view.Build(updateSeqNumber, updateSeqID)
+		err := view.Build(updateSeqID)
 		if err != nil {
 			return nil, err
 		}
@@ -435,13 +435,12 @@ func (view *View) Open() error {
 
 	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
 		Id					INTEGER PRIMARY KEY,
-		seq_number			INTEGER,
 		seq_id		  		TEXT,
 		design_doc_updated  INTEGER
 	) WITHOUT ROWID;
 
-	INSERT INTO view_meta (Id, seq_number, seq_id, design_doc_updated) 
-		SELECT 1, 0, "", false WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+	INSERT INTO view_meta (Id, seq_id, design_doc_updated) 
+		SELECT 1,"", false WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	`
 
 	if _, err = db.Exec(buildSQL); err != nil {
@@ -465,7 +464,7 @@ func (view *View) Open() error {
 		}
 	}
 
-	sqlGetViewLastSeq := "SELECT seq_number, seq_id FROM view_meta WHERE id = 1"
+	sqlGetViewLastSeq := "SELECT seq_id FROM view_meta WHERE id = 1"
 	row := db.QueryRow(sqlGetViewLastSeq)
 	row.Scan(&view.lastUpdateSeqNumber, &view.lastUpdateSeqID)
 
@@ -478,9 +477,9 @@ func (view *View) Close() error {
 	return view.con.Close()
 }
 
-func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
+func (view *View) Build(maxSeqID string) error {
 
-	if view.lastUpdateSeqID == maxSeqID && view.lastUpdateSeqNumber == maxSeqNumber {
+	if view.lastUpdateSeqID == maxSeqID {
 		return nil
 	}
 
@@ -494,12 +493,6 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 	for _, x := range view.deleteScripts {
 		values := make([]interface{}, len(x.params))
 		for i, p := range x.params {
-			if p == "begin_seq_number" {
-				values[i] = view.lastUpdateSeqNumber
-			}
-			if p == "end_seq_number" {
-				values[i] = maxSeqNumber
-			}
 			if p == "begin_seq_id" {
 				values[i] = view.lastUpdateSeqID
 			}
@@ -515,12 +508,6 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 	for _, x := range view.updateScripts {
 		values := make([]interface{}, len(x.params))
 		for i, p := range x.params {
-			if p == "begin_seq_number" {
-				values[i] = view.lastUpdateSeqNumber
-			}
-			if p == "end_seq_number" {
-				values[i] = maxSeqNumber
-			}
 			if p == "begin_seq_id" {
 				values[i] = view.lastUpdateSeqID
 			}
@@ -533,12 +520,11 @@ func (view *View) Build(maxSeqNumber int, maxSeqID string) error {
 		}
 	}
 
-	sqlUpdateViewMeta := "UPDATE view_meta SET seq_number = ?, seq_id = ? "
-	if _, err := tx.Exec(sqlUpdateViewMeta, maxSeqNumber, maxSeqID); err != nil {
+	sqlUpdateViewMeta := "UPDATE view_meta SET seq_id = ? "
+	if _, err := tx.Exec(sqlUpdateViewMeta, maxSeqID); err != nil {
 		panic(err)
 	}
 
-	view.lastUpdateSeqNumber = maxSeqNumber
 	view.lastUpdateSeqID = maxSeqID
 
 	tx.Commit()

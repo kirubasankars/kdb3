@@ -17,7 +17,7 @@ type DatabaseWriter interface {
 	Vacuum() error
 
 	GetDocumentRevisionByID(docID string) (*Document, error)
-	PutDocument(updateSeqNumber int, updateSeqID string, newDoc *Document, currentDoc *Document) error
+	PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error
 }
 
 type DefaultDatabaseWriter struct {
@@ -70,12 +70,11 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		) WITHOUT ROWID;
 
 		CREATE TABLE IF NOT EXISTS changes (
-			seq_number  INTEGER,
 			seq_id 		TEXT, 
 			doc_id 		TEXT, 
 			version  INTEGER, 
 			deleted     BOOL,
-			PRIMARY KEY (seq_number, seq_id)
+			PRIMARY KEY (seq_id)
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
@@ -100,10 +99,10 @@ func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Doc
 	return writer.reader.GetDocumentRevisionByID(docID)
 }
 
-func (writer *DefaultDatabaseWriter) PutDocument(updateSeqNumber int, updateSeqID string, newDoc *Document, currentDoc *Document) error {
+func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
 	tx := writer.tx
 
-	if _, err := tx.Exec("INSERT INTO changes (seq_number, seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?, ?)", updateSeqNumber, updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
+	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
 			return errors.New("doc_conflict")
 		}

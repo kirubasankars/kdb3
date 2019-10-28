@@ -21,7 +21,7 @@ type DatabaseReader interface {
 	GetAllDesignDocuments() ([]*Document, error)
 	GetChanges() []byte
 
-	GetLastUpdateSequence() (int, string)
+	GetLastUpdateSequence() string
 	GetDocumentCount() int
 	GetSQLiteVersion() string
 }
@@ -181,20 +181,17 @@ func (db *DefaultDatabaseReader) GetChanges() []byte {
 	return changes
 }
 
-func (db *DefaultDatabaseReader) GetLastUpdateSequence() (int, string) {
-	sqlGetMaxSeq := "SELECT seq_number, seq_id FROM (SELECT MAX(seq_number) as seq_number, MAX(seq_id)  as seq_id FROM changes WHERE seq_id = (SELECT MAX(seq_id) FROM changes) UNION ALL SELECT 0, '') WHERE seq_number IS NOT NULL LIMIT 1"
-	row := db.tx.QueryRow(sqlGetMaxSeq)
-	var (
-		maxSeqNumber int
-		maxSeqID     string
-	)
+func (db *DefaultDatabaseReader) GetLastUpdateSequence() string {
+	var maxSeqID string
+	sqlGetMaxSeq := "SELECT IFNULL(seq_id, '') FROM (SELECT MAX(seq_id) as seq_id FROM changes)"
 
-	err := row.Scan(&maxSeqNumber, &maxSeqID)
-	if err != nil {
+	row := db.tx.QueryRow(sqlGetMaxSeq)
+	err := row.Scan(&maxSeqID)
+	if err != nil && err.Error() != "sql: no rows in result set" {
 		panic(err)
 	}
 
-	return maxSeqNumber, maxSeqID
+	return maxSeqID
 }
 
 func (db *DefaultDatabaseReader) GetDocumentCount() int {
