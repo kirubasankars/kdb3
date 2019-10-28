@@ -53,7 +53,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id})")
 	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('version',JSON_EXTRACT(d.data, '$._version')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
 	ddv.Select = make(map[string]string)
-	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', 0,'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as rs FROM (SELECT * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
+	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddoc.Views["_all_docs"] = ddv
 
 	buffer := &bytes.Buffer{}
