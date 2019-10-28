@@ -148,6 +148,9 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
+	reader.Begin()
+	defer reader.Commit()
+
 	if includeData {
 		if doc.Version > 0 {
 			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
@@ -164,6 +167,10 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetAllDesignDocuments()
 }
 
@@ -172,31 +179,43 @@ func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 	return db.PutDocument(doc)
 }
 
-func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return db.viewmgr.SelectView(db.updateSeqNumber, db.updateSeqID, ddocID, viewName, selectName, values, stale)
-}
-
 func (db *Database) GetLastUpdateSequence() (int, string) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetLastUpdateSequence()
 }
 
 func (db *Database) GetChanges() []byte {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetChanges()
 }
 
 func (db *Database) GetDocumentCount() int {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetDocumentCount()
 }
 
 func (db *Database) GetSQLiteVersion() string {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetSQLiteVersion()
 }
 
@@ -211,4 +230,8 @@ func (db *Database) Stat() *DBStat {
 func (db *Database) Vacuum() error {
 	db.viewmgr.Vacuum()
 	return db.writer.Vacuum()
+}
+
+func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	return db.viewmgr.SelectView(db.updateSeqNumber, db.updateSeqID, ddocID, viewName, selectName, values, stale)
 }
