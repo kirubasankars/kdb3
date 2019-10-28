@@ -103,8 +103,11 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	tx := writer.tx
 
 	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
-		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.rev_number" {
+		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
 			return errors.New("doc_conflict")
+		}
+		if err.Error() == "UNIQUE constraint failed: changes.seq_id" {
+			return errors.New("internal_error")
 		}
 		return err
 	}
