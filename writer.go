@@ -21,9 +21,8 @@ type DatabaseWriter interface {
 }
 
 type DefaultDatabaseWriter struct {
-	reader DefaultDatabaseReader
-	conn   *sql.DB
-	tx     *sql.Tx
+	conn *sql.DB
+	tx   *sql.Tx
 }
 
 func (writer *DefaultDatabaseWriter) Open(path string) error {
@@ -32,7 +31,6 @@ func (writer *DefaultDatabaseWriter) Open(path string) error {
 		return err
 	}
 	writer.conn = con
-	writer.reader.conn = con
 	return nil
 }
 
@@ -94,7 +92,23 @@ func (writer *DefaultDatabaseWriter) Vacuum() error {
 }
 
 func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
-	return writer.reader.GetDocumentRevisionByID(docID)
+	doc := Document{}
+
+	row := writer.tx.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", docID)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted)
+	if err != nil && err.Error() != "sql: no rows in result set" {
+		return nil, err
+	}
+
+	if doc.ID == "" {
+		return nil, errors.New("doc_not_found")
+	}
+
+	if doc.Deleted == true {
+		return &doc, errors.New("doc_not_found")
+	}
+
+	return &doc, nil
 }
 
 func (writer *DefaultDatabaseWriter) PutDocument(updateSeqNumber int, updateSeqID string, newDoc *Document, currentDoc *Document) error {

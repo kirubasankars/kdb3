@@ -56,16 +56,16 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	db.Open()
 	db.viewmgr = NewViewManager(path, viewPath, name)
 
-	err = db.viewmgr.Initialize(db)
-	if err != nil {
-		return nil, err
-	}
-
 	if createIfNotExists {
 		err = db.viewmgr.SetupViews(db)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	err = db.viewmgr.Initialize(db)
+	if err != nil {
+		return nil, err
 	}
 
 	return db, nil
@@ -85,7 +85,17 @@ func (db *Database) Close() error {
 }
 
 func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
+
 	writer := db.writer
+
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	err := writer.Begin()
+	defer writer.Rollback()
+	if err != nil {
+		return nil, err
+	}
 
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
@@ -106,19 +116,9 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	newDoc.CalculateVersion()
 
-	db.mux.Lock()
-	defer db.mux.Unlock()
-
-	err = writer.Begin()
-	if err != nil {
-		return nil, err
-	}
-
-	defer writer.Rollback()
-
 	updateSeqNumber, updateSeqID := db.changeSeq.Next()
 
-	writer.PutDocument(updateSeqNumber, updateSeqID, newDoc, currentDoc)
+	err = writer.PutDocument(updateSeqNumber, updateSeqID, newDoc, currentDoc)
 	if err != nil {
 		return nil, err
 	}
