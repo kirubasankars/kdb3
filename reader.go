@@ -19,7 +19,7 @@ type DatabaseReader interface {
 	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
 
 	GetAllDesignDocuments() ([]*Document, error)
-	GetChanges() []byte
+	GetChanges(since string) []byte
 
 	GetLastUpdateSequence() string
 	GetDocumentCount() int
@@ -158,17 +158,17 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 	return docs, nil
 }
 
-func (db *DefaultDatabaseReader) GetChanges() []byte {
+func (db *DefaultDatabaseReader) GetChanges(since string) []byte {
 	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
 	(
-		SELECT seq_id as seq, version, doc_id, deleted FROM changes c ORDER by seq_id DESC
+		SELECT seq_id as seq, version, doc_id, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id DESC
 	),
 	changes_object (obj) as
 	(
 		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', true)  END) as obj FROM all_changes
 	)
 	SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object`
-	row := db.tx.QueryRow(sqlGetChanges)
+	row := db.tx.QueryRow(sqlGetChanges, since, since)
 	var (
 		changes []byte
 	)

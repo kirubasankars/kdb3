@@ -179,7 +179,7 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	return db.Vacuum()
 }
 
-func (kdb *KDBEngine) Changes(name string) ([]byte, error) {
+func (kdb *KDBEngine) Changes(name string, since string) ([]byte, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -187,7 +187,7 @@ func (kdb *KDBEngine) Changes(name string) ([]byte, error) {
 		return nil, errors.New("db_not_found")
 	}
 
-	return db.GetChanges(), nil
+	return db.GetChanges(since), nil
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
@@ -207,8 +207,6 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	name := ":memory:"
-	db, _ := kdb.dbs[name]
-	version := db.GetSQLiteVersion()
+	version := "3.2"
 	return []byte(fmt.Sprintf(`{"version":{"sqlite_version":"%s"}}`, version))
 }
