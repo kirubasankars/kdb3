@@ -46,6 +46,12 @@ var routes = Routes{
 		AllDatabases,
 	},
 	Route{
+		"UUID",
+		"GET",
+		"/_uuids",
+		UUIDs,
+	},
+	Route{
 		"GetDatabase",
 		"GET",
 		"/{db}",

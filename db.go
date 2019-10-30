@@ -187,14 +187,14 @@ func (db *Database) GetLastUpdateSequence() string {
 	return reader.GetLastUpdateSequence()
 }
 
-func (db *Database) GetChanges() []byte {
+func (db *Database) GetChanges(since string) []byte {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
 	defer reader.Commit()
 
-	return reader.GetChanges()
+	return reader.GetChanges(since)
 }
 
 func (db *Database) GetDocumentCount() int {

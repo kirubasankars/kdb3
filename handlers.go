@@ -60,7 +60,13 @@ func DeleteDatabase(w http.ResponseWriter, r *http.Request) {
 func DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
-	rs, err := kdb.SelectView(db, "_design/_views", "_all_docs", "default", r.Form, false)
+	r.ParseForm()
+	includeDocs, _ := strconv.ParseBool(r.FormValue("include_docs"))
+	selectName := "default"
+	if includeDocs {
+		selectName = "with_docs"
+	}
+	rs, err := kdb.SelectView(db, "_design/_views", "_all_docs", selectName, r.Form, false)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -74,7 +80,9 @@ func DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
 func DatabaseChanges(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
-	rs, err := kdb.Changes(db)
+	r.ParseForm()
+	since := r.FormValue("since")
+	rs, err := kdb.Changes(db, since)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -100,6 +108,7 @@ func DatabaseCompact(w http.ResponseWriter, r *http.Request) {
 }
 
 func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+	//body, err := ioutil.ReadAll(r.Body)
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
@@ -110,8 +119,9 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	if docid != "" {
-		input.ID = docid
+	if docid != "" && docid != input.ID {
+		NotOK(errors.New("mismatch_id"), w)
+		return
 	}
 	doc, err := kdb.PutDocument(db, input)
 	if err != nil {
@@ -305,9 +315,17 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	db := vars["db"]
 	ddocID := "_design/" + vars["docid"]
 	view := vars["view"]
+
 	selectName := vars["select"]
 	if selectName == "" {
 		selectName = "default"
+	}
+
+	r.ParseForm()
+	includeDocs, _ := strconv.ParseBool(r.FormValue("include_docs"))
+
+	if includeDocs {
+		selectName = selectName + "_with_docs"
 	}
 	r.ParseForm()
 	stale, _ := strconv.ParseBool(r.FormValue("stale"))
@@ -326,4 +344,18 @@ func Info(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	w.Write(kdb.Info())
+}
+
+var seq = NewSequenceUUIDGenarator()
+
+func UUIDs(w http.ResponseWriter, r *http.Request) {
+	c := r.FormValue("count")
+	count, _ := strconv.Atoi(c)
+	var list []string
+	for i := 0; i < count; i++ {
+		list = append(list, seq.Next())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(list)
 }

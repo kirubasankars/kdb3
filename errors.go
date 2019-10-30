@@ -18,6 +18,8 @@ func errorString(err error) string {
 		errString = "document not found"
 	case "view_not_found":
 		errString = "view not found"
+	case "view_result_error":
+		errString = "view expect 1 column"
 	}
 
 	return errString
