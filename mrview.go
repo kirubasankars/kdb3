@@ -60,7 +60,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddvlatestchanges := &DesignDocumentView{}
 	ddvlatestchanges.Select = make(map[string]string)
 	ddvlatestchanges.Select["default"] = "SELECT JSON_GROUP_ARRAY(doc_id) FROM latest_changes"
-	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', JSON(data))) FROM latest_documents"
+	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', data)) FROM latest_documents"
 
 	ddoc.Views["latest_changes"] = ddvlatestchanges
 
@@ -467,7 +467,7 @@ func (view *View) Open() error {
 
 	_, err = db.Exec(`
 		CREATE TEMP VIEW latest_changes AS SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > (SELECT last_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT d.* FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM latest_changes) c USING(doc_id);
+		CREATE TEMP VIEW latest_documents AS SELECT d.doc_id, d.version, JSON(d.data) as data FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM latest_changes) c USING(doc_id);
 					`)
 	if err != nil {
 		return err
