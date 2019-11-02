@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -50,12 +49,20 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key TEXT PRIMARY KEY, value TEXT, doc_id TEXT)")
-	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id})")
-	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT d.doc_id, JSON_OBJECT('version',JSON_EXTRACT(d.data, '$._version')), d.doc_id FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > ${begin_seq_id} AND seq_id <= ${end_seq_id}) c USING(doc_id) ")
+	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT doc_id FROM latest_changes)")
+	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version',JSON_EXTRACT(data, '$._version')), doc_id FROM latest_documents")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM docsdb.documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
+
 	ddoc.Views["_all_docs"] = ddv
+
+	ddvlatestchanges := &DesignDocumentView{}
+	ddvlatestchanges.Select = make(map[string]string)
+	ddvlatestchanges.Select["default"] = "SELECT JSON_GROUP_ARRAY(doc_id) FROM latest_changes"
+	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', JSON(data))) FROM latest_documents"
+
+	ddoc.Views["latest_changes"] = ddvlatestchanges
 
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
@@ -373,8 +380,7 @@ type View struct {
 	name   string
 	dbName string
 
-	lastUpdateSeqNumber int
-	lastUpdateSeqID     string
+	lastUpdateSeqID string
 
 	ddocID string
 
@@ -436,12 +442,13 @@ func (view *View) Open() error {
 
 	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
 		Id					INTEGER PRIMARY KEY,
-		seq_id		  		TEXT,
-		design_doc_updated  INTEGER
+		last_seq_id		  		TEXT,
+		next_seq_id		  		TEXT
 	) WITHOUT ROWID;
 
-	INSERT INTO view_meta (Id, seq_id, design_doc_updated) 
-		SELECT 1,"", false WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+	INSERT INTO view_meta (Id, last_seq_id, next_seq_id) 
+		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+	
 	`
 
 	if _, err = db.Exec(buildSQL); err != nil {
@@ -455,7 +462,14 @@ func (view *View) Open() error {
 
 	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + "' as docsdb;")
 	if err != nil {
-		fmt.Println(err)
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TEMP VIEW latest_changes AS SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > (SELECT last_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_documents AS SELECT d.* FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM latest_changes) c USING(doc_id);
+					`)
+	if err != nil {
 		return err
 	}
 
@@ -465,9 +479,9 @@ func (view *View) Open() error {
 		}
 	}
 
-	sqlGetViewLastSeq := "SELECT seq_id FROM view_meta WHERE id = 1"
+	sqlGetViewLastSeq := "SELECT last_seq_id FROM view_meta WHERE id = 1"
 	row := db.QueryRow(sqlGetViewLastSeq)
-	row.Scan(&view.lastUpdateSeqNumber, &view.lastUpdateSeqID)
+	row.Scan(&view.lastUpdateSeqID)
 
 	view.con = db
 
@@ -489,6 +503,11 @@ func (view *View) Build(maxSeqID string) error {
 	defer tx.Rollback()
 	if err != nil {
 		return err
+	}
+
+	sqlUpdateViewMeta := "UPDATE view_meta SET last_seq_id = next_seq_id, next_seq_id = ? "
+	if _, err := tx.Exec(sqlUpdateViewMeta, maxSeqID); err != nil {
+		panic(err)
 	}
 
 	for _, x := range view.deleteScripts {
@@ -519,11 +538,6 @@ func (view *View) Build(maxSeqID string) error {
 		if _, err = tx.Exec(x.text, values...); err != nil {
 			return err
 		}
-	}
-
-	sqlUpdateViewMeta := "UPDATE view_meta SET seq_id = ? "
-	if _, err := tx.Exec(sqlUpdateViewMeta, maxSeqID); err != nil {
-		panic(err)
 	}
 
 	view.lastUpdateSeqID = maxSeqID
