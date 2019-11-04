@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 )
 
 type DatabaseReader interface {
@@ -23,7 +22,6 @@ type DatabaseReader interface {
 
 	GetLastUpdateSequence() string
 	GetDocumentCount() int
-	GetSQLiteVersion() string
 }
 
 type DefaultDatabaseReader struct {
@@ -201,13 +199,6 @@ func (db *DefaultDatabaseReader) GetDocumentCount() int {
 	return count
 }
 
-func (db *DefaultDatabaseReader) GetSQLiteVersion() string {
-	row := db.tx.QueryRow("SELECT sqlite_version() as version")
-	version := ""
-	row.Scan(&version)
-	return version
-}
-
 func (reader *DefaultDatabaseReader) Close() error {
 	return reader.conn.Close()
 }
@@ -217,26 +208,25 @@ type DatabaseReaderPool struct {
 	pool chan DatabaseReader
 }
 
-func NewDatabaseReaderPool(path string, max int) DatabaseReaderPool {
+func NewDatabaseReaderPool(path string, limit int) DatabaseReaderPool {
 	return DatabaseReaderPool{
 		path: path,
-		pool: make(chan DatabaseReader, max),
+		pool: make(chan DatabaseReader, limit),
 	}
 }
 
-func (p *DatabaseReaderPool) Borrow() DatabaseReader {
+func (p *DatabaseReaderPool) Borrow() (DatabaseReader, error) {
 	var r DatabaseReader
+	var err error
+
 	select {
 	case r = <-p.pool:
 	default:
 		r = &DefaultDatabaseReader{}
-		err := r.Open(p.path)
-		if err != nil {
-			fmt.Println(err)
-		}
+		err = r.Open(p.path)
 	}
 
-	return r
+	return r, err
 }
 
 func (p *DatabaseReaderPool) Return(r DatabaseReader) {
@@ -244,19 +234,23 @@ func (p *DatabaseReaderPool) Return(r DatabaseReader) {
 	case p.pool <- r:
 
 	default:
+
 	}
 }
 
-func (p *DatabaseReaderPool) Close() {
+func (p *DatabaseReaderPool) Close() error {
+	var err error
 	for {
 		var r DatabaseReader
 		select {
 		case r = <-p.pool:
-			r.Close()
+			err = r.Close()
 		default:
 		}
 		if r == nil {
 			break
 		}
 	}
+
+	return err
 }

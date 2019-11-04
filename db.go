@@ -143,7 +143,10 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
-	reader := db.readers.Borrow()
+	reader, err := db.readers.Borrow()
+	if err != nil {
+		return nil, err
+	}
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -163,7 +166,10 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 }
 
 func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
-	reader := db.readers.Borrow()
+	reader, err := db.readers.Borrow()
+	if err != nil {
+		return nil, err
+	}
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -178,7 +184,7 @@ func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 }
 
 func (db *Database) GetLastUpdateSequence() string {
-	reader := db.readers.Borrow()
+	reader, _ := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -188,7 +194,7 @@ func (db *Database) GetLastUpdateSequence() string {
 }
 
 func (db *Database) GetChanges(since string) []byte {
-	reader := db.readers.Borrow()
+	reader, _ := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -198,23 +204,13 @@ func (db *Database) GetChanges(since string) []byte {
 }
 
 func (db *Database) GetDocumentCount() int {
-	reader := db.readers.Borrow()
+	reader, _ := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
 	defer reader.Commit()
 
 	return reader.GetDocumentCount()
-}
-
-func (db *Database) GetSQLiteVersion() string {
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
-
-	reader.Begin()
-	defer reader.Commit()
-
-	return reader.GetSQLiteVersion()
 }
 
 func (db *Database) Stat() *DBStat {
