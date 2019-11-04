@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -25,7 +24,7 @@ type ViewManager interface {
 	SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
-	UpdateDesignDocument(ddocID string, value []byte) error
+	UpdateDesignDocument(ddocID string, doc *Document) error
 	ValidateDDoc(ddoc *DesignDocument) error
 	CalculateSignature(ddocv *DesignDocumentView) string
 	ParseQuery(query string) (string, []string)
@@ -172,6 +171,9 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 
 func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
+	//fmt.Println(mgr.viewFiles)
+	//fmt.Println(mgr.views)
+
 	name := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()
@@ -250,48 +252,59 @@ func (mgr *DefaultViewManager) Vacuum() error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, value []byte) error {
+func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, doc *Document) error {
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
 
-	newDDoc := &DesignDocument{}
-	err := json.Unmarshal(value, newDDoc)
-	if err != nil {
-		panic("invalid_design_document " + ddocID)
-	}
 	var updatedViews map[string]string = make(map[string]string)
-	for vname, nddv := range newDDoc.Views {
-		var (
-			currentViewFile   string
-			newViewFile       string
-			qualifiedViewName string = ddocID + "$" + vname
-		)
-		newViewFile = mgr.dbName + "$" + mgr.CalculateSignature(nddv)
-		if _, ok := mgr.viewFiles[newViewFile]; !ok {
-			mgr.viewFiles[newViewFile] = make(map[string]bool)
-		}
-		mgr.viewFiles[newViewFile][qualifiedViewName] = true
+	newDDoc := &DesignDocument{}
 
-		if _, ok := mgr.views[qualifiedViewName]; ok {
-			mgr.views[qualifiedViewName].Close()
-			delete(mgr.views, qualifiedViewName)
-		}
-
-		if currentDDoc, ok := mgr.ddocs[ddocID]; ok {
-			if cddv, _ := currentDDoc.Views[vname]; cddv != nil {
-				currentViewFile = mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+	if doc.Deleted {
+		for qualifiedViewName, view := range mgr.views {
+			if strings.HasPrefix(qualifiedViewName, ddocID+"$") {
+				view.Close()
+				delete(mgr.views, qualifiedViewName)
+				updatedViews[qualifiedViewName] = ""
 			}
 		}
-
-		//To takecare old one
-		if currentViewFile != "" && len(mgr.viewFiles[currentViewFile]) <= 0 {
-			delete(mgr.viewFiles, currentViewFile)
-			os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+	} else {
+		err := json.Unmarshal(doc.Data, newDDoc)
+		if err != nil {
+			panic("invalid_design_document " + ddocID)
 		}
 
-		updatedViews[qualifiedViewName] = newViewFile
+		for vname, nddv := range newDDoc.Views {
+			var (
+				currentViewFile   string
+				newViewFile       string
+				qualifiedViewName string = ddocID + "$" + vname
+			)
+			newViewFile = mgr.dbName + "$" + mgr.CalculateSignature(nddv)
+			if _, ok := mgr.viewFiles[newViewFile]; !ok {
+				mgr.viewFiles[newViewFile] = make(map[string]bool)
+			}
+			mgr.viewFiles[newViewFile][qualifiedViewName] = true
 
+			if _, ok := mgr.views[qualifiedViewName]; ok {
+				mgr.views[qualifiedViewName].Close()
+				delete(mgr.views, qualifiedViewName)
+			}
+
+			if currentDDoc, ok := mgr.ddocs[ddocID]; ok {
+				if cddv, _ := currentDDoc.Views[vname]; cddv != nil {
+					currentViewFile = mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+				}
+			}
+
+			//To takecare old one
+			if currentViewFile != "" && len(mgr.viewFiles[currentViewFile]) <= 0 {
+				delete(mgr.viewFiles, currentViewFile)
+				os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+			}
+
+			updatedViews[qualifiedViewName] = newViewFile
+		}
 	}
 
 	currentDDoc, ok := mgr.ddocs[ddocID]
@@ -311,11 +324,15 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, value []byte)
 		}
 	}
 
-	fmt.Println(mgr.viewFiles, mgr.views)
+	//fmt.Println(mgr.viewFiles, mgr.views)
 
-	mgr.ddocs[ddocID] = newDDoc
+	if doc.Deleted {
+		delete(mgr.ddocs, ddocID)
+	} else {
+		mgr.ddocs[ddocID] = newDDoc
+	}
 
-	return mgr.ValidateDDoc(newDDoc)
+	return nil
 }
 
 func (mgr *DefaultViewManager) ValidateDDoc(ddoc *DesignDocument) error {
