@@ -129,7 +129,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	db.updateSeqID = updateSeqID
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
-		db.viewmgr.UpdateDesignDocument(newDoc.ID, newDoc)
+		db.viewmgr.UpdateDesignDocument(newDoc)
 	}
 
 	doc := Document{
@@ -154,8 +154,8 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
 		}
 		return reader.GetDocumentByID(doc.ID)
-
 	}
+
 	if doc.Version > 0 {
 		return reader.GetDocumentRevisionByIDandVersion(doc.ID, doc.Version)
 	}

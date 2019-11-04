@@ -203,13 +203,19 @@ func (reader *DefaultDatabaseReader) Close() error {
 	return reader.conn.Close()
 }
 
-type DatabaseReaderPool struct {
+type DatabaseReaderPool interface {
+	Borrow() DatabaseReader
+	Return(r DatabaseReader)
+	Close() error
+}
+
+type DefaultDatabaseReaderPool struct {
 	path string
 	pool chan DatabaseReader
 }
 
 func NewDatabaseReaderPool(path string, limit int) DatabaseReaderPool {
-	readers := DatabaseReaderPool{
+	readers := DefaultDatabaseReaderPool{
 		path: path,
 		pool: make(chan DatabaseReader, limit),
 	}
@@ -218,18 +224,18 @@ func NewDatabaseReaderPool(path string, limit int) DatabaseReaderPool {
 		_ = r.Open(path)
 		readers.pool <- r
 	}
-	return readers
+	return &readers
 }
 
-func (p *DatabaseReaderPool) Borrow() DatabaseReader {
+func (p *DefaultDatabaseReaderPool) Borrow() DatabaseReader {
 	return <-p.pool
 }
 
-func (p *DatabaseReaderPool) Return(r DatabaseReader) {
+func (p *DefaultDatabaseReaderPool) Return(r DatabaseReader) {
 	p.pool <- r
 }
 
-func (p *DatabaseReaderPool) Close() error {
+func (p *DefaultDatabaseReaderPool) Close() error {
 	var err error
 	for {
 		var r DatabaseReader
