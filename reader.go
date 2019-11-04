@@ -209,33 +209,24 @@ type DatabaseReaderPool struct {
 }
 
 func NewDatabaseReaderPool(path string, limit int) DatabaseReaderPool {
-	return DatabaseReaderPool{
+	readers := DatabaseReaderPool{
 		path: path,
 		pool: make(chan DatabaseReader, limit),
 	}
+	for x := 0; x < limit; x++ {
+		r := &DefaultDatabaseReader{}
+		_ = r.Open(path)
+		readers.pool <- r
+	}
+	return readers
 }
 
-func (p *DatabaseReaderPool) Borrow() (DatabaseReader, error) {
-	var r DatabaseReader
-	var err error
-
-	select {
-	case r = <-p.pool:
-	default:
-		r = &DefaultDatabaseReader{}
-		err = r.Open(p.path)
-	}
-
-	return r, err
+func (p *DatabaseReaderPool) Borrow() DatabaseReader {
+	return <-p.pool
 }
 
 func (p *DatabaseReaderPool) Return(r DatabaseReader) {
-	select {
-	case p.pool <- r:
-
-	default:
-
-	}
+	p.pool <- r
 }
 
 func (p *DatabaseReaderPool) Close() error {

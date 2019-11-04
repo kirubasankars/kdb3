@@ -9,6 +9,7 @@ var (
 	DOC_NOT_FOUND     = "doc_not_found"
 	VIEW_NOT_FOUND    = "view_not_found"
 	VIEW_RESULT_ERROR = "view_result_error"
+	INTERAL_ERROR     = "internal_error"
 
 	MSG_INTERAL_ERROR     = "internal error"
 	MSG_DB_EXISTS         = "database already exists"
