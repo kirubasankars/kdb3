@@ -101,12 +101,12 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-	if err != nil && err.Error() != "doc_not_found" {
+	if err != nil && err.Error() != DOC_NOT_FOUND {
 		return nil, err
 	}
 
 	if currentDoc != nil && !currentDoc.Deleted && currentDoc.Version != newDoc.Version {
-		return nil, errors.New("doc_conflict")
+		return nil, errors.New(DOC_CONFLICT)
 	}
 
 	if currentDoc != nil && currentDoc.Deleted {
@@ -143,10 +143,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
-	reader, err := db.readers.Borrow()
-	if err != nil {
-		return nil, err
-	}
+	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -166,10 +163,7 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 }
 
 func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
-	reader, err := db.readers.Borrow()
-	if err != nil {
-		return nil, err
-	}
+	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -184,7 +178,7 @@ func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
 }
 
 func (db *Database) GetLastUpdateSequence() string {
-	reader, _ := db.readers.Borrow()
+	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -194,7 +188,7 @@ func (db *Database) GetLastUpdateSequence() string {
 }
 
 func (db *Database) GetChanges(since string) []byte {
-	reader, _ := db.readers.Borrow()
+	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()
@@ -204,7 +198,7 @@ func (db *Database) GetChanges(since string) []byte {
 }
 
 func (db *Database) GetDocumentCount() int {
-	reader, _ := db.readers.Borrow()
+	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
 	reader.Begin()

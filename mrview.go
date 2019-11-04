@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -189,11 +190,11 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
-			return nil, errors.New("doc_not_found")
+			return nil, errors.New(DOC_NOT_FOUND)
 		}
 		_, ok = ddoc.Views[viewName]
 		if !ok {
-			return nil, errors.New("view_not_found")
+			return nil, errors.New(VIEW_NOT_FOUND)
 		}
 
 		runlock()
@@ -208,7 +209,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 	}
 
 	if view == nil {
-		return nil, errors.New("view_not_found")
+		return nil, errors.New(VIEW_NOT_FOUND)
 	}
 
 	if !stale {
@@ -310,7 +311,7 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, value []byte)
 		}
 	}
 
-	//fmt.Println(mgr.viewFiles, mgr.views)
+	fmt.Println(mgr.viewFiles, mgr.views)
 
 	mgr.ddocs[ddocID] = newDDoc
 
@@ -378,11 +379,9 @@ func NewViewManager(dbPath, viewPath, dbName string) *DefaultViewManager {
 
 type View struct {
 	name   string
-	dbName string
-
-	lastUpdateSeqID string
-
 	ddocID string
+
+	currentSeqID string
 
 	viewFilePath string
 	dbFilePath   string
@@ -441,12 +440,12 @@ func (view *View) Open() error {
 	}
 
 	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
-		Id					INTEGER PRIMARY KEY,
-		last_seq_id		  		TEXT,
+		Id						INTEGER PRIMARY KEY,
+		current_seq_id		  	TEXT,
 		next_seq_id		  		TEXT
 	) WITHOUT ROWID;
 
-	INSERT INTO view_meta (Id, last_seq_id, next_seq_id) 
+	INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
 		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	
 	`
@@ -466,7 +465,7 @@ func (view *View) Open() error {
 	}
 
 	_, err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > (SELECT last_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_changes AS SELECT DISTINCT doc_id FROM docsdb.changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
 		CREATE TEMP VIEW latest_documents AS SELECT d.doc_id, d.version, JSON(d.data) as data FROM docsdb.documents d JOIN (SELECT DISTINCT doc_id FROM latest_changes) c USING(doc_id);
 					`)
 	if err != nil {
@@ -479,9 +478,9 @@ func (view *View) Open() error {
 		}
 	}
 
-	sqlGetViewLastSeq := "SELECT last_seq_id FROM view_meta WHERE id = 1"
+	sqlGetViewLastSeq := "SELECT current_seq_id FROM view_meta WHERE id = 1"
 	row := db.QueryRow(sqlGetViewLastSeq)
-	row.Scan(&view.lastUpdateSeqID)
+	row.Scan(&view.currentSeqID)
 
 	view.con = db
 
@@ -492,9 +491,9 @@ func (view *View) Close() error {
 	return view.con.Close()
 }
 
-func (view *View) Build(maxSeqID string) error {
+func (view *View) Build(nextSeqID string) error {
 
-	if view.lastUpdateSeqID == maxSeqID {
+	if view.currentSeqID == nextSeqID {
 		return nil
 	}
 
@@ -505,8 +504,8 @@ func (view *View) Build(maxSeqID string) error {
 		return err
 	}
 
-	sqlUpdateViewMeta := "UPDATE view_meta SET last_seq_id = next_seq_id, next_seq_id = ? "
-	if _, err := tx.Exec(sqlUpdateViewMeta, maxSeqID); err != nil {
+	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
+	if _, err := tx.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
 		panic(err)
 	}
 
@@ -514,10 +513,10 @@ func (view *View) Build(maxSeqID string) error {
 		values := make([]interface{}, len(x.params))
 		for i, p := range x.params {
 			if p == "begin_seq_id" {
-				values[i] = view.lastUpdateSeqID
+				values[i] = view.currentSeqID
 			}
 			if p == "end_seq_id" {
-				values[i] = maxSeqID
+				values[i] = nextSeqID
 			}
 		}
 		if _, err = tx.Exec(x.text, values...); err != nil {
@@ -529,10 +528,10 @@ func (view *View) Build(maxSeqID string) error {
 		values := make([]interface{}, len(x.params))
 		for i, p := range x.params {
 			if p == "begin_seq_id" {
-				values[i] = view.lastUpdateSeqID
+				values[i] = view.currentSeqID
 			}
 			if p == "end_seq_id" {
-				values[i] = maxSeqID
+				values[i] = nextSeqID
 			}
 		}
 		if _, err = tx.Exec(x.text, values...); err != nil {
@@ -540,7 +539,7 @@ func (view *View) Build(maxSeqID string) error {
 		}
 	}
 
-	view.lastUpdateSeqID = maxSeqID
+	view.currentSeqID = nextSeqID
 
 	tx.Commit()
 

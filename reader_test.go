@@ -2,7 +2,10 @@ package main
 
 import (
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func setupTestDatabaseWithWriter() error {
@@ -236,24 +239,25 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 }
 
 func TestReaderPool(t *testing.T) {
-	pool := NewDatabaseReaderPool(testConnectionString, 2)
+	readers := NewDatabaseReaderPool(testConnectionString, 1)
+	r1 := readers.Borrow()
 
-	r1, _ := pool.Borrow()
-	r2, _ := pool.Borrow()
-	r3, _ := pool.Borrow()
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	pool.Return(r1)
-	pool.Return(r2)
-	pool.Return(r3)
+	var counter uint64
+	go func() {
+		r2 := readers.Borrow()
+		if counter <= 0 {
+			t.Errorf("expected reader borrow has to wait. failed.")
+		}
+		readers.Return(r2)
+		wg.Done()
+	}()
 
-	r1, _ = pool.Borrow()
-	r2, _ = pool.Borrow()
-	r3, _ = pool.Borrow()
-	r4, _ := pool.Borrow()
-
+	time.Sleep(5 * 1000)
+	atomic.AddUint64(&counter, 1)
+	readers.Return(r1)
+	wg.Wait()
 	_ = r1
-	_ = r2
-	_ = r3
-	_ = r4
-
 }
