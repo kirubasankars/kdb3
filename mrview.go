@@ -24,7 +24,7 @@ type ViewManager interface {
 	SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
-	UpdateDesignDocument(ddocID string, doc *Document) error
+	UpdateDesignDocument(doc *Document) error
 	ValidateDDoc(ddoc *DesignDocument) error
 	CalculateSignature(ddocv *DesignDocumentView) string
 	ParseQuery(query string) (string, []string)
@@ -252,11 +252,11 @@ func (mgr *DefaultViewManager) Vacuum() error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) UpdateDesignDocument(ddocID string, doc *Document) error {
+func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
-
+	ddocID := doc.ID
 	var updatedViews map[string]string = make(map[string]string)
 	newDDoc := &DesignDocument{}
 
