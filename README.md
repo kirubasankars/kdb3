@@ -2,11 +2,12 @@
 database written in Go with sqlite3 as storage and query/view engine. Not ready yet.
 
 Features
-  1. Document Database
-  2. Optimistic Concurrency
-  3. Change tracking 
-  4. Incrementally updated Materialistic View
+  1. Document Database - Done
+  2. Optimistic Concurrency - Done
+  3. Change tracking - Done
+  4. Incrementally updated Materialistic View - Done
   5. Incremental Backup - InProgress
-  6. High Availability with replica - InProgress
-  7. External Views - InProgress
-  9. Replication - InProgress
+  6. External Replication - InProgress
+  7. External Views
+  8. Cluster
+  9. High Availability with replica
