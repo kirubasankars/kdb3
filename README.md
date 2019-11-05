@@ -9,5 +9,4 @@ Features
   5. Incremental Backup - InProgress
   6. High Availability with replica - InProgress
   7. External Views - InProgress
-  8. Immediate consistency - InProgress
   9. Replication - InProgress
