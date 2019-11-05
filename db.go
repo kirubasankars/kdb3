@@ -28,11 +28,11 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	_, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		if !createIfNotExists {
-			return nil, errors.New("db_not_found")
+			return nil, errors.New(DB_NOT_FOUND)
 		}
 	} else {
 		if createIfNotExists {
-			return nil, errors.New("db_exists")
+			return nil, errors.New(DB_EXISTS)
 		}
 	}
 
