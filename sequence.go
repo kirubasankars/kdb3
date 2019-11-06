@@ -112,7 +112,14 @@ func (seq *SequenceUUIDGenarator) Next() string {
 		seq.current[i] = t
 
 		if i == 0 && reachedEnd {
-			return ""
+			var newCurrent []int
+			for i := 0; i < seq.len; i++ {
+				newCurrent = append(newCurrent, mrand.Intn(36))
+			}
+			seq.current = newCurrent
+
+			seq.number = 1
+			seq.prefix = hex.EncodeToString(randomBytes(13))
 		}
 
 		if !reachedEnd {
