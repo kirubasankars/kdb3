@@ -77,7 +77,7 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 }
 
 func ValidateDBName(name string) bool {
-	if len(name) <= 0 || strings.Contains(name, "$") || strings.HasPrefix(name, "_") {
+	if len(name) <= 0 || strings.Contains(name, "$") || name == "_all_dbs" || name == "_uuids" {
 		return false
 	}
 	return true
