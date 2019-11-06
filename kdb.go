@@ -20,8 +20,9 @@ type KDBEngine struct {
 	dbPath   string
 	viewPath string
 
-	dbs   map[string]*Database
-	rwmux sync.RWMutex
+	dbs         map[string]*Database
+	rwmux       sync.RWMutex
+	fileHandler FileHandler
 }
 
 func NewKDB() (*KDBEngine, error) {
@@ -30,14 +31,16 @@ func NewKDB() (*KDBEngine, error) {
 	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
+	kdb.fileHandler = new(DefaultFileHandler)
 
-	if _, err := os.Stat(kdb.dbPath); os.IsNotExist(err) {
-		if err = os.MkdirAll(kdb.dbPath, 0755); err != nil {
+	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
+		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := os.Stat(kdb.viewPath); os.IsNotExist(err) {
-		if err = os.MkdirAll(kdb.viewPath, 0755); err != nil {
+
+	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
+		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
 			return nil, err
 		}
 	}

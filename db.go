@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,8 +24,8 @@ type Database struct {
 
 func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Database, error) {
 	path := filepath.Join(dbPath, name+dbExt)
-	_, err := os.Lstat(path)
-	if os.IsNotExist(err) {
+	var fileHandler DefaultFileHandler
+	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
 			return nil, errors.New(DB_NOT_FOUND)
 		}
@@ -56,13 +55,13 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	db.viewmgr = NewViewManager(path, viewPath, name)
 
 	if createIfNotExists {
-		err = db.viewmgr.SetupViews(db)
+		err := db.viewmgr.SetupViews(db)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	err = db.viewmgr.Initialize(db)
+	err := db.viewmgr.Initialize(db)
 	if err != nil {
 		return nil, err
 	}

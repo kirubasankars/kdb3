@@ -58,11 +58,11 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New("doc_not_found")
+		return nil, errors.New(DOC_NOT_FOUND)
 	}
 
 	if doc.Deleted == true {
-		return &doc, errors.New("doc_not_found")
+		return &doc, errors.New(DOC_NOT_FOUND)
 	}
 
 	return &doc, nil
@@ -78,11 +78,11 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New("doc_not_found")
+		return nil, errors.New(DOC_NOT_FOUND)
 	}
 
 	if doc.Deleted == true {
-		return &doc, errors.New("doc_not_found")
+		return &doc, errors.New(DOC_NOT_FOUND)
 	}
 
 	return &doc, nil
@@ -98,11 +98,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New("doc_not_found")
+		return nil, errors.New(DOC_NOT_FOUND)
 	}
 
 	if doc.Deleted == true {
-		return doc, errors.New("doc_not_found")
+		return doc, errors.New(DOC_NOT_FOUND)
 	}
 
 	return doc, nil
@@ -118,11 +118,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New("doc_not_found")
+		return nil, errors.New(DOC_NOT_FOUND)
 	}
 
 	if doc.Deleted == true {
-		return doc, errors.New("doc_not_found")
+		return doc, errors.New(DOC_NOT_FOUND)
 	}
 
 	return doc, nil
