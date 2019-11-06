@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"math/big"
 	"net"
 )
 
@@ -49,4 +51,24 @@ func formatDocString(id string, version int, deleted bool) string {
 		return fmt.Sprintf(`{"_id" :"%s","deleted":true}`, id)
 	}
 	return fmt.Sprintf(`{"_id":"%s"}`, id)
+}
+
+func randomBytes(n int) []byte {
+	bytes := make([]byte, n)
+	_, _ = rand.Read(bytes)
+	return bytes
+}
+
+func randNumber() int32 {
+	randvalue, err := rand.Int(rand.Reader, big.NewInt(4094))
+	if err != nil {
+		panic(err)
+	}
+	return int32(randvalue.Int64())
+}
+
+var node = hex.EncodeToString([]byte(getMacAddr()))
+
+func RandomUUID() string {
+	return hex.EncodeToString(randomBytes(16))
 }
