@@ -8,20 +8,12 @@ import (
 
 //https://blog.questionable.services/article/testing-http-handlers-go/
 func TestGetUUID(t *testing.T) {
-	req, err := http.NewRequest("GET", "/_uuids?count=10", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req, _ := http.NewRequest("GET", "/_uuids?count=10", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()
-
 	handler.ServeHTTP(rr, req)
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
+	testExpect200(t, rr)
 
 	v, _ := parser.Parse(rr.Body.String())
 	uuids := v.GetArray()
@@ -31,6 +23,22 @@ func TestGetUUID(t *testing.T) {
 	}
 
 	testExpectJSONContentType(t, rr)
+
+	req, _ = http.NewRequest("GET", "/_uuids?count=-1", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+
+	v, _ = parser.Parse(rr.Body.String())
+	uuids = v.GetArray()
+
+	if len(uuids) != 1 {
+		t.Errorf("expected 1 items, got %d", len(uuids))
+	}
+
+	testExpectJSONContentType(t, rr)
+
 }
 
 func testExpectJSONContentType(t *testing.T, rr *httptest.ResponseRecorder) {
@@ -38,21 +46,20 @@ func testExpectJSONContentType(t *testing.T, rr *httptest.ResponseRecorder) {
 		t.Errorf(`expected json content type`)
 	}
 }
-func TestGetInfo(t *testing.T) {
-	req, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	rr := httptest.NewRecorder()
-	handler := NewRouter()
-
-	handler.ServeHTTP(rr, req)
-
+func testExpect200(t *testing.T, rr *httptest.ResponseRecorder) {
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
 	}
+}
+func TestGetInfo(t *testing.T) {
+	req, _ := http.NewRequest("GET", "/", nil)
+	rr := httptest.NewRecorder()
+	handler := NewRouter()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
 
 	v, _ := parser.Parse(rr.Body.String())
 
@@ -65,35 +72,47 @@ func TestGetInfo(t *testing.T) {
 }
 
 func TestPutDatabase(t *testing.T) {
-	req, err := http.NewRequest("PUT", "/testdb", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req, _ := http.NewRequest("PUT", "/testdb", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()
-
 	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
 
 	expected := `{"ok":true}`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have ok`)
 	}
+
+	testExpectJSONContentType(t, rr)
 }
 
 func TestDeleteDatabase(t *testing.T) {
-	req, err := http.NewRequest("DELETE", "/testdb", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()
-
 	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
 
 	expected := `{"ok":true}`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have ok`)
 	}
+
+	testExpectJSONContentType(t, rr)
+}
+
+func TestPutDatabaseInvalidName(t *testing.T) {
+	req, _ := http.NewRequest("PUT", "/_all_dbs", nil)
+	rr := httptest.NewRecorder()
+	handler := NewRouter()
+	handler.ServeHTTP(rr, req)
+
+	expected := `{"ok":true}`
+	if expected != rr.Body.String() {
+		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
+	}
+
+	testExpectJSONContentType(t, rr)
 }

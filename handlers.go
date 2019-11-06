@@ -339,7 +339,7 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	w.Write(rs)
 }
 
-func Info(w http.ResponseWriter, r *http.Request) {
+func GetInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(kdb.Info())
@@ -347,9 +347,12 @@ func Info(w http.ResponseWriter, r *http.Request) {
 
 var seq = NewSequenceUUIDGenarator()
 
-func UUIDs(w http.ResponseWriter, r *http.Request) {
+func GetUUIDs(w http.ResponseWriter, r *http.Request) {
 	c := r.FormValue("count")
 	count, _ := strconv.Atoi(c)
+	if count <= 0 {
+		count = 1
+	}
 	var list []string
 	for i := 0; i < count; i++ {
 		list = append(list, seq.Next())
