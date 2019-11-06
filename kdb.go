@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -72,15 +73,22 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 	return dbs, nil
 }
 
-func validatename(name string) bool {
+func ValidateDBName(name string) bool {
 	if len(name) <= 0 || strings.Contains(name, "$") || strings.HasPrefix(name, "_") {
 		return false
 	}
 	return true
 }
 
+func ValidateDocId(id string) bool {
+	if strings.Contains(id, "$") {
+		return false
+	}
+	return true
+}
+
 func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
-	if !validatename(name) {
+	if !ValidateDBName(name) {
 		return errors.New(INVALID_DB_NAME)
 	}
 
@@ -138,7 +146,7 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	if !ok {
 		return nil, errors.New(DB_NOT_FOUND)
 	}
-	if !validatename(newDoc.ID) {
+	if !ValidateDocId(newDoc.ID) {
 		return nil, errors.New(INVALID_DOC_ID)
 	}
 	return db.PutDocument(newDoc)
@@ -210,6 +218,10 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	version := "3.2"
-	return []byte(fmt.Sprintf(`{"version":{"sqlite_version":"%s"}}`, version))
+	var version, sqlite_source_id string
+	con, _ := sql.Open("sqlite3", ":memory:")
+	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
+	row.Scan(&version, &sqlite_source_id)
+	con.Close()
+	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqlite_source_id))
 }
