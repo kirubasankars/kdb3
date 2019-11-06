@@ -60,7 +60,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	if id == "" && version != 0 {
-		return nil, errors.New("missing_id")
+		return nil, errors.New(INVALID_DOC_ID)
 	}
 
 	if v.Exists("_id") {

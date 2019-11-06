@@ -73,7 +73,7 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 }
 
 func validatename(name string) bool {
-	if len(name) <= 0 || strings.Contains(name, "$") {
+	if len(name) <= 0 || strings.Contains(name, "$") || strings.HasPrefix(name, "_") {
 		return false
 	}
 	return true
@@ -81,7 +81,7 @@ func validatename(name string) bool {
 
 func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if !validatename(name) {
-		return errors.New("invalid_db_name")
+		return errors.New(INVALID_DB_NAME)
 	}
 
 	kdb.rwmux.Lock()
@@ -105,7 +105,7 @@ func (kdb *KDBEngine) Delete(name string) error {
 	defer kdb.rwmux.Unlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New("db_not_found")
+		return errors.New(DB_NOT_FOUND)
 	}
 
 	delete(kdb.dbs, name)
@@ -136,7 +136,10 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New("db_not_found")
+		return nil, errors.New(DB_NOT_FOUND)
+	}
+	if !validatename(newDoc.ID) {
+		return nil, errors.New(INVALID_DOC_ID)
 	}
 	return db.PutDocument(newDoc)
 }
@@ -162,7 +165,7 @@ func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New("db_not_found")
+		return nil, errors.New(DB_NOT_FOUND)
 	}
 	return db.Stat(), nil
 }
@@ -172,7 +175,7 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New("db_not_found")
+		return errors.New(DB_NOT_FOUND)
 	}
 
 	db.viewmgr.Vacuum()
@@ -184,7 +187,7 @@ func (kdb *KDBEngine) Changes(name string, since string) ([]byte, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New("db_not_found")
+		return nil, errors.New(DB_NOT_FOUND)
 	}
 
 	return db.GetChanges(since), nil
@@ -195,7 +198,7 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[dbName]
 	if !ok {
-		return nil, errors.New("db_not_found")
+		return nil, errors.New(DB_NOT_FOUND)
 	}
 
 	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)
