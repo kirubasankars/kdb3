@@ -108,6 +108,10 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, errors.New(DOC_CONFLICT)
 	}
 
+	if currentDoc == nil && newDoc.Version > 0 {
+		return nil, errors.New(DOC_NOT_FOUND)
+	}
+
 	if currentDoc != nil && currentDoc.Deleted {
 		if newDoc.Version > 0 {
 			return nil, errors.New(DOC_CONFLICT)

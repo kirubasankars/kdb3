@@ -37,7 +37,7 @@ var routes = Routes{
 		"Info",
 		"GET",
 		"/",
-		Info,
+		GetInfo,
 	},
 	Route{
 		"AllDatabases",
@@ -49,7 +49,7 @@ var routes = Routes{
 		"UUID",
 		"GET",
 		"/_uuids",
-		UUIDs,
+		GetUUIDs,
 	},
 	Route{
 		"GetDatabase",
