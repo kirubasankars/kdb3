@@ -57,7 +57,7 @@ func (seq *ChangeSequenceGenarator) Next() string {
 		seq.current[i] = t
 
 		if i == 0 && reachedEnd {
-			return ""
+			panic("reached the end of world.")
 		}
 
 		if !reachedEnd {

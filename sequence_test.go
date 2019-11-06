@@ -23,3 +23,21 @@ func TestNewSequence(t *testing.T) {
 		i++
 	}
 }
+
+func TestNewSequenceNoMatchLen(t *testing.T) {
+	assertPanic(t, func() { NewChangeSequenceGenarator(2, "1") })
+}
+
+func TestNewSequenceEndfoWorld(t *testing.T) {
+	a := NewChangeSequenceGenarator(1, "z")
+	assertPanic(t, func() { a.Next() })
+}
+
+func assertPanic(t *testing.T, f func()) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("The code did not panic")
+		}
+	}()
+	f()
+}
