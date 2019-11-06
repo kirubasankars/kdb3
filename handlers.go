@@ -26,7 +26,7 @@ func GetDatabase(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(stat)
 }
 
@@ -39,9 +39,8 @@ func PutDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"ok":true}`)
-
 }
 
 func DeleteDatabase(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +52,7 @@ func DeleteDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
@@ -73,7 +72,7 @@ func DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write(rs)
 }
 
@@ -89,7 +88,7 @@ func DatabaseChanges(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write(rs)
 }
 
@@ -103,7 +102,7 @@ func DatabaseCompact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
@@ -131,7 +130,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	output := formatDocString(doc.ID, doc.Version, doc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(output))
 }
 
@@ -159,7 +158,7 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write(rec.Data)
 }
 
@@ -188,7 +187,7 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
@@ -301,7 +300,7 @@ func AllDatabases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	if len(list) > 0 {
 		json.NewEncoder(w).Encode(list)
 	} else {
@@ -336,13 +335,13 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write(rs)
 }
 
 func Info(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	w.Write(kdb.Info())
 }
 
@@ -356,6 +355,6 @@ func UUIDs(w http.ResponseWriter, r *http.Request) {
 		list = append(list, seq.Next())
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(list)
 }
