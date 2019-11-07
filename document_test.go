@@ -21,7 +21,7 @@ func TestParseDocumentWithVerisonandNoID(t *testing.T) {
 		t.Errorf("expected to fail with %s", ErrDocInvalidID)
 	}
 
-	if err != nil && err != ErrDocInvalidID {
+	if err != nil && !errors.Is(err, ErrDocInvalidInput) {
 		t.Errorf("expected to fail with %s", ErrDocInvalidID)
 	}
 }
