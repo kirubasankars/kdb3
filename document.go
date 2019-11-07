@@ -38,6 +38,11 @@ func ParseDocument(value []byte) (*Document, error) {
 		return nil, fmt.Errorf("%s: %w", err, ErrBadJSON)
 	}
 
+	obj := v.GetObject()
+	if obj == nil {
+		return nil, fmt.Errorf("%s: %w", "input is not json object", ErrDocInvalidInput)
+	}
+
 	var (
 		id      string
 		version int = 0
