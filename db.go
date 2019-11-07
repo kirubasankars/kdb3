@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -27,11 +27,11 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	var fileHandler DefaultFileHandler
 	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
-			return nil, errors.New(DB_NOT_FOUND)
+			return nil, ErrDBNotFound
 		}
 	} else {
 		if createIfNotExists {
-			return nil, errors.New(DB_EXISTS)
+			return nil, ErrDBExists
 		}
 	}
 
@@ -100,21 +100,21 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-	if err != nil && err.Error() != DOC_NOT_FOUND {
-		return nil, err
+	if err != nil && err != ErrDocNotFound {
+		return nil, fmt.Errorf("%s: %w", "Writer.GetDocumentRevisionByID : "+err.Error(), ErrInternalError)
 	}
 
 	if currentDoc != nil && !currentDoc.Deleted && currentDoc.Version != newDoc.Version {
-		return nil, errors.New(DOC_CONFLICT)
+		return nil, ErrDocConflict
 	}
 
 	if currentDoc == nil && newDoc.Version > 0 {
-		return nil, errors.New(DOC_NOT_FOUND)
+		return nil, ErrDocConflict
 	}
 
 	if currentDoc != nil && currentDoc.Deleted {
 		if newDoc.Version > 0 {
-			return nil, errors.New(DOC_CONFLICT)
+			return nil, ErrDocConflict
 		}
 		newDoc.Version = currentDoc.Version
 	}

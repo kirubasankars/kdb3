@@ -103,7 +103,7 @@ func TestDeleteDatabase(t *testing.T) {
 	testExpectJSONContentType(t, rr)
 }
 
-func TestPutDatabaseInvalidName(t *testing.T) {
+/*func TestPutDatabaseInvalidName(t *testing.T) {
 	req, _ := http.NewRequest("PUT", "/_all_dbs", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()
@@ -115,4 +115,4 @@ func TestPutDatabaseInvalidName(t *testing.T) {
 	}
 
 	testExpectJSONContentType(t, rr)
-}
+}*/

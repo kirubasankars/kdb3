@@ -62,7 +62,7 @@ func TestWriterPutDocumentWithConflict(t *testing.T) {
 
 	doc, _ = ParseDocument([]byte(`{"_id":1}`))
 	if err := writer.PutDocument("seqID", doc, nil); err == nil {
-		t.Errorf("expected %s, failed.", DOC_CONFLICT)
+		t.Errorf("expected %s, failed.", ErrDocConflict)
 	}
 
 	writer.Commit()
@@ -71,7 +71,7 @@ func TestWriterPutDocumentWithConflict(t *testing.T) {
 
 	doc, _ = ParseDocument([]byte(`{"_id":1}`))
 	if err := writer.PutDocument("seqID", doc, nil); err == nil {
-		t.Errorf("expected %s, failed.", DOC_CONFLICT)
+		t.Errorf("expected %s, failed.", ErrDocConflict)
 	}
 
 	writer.Commit()
@@ -101,10 +101,10 @@ func TestWriterPutDocumentWithDeplicateSeqID(t *testing.T) {
 	doc, _ = ParseDocument([]byte(`{"_id":2}`))
 	err := writer.PutDocument("seqID", doc, nil)
 	if err == nil {
-		t.Errorf("expected %s, failed.", INTERAL_ERROR)
+		t.Errorf("expected %s, failed.", ErrInternalError)
 	}
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected %s, got %s", INTERAL_ERROR, err.Error())
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected %s, got %s", ErrInternalError, err.Error())
 	}
 
 	writer.Commit()
@@ -114,10 +114,10 @@ func TestWriterPutDocumentWithDeplicateSeqID(t *testing.T) {
 	doc, _ = ParseDocument([]byte(`{"_id":2}`))
 	err = writer.PutDocument("seqID", doc, nil)
 	if err == nil {
-		t.Errorf("expected %s, failed.", INTERAL_ERROR)
+		t.Errorf("expected %s, failed.", ErrInternalError)
 	}
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected %s, got %s", INTERAL_ERROR, err.Error())
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected %s, got %s", ErrInternalError, err.Error())
 	}
 
 	writer.Commit()
@@ -157,8 +157,8 @@ func TestWriterDeleteDocument(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err.Error() != DOC_NOT_FOUND {
-		t.Errorf("expected %s, got doc or err %s", DOC_NOT_FOUND, err)
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocNotFound, err)
 	}
 
 	writer.Commit()
@@ -184,8 +184,8 @@ func TestWriterDocNotFound(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err.Error() != DOC_NOT_FOUND {
-		t.Errorf("expected %s, got doc or err %s", DOC_NOT_FOUND, err)
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocNotFound, err)
 	}
 
 	writer.Commit()

@@ -1,76 +1,75 @@
 package main
 
 import (
-	"errors"
 	"testing"
 )
 
 func TestErrorDB_EXISTS(t *testing.T) {
-	msg := errorString(errors.New(DB_EXISTS))
-	if msg != MSG_DB_EXISTS {
-		t.Errorf("expected %s, got %s", msg, MSG_DB_EXISTS)
+	code, reason := errorString(ErrDBExists)
+	if code != ErrDBExists.Error() || reason != MSG_DB_EXISTS {
+		t.Errorf("expected %s, got %s", ErrDBExists, code)
 	}
 }
 
 func TestErrorBAD_JSON(t *testing.T) {
-	msg := errorString(errors.New(BAD_JSON))
-	if msg != MSG_BAD_JSON {
-		t.Errorf("expected %s, got %s", msg, MSG_BAD_JSON)
+	code, reason := errorString(ErrBadJSON)
+	if code != ErrBadJSON.Error() || reason != ErrBadJSON.Error() {
+		t.Errorf("expected %s, got %s", ErrBadJSON, code)
 	}
 }
 
 func TestErrorDB_NOT_FOUND(t *testing.T) {
-	msg := errorString(errors.New(DB_NOT_FOUND))
-	if msg != MSG_DB_NOT_FOUND {
-		t.Errorf("expected %s, got %s", msg, MSG_DB_NOT_FOUND)
+	code, reason := errorString(ErrDBNotFound)
+	if code != ErrDBNotFound.Error() || reason != MSG_DB_NOT_FOUND {
+		t.Errorf("expected %s, got %s", ErrDBNotFound, code)
 	}
 }
 
 func TestErrorINVALID_DB_NAME(t *testing.T) {
-	msg := errorString(errors.New(INVALID_DB_NAME))
-	if msg != MSG_INVALID_DB_NAME {
-		t.Errorf("expected %s, got %s", msg, MSG_INVALID_DB_NAME)
+	code, reason := errorString(ErrDBInvalidName)
+	if code != ErrDBInvalidName.Error() || reason != ErrDBInvalidName.Error() {
+		t.Errorf("expected %s, got %s", ErrDBInvalidName, code)
 	}
 }
 
 func TestErrorINVALID_DOC_ID(t *testing.T) {
-	msg := errorString(errors.New(INVALID_DOC_ID))
-	if msg != MSG_INVALID_DOC_ID {
-		t.Errorf("expected %s, got %s", msg, MSG_INVALID_DOC_ID)
+	code, reason := errorString(ErrDBInvalidName)
+	if code != ErrDBInvalidName.Error() || reason != ErrDBInvalidName.Error() {
+		t.Errorf("expected %s, got %s", ErrDBInvalidName, code)
 	}
 }
 
 func TestErrorDOC_CONFLICT(t *testing.T) {
-	msg := errorString(errors.New(DOC_CONFLICT))
-	if msg != MSG_DOC_CONFLICT {
-		t.Errorf("expected %s, got %s", msg, MSG_DOC_CONFLICT)
+	code, reason := errorString(ErrDocConflict)
+	if code != ErrDocConflict.Error() || reason != MSG_DOC_CONFLICT {
+		t.Errorf("expected %s, got %s", ErrDocConflict, code)
 	}
 }
 
 func TestErrorDOC_NOT_FOUND(t *testing.T) {
-	msg := errorString(errors.New(DOC_NOT_FOUND))
-	if msg != MSG_DOC_NOT_FOUND {
-		t.Errorf("expected %s, got %s", msg, MSG_DOC_NOT_FOUND)
+	code, reason := errorString(ErrDocNotFound)
+	if code != ErrDocNotFound.Error() || reason != MSG_DOC_NOT_FOUND {
+		t.Errorf("expected %s, got %s", ErrDocNotFound, code)
 	}
 }
 
 func TestErrorVIEW_NOT_FOUND(t *testing.T) {
-	msg := errorString(errors.New(VIEW_NOT_FOUND))
-	if msg != MSG_VIEW_NOT_FOUND {
-		t.Errorf("expected %s, got %s", msg, MSG_VIEW_NOT_FOUND)
+	code, reason := errorString(ErrViewNotFound)
+	if code != ErrViewNotFound.Error() || reason != MSG_VIEW_NOT_FOUND {
+		t.Errorf("expected %s, got %s", ErrViewNotFound, code)
 	}
 }
 
 func TestErrorVIEW_RESULT_ERROR(t *testing.T) {
-	msg := errorString(errors.New(VIEW_RESULT_ERROR))
-	if msg != MSG_VIEW_RESULT_ERROR {
-		t.Errorf("expected %s, got %s", msg, MSG_VIEW_RESULT_ERROR)
+	code, reason := errorString(ErrViewResult)
+	if code != ErrViewResult.Error() || reason != ErrViewResult.Error() {
+		t.Errorf("expected %s, got %s", ErrViewResult, code)
 	}
 }
 
 func TestErrorINTERAL_ERROR(t *testing.T) {
-	msg := errorString(errors.New(INTERAL_ERROR))
-	if msg != MSG_INTERAL_ERROR {
-		t.Errorf("expected %s, got %s", msg, MSG_INTERAL_ERROR)
+	code, reason := errorString(ErrInternalError)
+	if code != ErrInternalError.Error() || reason != ErrInternalError.Error() {
+		t.Errorf("expected %s, got %s", ErrInternalError, code)
 	}
 }

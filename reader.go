@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 )
 
 type DatabaseReader interface {
@@ -58,11 +57,11 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New(DOC_NOT_FOUND)
+		return nil, ErrDocNotFound
 	}
 
 	if doc.Deleted == true {
-		return &doc, errors.New(DOC_NOT_FOUND)
+		return &doc, ErrDocNotFound
 	}
 
 	return &doc, nil
@@ -78,11 +77,11 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New(DOC_NOT_FOUND)
+		return nil, ErrDocNotFound
 	}
 
 	if doc.Deleted == true {
-		return &doc, errors.New(DOC_NOT_FOUND)
+		return &doc, ErrDocNotFound
 	}
 
 	return &doc, nil
@@ -98,11 +97,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New(DOC_NOT_FOUND)
+		return nil, ErrDocNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, errors.New(DOC_NOT_FOUND)
+		return doc, ErrDocNotFound
 	}
 
 	return doc, nil
@@ -118,11 +117,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 	}
 
 	if doc.ID == "" {
-		return nil, errors.New(DOC_NOT_FOUND)
+		return nil, ErrDocNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, errors.New(DOC_NOT_FOUND)
+		return doc, ErrDocNotFound
 	}
 
 	return doc, nil

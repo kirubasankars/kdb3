@@ -232,7 +232,8 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 		var jsonb []byte
 		odoc, err := kdb.PutDocument(db, idoc)
 		if err != nil {
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, err.Error(), errorString(err)))
+			code, reason := errorString(err)
+			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
 			jsonb = []byte(formatDocString(odoc.ID, odoc.Version, odoc.Deleted))
 		}
@@ -261,7 +262,8 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 		var jsonb []byte
 		odoc, err := kdb.GetDocument(db, idoc, true)
 		if err != nil {
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, err.Error(), errorString(err)))
+			code, reason := errorString(err)
+			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
 			jsonb = odoc.Data
 		}

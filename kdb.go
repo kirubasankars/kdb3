@@ -92,7 +92,7 @@ func ValidateDocId(id string) bool {
 
 func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if !ValidateDBName(name) {
-		return errors.New(INVALID_DB_NAME)
+		return ErrDBInvalidName
 	}
 
 	kdb.rwmux.Lock()
@@ -116,7 +116,7 @@ func (kdb *KDBEngine) Delete(name string) error {
 	defer kdb.rwmux.Unlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New(DB_NOT_FOUND)
+		return ErrDBNotFound
 	}
 
 	delete(kdb.dbs, name)
@@ -147,10 +147,10 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New(DB_NOT_FOUND)
+		return nil, ErrDBNotFound
 	}
 	if !ValidateDocId(newDoc.ID) {
-		return nil, errors.New(INVALID_DOC_ID)
+		return nil, ErrDocInvalidID
 	}
 	return db.PutDocument(newDoc)
 }
@@ -176,7 +176,7 @@ func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New(DB_NOT_FOUND)
+		return nil, ErrDBNotFound
 	}
 	return db.Stat(), nil
 }
@@ -186,7 +186,7 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return errors.New(DB_NOT_FOUND)
+		return ErrDBNotFound
 	}
 
 	db.viewmgr.Vacuum()
@@ -198,7 +198,7 @@ func (kdb *KDBEngine) Changes(name string, since string) ([]byte, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, errors.New(DB_NOT_FOUND)
+		return nil, ErrDBNotFound
 	}
 
 	return db.GetChanges(since), nil
@@ -209,7 +209,7 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[dbName]
 	if !ok {
-		return nil, errors.New(DB_NOT_FOUND)
+		return nil, ErrDBNotFound
 	}
 
 	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)

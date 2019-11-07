@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 )
 
 type DatabaseWriter interface {
@@ -104,10 +103,10 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 
 	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
-			return errors.New(DOC_CONFLICT)
+			return ErrInternalError
 		}
 		if err.Error() == "UNIQUE constraint failed: changes.seq_id" {
-			return errors.New(INTERAL_ERROR)
+			return ErrInternalError
 		}
 		return err
 	}
