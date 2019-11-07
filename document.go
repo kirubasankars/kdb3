@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -36,7 +35,7 @@ var parser fastjson.Parser
 func ParseDocument(value []byte) (*Document, error) {
 	v, err := parser.ParseBytes(value)
 	if err != nil {
-		return nil, errors.New("bad_json")
+		return nil, fmt.Errorf("%s: %w", err, ErrBadJSON)
 	}
 
 	var (
@@ -60,7 +59,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	if id == "" && version != 0 {
-		return nil, errors.New(INVALID_DOC_ID)
+		return nil, ErrDocInvalidID
 	}
 
 	if v.Exists("_id") {

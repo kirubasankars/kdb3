@@ -1,26 +1,28 @@
 package main
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestParseDocumentBadJSON(t *testing.T) {
 	_, err := ParseDocument([]byte(`{"_name"}`))
 	if err == nil {
-		t.Errorf("expected to fail with %s", BAD_JSON)
+		t.Errorf("expected to fail with %s", ErrBadJSON)
 	}
-
-	if err == nil && err.Error() != BAD_JSON {
-		t.Errorf("expected to fail with %s", BAD_JSON)
+	if err != nil && !errors.Is(err, ErrBadJSON) {
+		t.Errorf("expected to fail with %s", ErrBadJSON)
 	}
 }
 
 func TestParseDocumentWithVerisonandNoID(t *testing.T) {
 	_, err := ParseDocument([]byte(`{"_version":1}`))
 	if err == nil {
-		t.Errorf("expected to fail with %s", INVALID_DOC_ID)
+		t.Errorf("expected to fail with %s", ErrDocInvalidID)
 	}
 
-	if err == nil && err.Error() != INVALID_DOC_ID {
-		t.Errorf("expected to fail with %s", INVALID_DOC_ID)
+	if err != nil && err != ErrDocInvalidID {
+		t.Errorf("expected to fail with %s", ErrDocInvalidID)
 	}
 }
 

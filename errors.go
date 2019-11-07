@@ -2,20 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
 var (
-	DB_EXISTS         = "db_exists"
-	BAD_JSON          = "bad_json"
-	DB_NOT_FOUND      = "db_not_found"
-	INVALID_DB_NAME   = "invalid_db_name"
-	INVALID_DOC_ID    = "invalid_doc_id"
-	DOC_CONFLICT      = "doc_conflict"
-	DOC_NOT_FOUND     = "doc_not_found"
-	VIEW_NOT_FOUND    = "view_not_found"
-	VIEW_RESULT_ERROR = "view_result_error"
-	INTERAL_ERROR     = "internal_error"
+	ErrBadJSON       = errors.New("bad_json")
+	ErrDBExists      = errors.New("db_exists")
+	ErrDBNotFound    = errors.New("db_not_found")
+	ErrDBInvalidName = errors.New("invalid_db_name")
+	ErrDocInvalidID  = errors.New("invalid_doc_id")
+	ErrDocConflict   = errors.New("doc_conflict")
+	ErrDocNotFound   = errors.New("doc_not_found")
+	ErrViewNotFound  = errors.New("view_not_found")
+	ErrViewResult    = errors.New("view_result_error")
+	ErrInternalError = errors.New("internal_error")
 
 	MSG_INTERAL_ERROR     = "internal error"
 	MSG_DB_EXISTS         = "database already exists"
@@ -29,62 +30,55 @@ var (
 	MSG_VIEW_RESULT_ERROR = "view expect 1 column"
 )
 
-type Error struct {
-	err string
-	e   error
-}
-
-func errorString(err error) string {
-	switch errr := err.Error(); errr {
-	case DB_EXISTS:
-		return MSG_DB_EXISTS
-	case BAD_JSON:
-		return MSG_BAD_JSON
-	case DB_NOT_FOUND:
-		return MSG_DB_NOT_FOUND
-	case INVALID_DB_NAME:
-		return MSG_INVALID_DB_NAME
-	case INVALID_DOC_ID:
-		return MSG_INVALID_DOC_ID
-	case DOC_CONFLICT:
-		return MSG_DOC_CONFLICT
-	case DOC_NOT_FOUND:
-		return MSG_DOC_NOT_FOUND
-	case VIEW_NOT_FOUND:
-		return MSG_VIEW_NOT_FOUND
-	case VIEW_RESULT_ERROR:
-		return MSG_VIEW_RESULT_ERROR
+func errorString(err error) (string, string) {
+	switch {
+	case errors.Is(err, ErrDBExists):
+		return err.Error(), MSG_DB_EXISTS
+	case errors.Is(err, ErrBadJSON):
+		return ErrBadJSON.Error(), err.Error()
+	case errors.Is(err, ErrDBNotFound):
+		return ErrDBNotFound.Error(), MSG_DB_NOT_FOUND
+	case errors.Is(err, ErrDBInvalidName):
+		return ErrDBInvalidName.Error(), err.Error()
+	case errors.Is(err, ErrDocInvalidID):
+		return ErrDocInvalidID.Error(), err.Error()
+	case errors.Is(err, ErrDocConflict):
+		return ErrDocConflict.Error(), MSG_DOC_CONFLICT
+	case errors.Is(err, ErrDocNotFound):
+		return ErrDocNotFound.Error(), MSG_DOC_NOT_FOUND
+	case errors.Is(err, ErrViewNotFound):
+		return ErrViewNotFound.Error(), MSG_VIEW_NOT_FOUND
+	case errors.Is(err, ErrViewResult):
+		return ErrViewResult.Error(), err.Error()
 	default:
-		return MSG_INTERAL_ERROR
+		return ErrInternalError.Error(), err.Error()
 	}
 }
 
 func NotOK(err error, w http.ResponseWriter) {
 	var (
 		statusCode = 0
+		code       = ""
 		reason     = ""
 	)
 
 	switch {
-	case err.Error() == "db_exists" || err.Error() == "invalid_db_name":
+	case errors.Is(err, ErrDBExists) || errors.Is(err, ErrDBInvalidName):
 		statusCode = http.StatusPreconditionFailed
-		reason = errorString(err)
-	case err.Error() == "doc_conflict":
+	case errors.Is(err, ErrDocConflict):
 		statusCode = http.StatusConflict
-		reason = errorString(err)
-	case err.Error() == "db_not_found" || err.Error() == "doc_not_found" || err.Error() == "view_not_found":
+	case errors.Is(err, ErrDBNotFound) || errors.Is(err, ErrDocNotFound) || errors.Is(err, ErrViewNotFound):
 		statusCode = http.StatusNotFound
-		reason = errorString(err)
-	case err.Error() == "bad_json":
+	case errors.Is(err, ErrBadJSON):
 		statusCode = http.StatusBadRequest
-		reason = errorString(err)
 	}
 
 	if statusCode == 0 {
 		statusCode = http.StatusInternalServerError
-		reason = errorString(err)
 	}
+
+	code, reason = errorString(err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "reason": reason})
+	json.NewEncoder(w).Encode(map[string]string{"error": code, "reason": reason})
 }

@@ -81,7 +81,7 @@ func (writer *FakeDatabaseWriter) Close() error {
 
 func (writer *FakeDatabaseWriter) Begin() error {
 	if writer.beginerr {
-		return errors.New(INTERAL_ERROR)
+		return ErrInternalError
 	}
 	writer.begin = true
 	return nil
@@ -89,7 +89,7 @@ func (writer *FakeDatabaseWriter) Begin() error {
 
 func (writer *FakeDatabaseWriter) Commit() error {
 	if writer.commiterr {
-		return errors.New(INTERAL_ERROR)
+		return ErrInternalError
 	}
 	writer.commit = true
 	return nil
@@ -97,7 +97,7 @@ func (writer *FakeDatabaseWriter) Commit() error {
 
 func (writer *FakeDatabaseWriter) Rollback() error {
 	if writer.roolbackerr {
-		return errors.New(INTERAL_ERROR)
+		return ErrInternalError
 	}
 	writer.rollback = true
 	return nil
@@ -120,7 +120,7 @@ func (writer *FakeDatabaseWriter) Vacuum() error {
 
 func (writer *FakeDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
 	if writer.getdocerror {
-		return nil, errors.New(INTERAL_ERROR)
+		return nil, ErrInternalError
 	}
 	if docID == "1" {
 		return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
@@ -129,14 +129,14 @@ func (writer *FakeDatabaseWriter) GetDocumentRevisionByID(docID string) (*Docume
 		return ParseDocument([]byte(`{"_id":1, "_version" :2, "_deleted":true}`))
 	}
 	if docID == "3" {
-		return nil, errors.New(INTERAL_ERROR)
+		return nil, ErrInternalError
 	}
 	return nil, nil
 }
 
 func (writer *FakeDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
 	if writer.putdocerror {
-		return errors.New(INTERAL_ERROR)
+		return ErrInternalError
 	}
 	return nil
 }
@@ -494,8 +494,8 @@ func TestDBPutDocumentConflict(t *testing.T) {
 		t.Errorf("expected fail put document. ")
 	}
 
-	if err != nil && err.Error() != DOC_CONFLICT {
-		t.Errorf("expected fail put document with %s ", DOC_CONFLICT)
+	if err != nil && err != ErrDocConflict {
+		t.Errorf("expected fail put document with %s ", ErrDocConflict)
 	}
 
 	if !writer.begin || !writer.rollback || writer.commit {
@@ -527,8 +527,8 @@ func TestDBPutDocumentConflict1(t *testing.T) {
 		t.Errorf("expected fail put document. ")
 	}
 
-	if err != nil && err.Error() != DOC_CONFLICT {
-		t.Errorf("expected fail put document with %s ", DOC_CONFLICT)
+	if err != nil && err != ErrDocConflict {
+		t.Errorf("expected fail put document with %s ", ErrDocConflict)
 	}
 
 	if !writer.begin || !writer.rollback || writer.commit {
@@ -590,8 +590,8 @@ func TestDBPutDocumentBeginError(t *testing.T) {
 		t.Errorf("unable put document")
 	}
 
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected to fail with %s, failed", INTERAL_ERROR)
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected to fail with %s, failed", ErrInternalError)
 	}
 
 	if writer.begin || writer.commit || !writer.rollback {
@@ -624,8 +624,8 @@ func TestDBPutDocumentCommitError(t *testing.T) {
 		t.Errorf("unable put document")
 	}
 
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected to fail with %s, failed", INTERAL_ERROR)
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected to fail with %s, failed", ErrInternalError)
 	}
 
 	if !writer.begin || writer.commit || !writer.rollback {
@@ -677,8 +677,8 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 		t.Errorf("unable put document")
 	}
 
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected to fail with %s, failed", INTERAL_ERROR)
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected to fail with %s, failed", ErrInternalError)
 	}
 
 	if !writer.begin || writer.commit || !writer.rollback {
@@ -711,8 +711,8 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 		t.Errorf("expected fail put document. ")
 	}
 
-	if err != nil && err.Error() != INTERAL_ERROR {
-		t.Errorf("expected fail put document with %s, got %s", DOC_CONFLICT, err.Error())
+	if err != nil && !errors.Is(err, ErrInternalError) {
+		t.Errorf("expected fail put document with %s, got %s", ErrInternalError, err.Error())
 	}
 
 	if !writer.begin || !writer.rollback || writer.commit {

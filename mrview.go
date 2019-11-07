@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -57,12 +58,13 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 
 	ddoc.Views["_all_docs"] = ddv
 
-	ddvlatestchanges := &DesignDocumentView{}
+	/*ddvlatestchanges := &DesignDocumentView{}
 	ddvlatestchanges.Select = make(map[string]string)
 	ddvlatestchanges.Select["default"] = "SELECT JSON_GROUP_ARRAY(doc_id) FROM latest_changes"
 	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', data)) FROM latest_documents"
 
 	ddoc.Views["latest_changes"] = ddvlatestchanges
+	*/
 
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
@@ -171,9 +173,6 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 
 func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
-	//fmt.Println(mgr.viewFiles)
-	//fmt.Println(mgr.views)
-
 	name := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()
@@ -192,11 +191,11 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
-			return nil, errors.New(DOC_NOT_FOUND)
+			return nil, ErrDocNotFound
 		}
 		_, ok = ddoc.Views[viewName]
 		if !ok {
-			return nil, errors.New(VIEW_NOT_FOUND)
+			return nil, ErrViewNotFound
 		}
 
 		runlock()
@@ -211,7 +210,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 	}
 
 	if view == nil {
-		return nil, errors.New(VIEW_NOT_FOUND)
+		return nil, ErrViewNotFound
 	}
 
 	if !stale {
@@ -220,8 +219,6 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 			return nil, err
 		}
 	}
-
-	//fmt.Println(mgr.viewFiles, mgr.views)
 
 	return view.Select(selectName, values)
 }
@@ -563,6 +560,8 @@ func (view *View) Build(nextSeqID string) error {
 	return nil
 }
 
+var viewResultValidation = regexp.MustCompile("sql: expected (\\d+) destination arguments in Scan, not 1")
+
 func (view *View) Select(name string, values url.Values) ([]byte, error) {
 
 	var rs string
@@ -578,9 +577,9 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 	row := view.con.QueryRow(selectStmt.text, pValues...)
 	err := row.Scan(&rs)
 	if err != nil {
-		m, err := regexp.Match("sql: expected \\d+ destination arguments in Scan, not 1", []byte(err.Error()))
-		if m {
-			return nil, errors.New("view_result_error")
+		o := viewResultValidation.FindAllStringSubmatch(err.Error(), -1)
+		if len(o) > 0 {
+			return nil, fmt.Errorf("%s: %w", fmt.Sprintf("select have %s, want 1 column", o[0][1]), ErrViewResult)
 		}
 		return nil, err
 	}
