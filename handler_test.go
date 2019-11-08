@@ -81,7 +81,7 @@ func TestPutDatabase(t *testing.T) {
 
 	expected := `{"ok":true}`
 	if expected != rr.Body.String() {
-		t.Errorf(`expected to have ok`)
+		t.Errorf(`expected to have ok %s`, rr.Body.String())
 	}
 
 	testExpectJSONContentType(t, rr)
@@ -102,17 +102,3 @@ func TestDeleteDatabase(t *testing.T) {
 
 	testExpectJSONContentType(t, rr)
 }
-
-/*func TestPutDatabaseInvalidName(t *testing.T) {
-	req, _ := http.NewRequest("PUT", "/_all_dbs", nil)
-	rr := httptest.NewRecorder()
-	handler := NewRouter()
-	handler.ServeHTTP(rr, req)
-
-	expected := `{"ok":true}`
-	if expected != rr.Body.String() {
-		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
-	}
-
-	testExpectJSONContentType(t, rr)
-}*/

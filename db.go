@@ -128,15 +128,18 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
+	if strings.HasPrefix(newDoc.ID, "_design/") {
+		err = db.viewmgr.ValidateDDoc(newDoc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := writer.Commit(); err != nil {
 		return nil, err
 	}
 
 	db.updateSeqID = updateSeqID
-
-	if strings.HasPrefix(newDoc.ID, "_design/") {
-		db.viewmgr.UpdateDesignDocument(newDoc)
-	}
 
 	doc := Document{
 		ID:      newDoc.ID,
@@ -227,5 +230,13 @@ func (db *Database) Vacuum() error {
 }
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return db.viewmgr.SelectView(db.updateSeqID, ddocID, viewName, selectName, values, stale)
+	idoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
+	if err != nil {
+		return nil, err
+	}
+	doc, err := db.GetDocument(idoc, true)
+	if err != nil {
+		return nil, err
+	}
+	return db.viewmgr.SelectView(db.updateSeqID, ddocID, doc, viewName, selectName, values, stale)
 }
