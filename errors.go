@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
+	"strings"
 )
 
 var (
@@ -18,6 +18,7 @@ var (
 	ErrViewNotFound    = errors.New("view_not_found")
 	ErrViewResult      = errors.New("view_result_error")
 	ErrDocInvalidInput = errors.New("doc_invalid_input")
+	ErrInvalidSQLStmt  = errors.New("invalid_sql_stmt")
 	ErrInternalError   = errors.New("internal_error")
 
 	MSG_INTERAL_ERROR     = "internal error"
@@ -32,20 +33,26 @@ var (
 	MSG_VIEW_RESULT_ERROR = "view expect 1 column"
 )
 
-var re = regexp.MustCompile(":.*$")
+func getErrorDescription(err error) string {
+	e := errors.Unwrap(err)
+	if e == nil {
+		return err.Error()
+	}
+	return strings.Trim(strings.TrimRight(strings.ReplaceAll(err.Error(), e.Error(), ""), " "), ":")
+}
 
 func errorString(err error) (string, string) {
 	switch {
 	case errors.Is(err, ErrDBExists):
 		return err.Error(), MSG_DB_EXISTS
 	case errors.Is(err, ErrBadJSON):
-		return ErrBadJSON.Error(), string(re.ReplaceAll([]byte(err.Error()), []byte("")))
+		return ErrBadJSON.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDBNotFound):
 		return ErrDBNotFound.Error(), MSG_DB_NOT_FOUND
 	case errors.Is(err, ErrDBInvalidName):
-		return ErrDBInvalidName.Error(), string(re.ReplaceAll([]byte(err.Error()), []byte("")))
+		return ErrDBInvalidName.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocInvalidID):
-		return ErrDocInvalidID.Error(), string(re.ReplaceAll([]byte(err.Error()), []byte("")))
+		return ErrDocInvalidID.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocConflict):
 		return ErrDocConflict.Error(), MSG_DOC_CONFLICT
 	case errors.Is(err, ErrDocNotFound):
@@ -53,9 +60,11 @@ func errorString(err error) (string, string) {
 	case errors.Is(err, ErrViewNotFound):
 		return ErrViewNotFound.Error(), MSG_VIEW_NOT_FOUND
 	case errors.Is(err, ErrViewResult):
-		return ErrViewResult.Error(), string(re.ReplaceAll([]byte(err.Error()), []byte("")))
+		return ErrViewResult.Error(), getErrorDescription(err)
+	case errors.Is(err, ErrInvalidSQLStmt):
+		return ErrInvalidSQLStmt.Error(), getErrorDescription(err)
 	default:
-		return ErrInternalError.Error(), string(re.ReplaceAll([]byte(err.Error()), []byte("")))
+		return ErrInternalError.Error(), getErrorDescription(err)
 	}
 }
 
@@ -67,7 +76,7 @@ func NotOK(err error, w http.ResponseWriter) {
 	)
 
 	switch {
-	case errors.Is(err, ErrDBExists) || errors.Is(err, ErrDBInvalidName):
+	case errors.Is(err, ErrDBExists) || errors.Is(err, ErrDBInvalidName) || errors.Is(err, ErrInvalidSQLStmt):
 		statusCode = http.StatusPreconditionFailed
 	case errors.Is(err, ErrDocConflict):
 		statusCode = http.StatusConflict

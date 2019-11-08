@@ -22,11 +22,11 @@ type ViewManager interface {
 	Initialize(db *Database) error
 	ListViewFiles() ([]string, error)
 	OpenView(viewName string, ddoc *DesignDocument) error
-	SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SelectView(updateSeqID, ddocID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
 	UpdateDesignDocument(doc *Document) error
-	ValidateDDoc(ddoc *DesignDocument) error
+	ValidateDDoc(doc *Document) error
 	CalculateSignature(ddocv *DesignDocumentView) string
 	ParseQuery(query string) (string, []string)
 	GetView(name string) (*View, bool)
@@ -171,24 +171,25 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 
 	name := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()
 	unlocked := false
-	runlock := func() {
+	RUnlock := func() {
 		if !unlocked {
 			mgr.rwmux.RUnlock()
 		}
 		unlocked = true
 	}
-	defer runlock()
+	ResetRUnlock := func() {
+		unlocked = false
+	}
+	defer RUnlock()
 
 	view, ok := mgr.views[name]
-
 	if !ok {
-
 		ddoc, ok := mgr.ddocs[ddocID]
 		if !ok {
 			return nil, ErrDocNotFound
@@ -198,13 +199,13 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 			return nil, ErrViewNotFound
 		}
 
-		runlock()
+		RUnlock()
 		err := mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
+		ResetRUnlock()
 		mgr.rwmux.RLock()
-		defer mgr.rwmux.RUnlock()
 
 		view = mgr.views[name]
 	}
@@ -214,6 +215,34 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID, viewName, selectN
 	}
 
 	if !stale {
+		vdoc := mgr.ddocs[ddocID]
+
+		if doc.Version != vdoc.Version {
+			err := mgr.UpdateDesignDocument(doc)
+			if err != nil {
+				return nil, err
+			}
+
+			ddoc, ok := mgr.ddocs[ddocID]
+			if !ok {
+				return nil, ErrDocNotFound
+			}
+			_, ok = ddoc.Views[viewName]
+			if !ok {
+				return nil, ErrViewNotFound
+			}
+
+			RUnlock()
+			err = mgr.OpenView(viewName, ddoc)
+			if err != nil {
+				return nil, err
+			}
+			ResetRUnlock()
+			mgr.rwmux.RLock()
+
+			view = mgr.views[name]
+		}
+
 		err := view.Build(updateSeqID)
 		if err != nil {
 			return nil, err
@@ -251,8 +280,6 @@ func (mgr *DefaultViewManager) Vacuum() error {
 
 func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 
-	mgr.rwmux.Lock()
-	defer mgr.rwmux.Unlock()
 	ddocID := doc.ID
 	var updatedViews map[string]string = make(map[string]string)
 	newDDoc := &DesignDocument{}
@@ -321,8 +348,6 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 		}
 	}
 
-	//fmt.Println(mgr.viewFiles, mgr.views)
-
 	if doc.Deleted {
 		delete(mgr.ddocs, ddocID)
 	} else {
@@ -332,12 +357,63 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) ValidateDDoc(ddoc *DesignDocument) error {
+func (mgr *DefaultViewManager) ValidateDDoc(doc *Document) error {
+	newDDoc := &DesignDocument{}
+	err := json.Unmarshal(doc.Data, newDDoc)
+	if err != nil {
+		panic("invalid_design_document " + doc.ID)
+	}
 
-	for _, v := range ddoc.Views {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return err
+	}
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+	defer db.Close()
+
+	_, err = tx.Exec("CREATE TABLE latest_changes(doc_id); CREATE table latest_documents (doc_id, version, data);")
+
+	var sqlErr string = ""
+
+	for _, v := range newDDoc.Views {
 		for _, x := range v.Setup {
-			_ = x
+			_, err := tx.Exec(x)
+			if err != nil {
+				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
+			}
 		}
+
+		if sqlErr != "" {
+			break
+		}
+
+		for _, x := range v.Delete {
+			_, err := tx.Exec(x)
+			if err != nil {
+				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
+			}
+		}
+
+		if sqlErr != "" {
+			break
+		}
+
+		for _, x := range v.Update {
+			_, err := tx.Exec(x)
+			if err != nil {
+				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
+			}
+		}
+
+		if sqlErr != "" {
+			break
+		}
+	}
+
+	if sqlErr != "" {
+		return fmt.Errorf("%s : %w", sqlErr, ErrInvalidSQLStmt)
 	}
 
 	return nil
@@ -461,7 +537,6 @@ func (view *View) Open() error {
 
 	INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
 		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
-	
 	`
 
 	if _, err = db.Exec(buildSQL); err != nil {

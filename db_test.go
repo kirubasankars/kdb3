@@ -573,6 +573,31 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	}
 }
 
+func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
+	db := &Database{}
+	reader := new(FakeDatabaseReader)
+	writer := new(FakeDatabaseWriter)
+	db.idSeq = NewSequenceUUIDGenarator()
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	db.readers = pool
+	db.writer = writer
+	db.Open()
+
+	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
+	_, err := db.PutDocument(doc)
+	if err == nil {
+		t.Errorf("expected to fail with %s", ErrDocConflict)
+	}
+
+	if !writer.begin || writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and rollback, failed.")
+	}
+
+	if db.updateSeqID != db.GetLastUpdateSequence() {
+		t.Errorf("expected to have new seq id, failed.")
+	}
+}
+
 func TestDBPutDocumentBeginError(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
