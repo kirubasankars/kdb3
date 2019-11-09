@@ -77,14 +77,15 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 }
 
 func ValidateDBName(name string) bool {
-	if len(name) <= 0 || strings.Contains(name, "$") || name == "_all_dbs" || name == "_uuids" {
+	if len(name) <= 0 || strings.Contains(name, "$") || name[0] == '_' {
 		return false
 	}
 	return true
 }
 
 func ValidateDocId(id string) bool {
-	if strings.Contains(id, "$") {
+	id = strings.Trim(id, " ")
+	if len(id) > 0 && !strings.HasPrefix(id, "_design/") && id[0] == '_' {
 		return false
 	}
 	return true
@@ -152,6 +153,14 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	if !ValidateDocId(newDoc.ID) {
 		return nil, ErrDocInvalidID
 	}
+
+	if strings.HasPrefix(newDoc.ID, "_design/") {
+		err := db.GetViewManager().ValidateDDoc(newDoc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return db.PutDocument(newDoc)
 }
 
