@@ -17,7 +17,7 @@ type DatabaseReader interface {
 	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
 
 	GetAllDesignDocuments() ([]*Document, error)
-	GetChanges(since string) []byte
+	GetChanges(since string) ([]byte, error)
 
 	GetLastUpdateSequence() string
 	GetDocumentCount() int
@@ -155,7 +155,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 	return docs, nil
 }
 
-func (db *DefaultDatabaseReader) GetChanges(since string) []byte {
+func (db *DefaultDatabaseReader) GetChanges(since string) ([]byte, error) {
 	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
 	(
 		SELECT seq_id as seq, version, doc_id, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id DESC
@@ -172,10 +172,10 @@ func (db *DefaultDatabaseReader) GetChanges(since string) []byte {
 
 	err := row.Scan(&changes)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return changes
+	return changes, nil
 }
 
 func (db *DefaultDatabaseReader) GetLastUpdateSequence() string {

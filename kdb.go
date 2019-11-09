@@ -210,7 +210,7 @@ func (kdb *KDBEngine) Changes(name string, since string) ([]byte, error) {
 		return nil, ErrDBNotFound
 	}
 
-	return db.GetChanges(since), nil
+	return db.GetChanges(since)
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {

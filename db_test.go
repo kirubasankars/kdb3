@@ -161,8 +161,8 @@ func (reader *FakeDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
 	return nil, nil
 }
 
-func (db *FakeDatabaseReader) GetChanges(since string) []byte {
-	return nil
+func (db *FakeDatabaseReader) GetChanges(since string) ([]byte, error) {
+	return nil, nil
 }
 
 func (db *FakeDatabaseReader) GetLastUpdateSequence() string {
@@ -234,7 +234,7 @@ func TestDBGetChanges(t *testing.T) {
 	reader := new(FakeDatabaseReader)
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
-	_ = db.GetChanges("")
+	_, _ = db.GetChanges("")
 
 	if !reader.begin || !reader.commit {
 		t.Errorf("expected to call begin and commit, failed.")

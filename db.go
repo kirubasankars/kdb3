@@ -194,7 +194,7 @@ func (db *Database) GetLastUpdateSequence() string {
 	return reader.GetLastUpdateSequence()
 }
 
-func (db *Database) GetChanges(since string) []byte {
+func (db *Database) GetChanges(since string) ([]byte, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
