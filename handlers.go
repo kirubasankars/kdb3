@@ -81,7 +81,8 @@ func DatabaseChanges(w http.ResponseWriter, r *http.Request) {
 	db := vars["db"]
 	r.ParseForm()
 	since := r.FormValue("since")
-	rs, err := kdb.Changes(db, since)
+	limit, _ := strconv.Atoi(r.FormValue("limit"))
+	rs, err := kdb.Changes(db, since, limit)
 	if err != nil {
 		NotOK(err, w)
 		return

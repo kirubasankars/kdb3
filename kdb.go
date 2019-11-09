@@ -202,15 +202,17 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	return db.Vacuum()
 }
 
-func (kdb *KDBEngine) Changes(name string, since string) ([]byte, error) {
+func (kdb *KDBEngine) Changes(name string, since string, limit int) ([]byte, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, ErrDBNotFound
 	}
-
-	return db.GetChanges(since)
+	if limit == 0 {
+		limit = 10000
+	}
+	return db.GetChanges(since, limit)
 }
 
 func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
