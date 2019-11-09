@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -69,6 +68,10 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	return db, nil
 }
 
+func (db *Database) GetViewManager() ViewManager {
+	return db.viewmgr
+}
+
 func (db *Database) Open() error {
 	db.updateSeqID = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqID)
@@ -101,22 +104,24 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
 	if err != nil && err != ErrDocNotFound {
-		return nil, fmt.Errorf("%s: %w", "Writer.GetDocumentRevisionByID : "+err.Error(), ErrInternalError)
+		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
 
-	if currentDoc != nil && !currentDoc.Deleted && currentDoc.Version != newDoc.Version {
-		return nil, ErrDocConflict
-	}
-
-	if currentDoc == nil && newDoc.Version > 0 {
-		return nil, ErrDocConflict
-	}
-
-	if currentDoc != nil && currentDoc.Deleted {
+	if currentDoc != nil {
+		if !currentDoc.Deleted {
+			if currentDoc.Version != newDoc.Version {
+				return nil, ErrDocConflict
+			}
+		} else {
+			if newDoc.Version > 0 {
+				return nil, ErrDocConflict
+			}
+			newDoc.Version = currentDoc.Version
+		}
+	} else {
 		if newDoc.Version > 0 {
 			return nil, ErrDocConflict
 		}
-		newDoc.Version = currentDoc.Version
 	}
 
 	newDoc.CalculateVersion()
@@ -126,13 +131,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	err = writer.PutDocument(updateSeqID, newDoc, currentDoc)
 	if err != nil {
 		return nil, err
-	}
-
-	if strings.HasPrefix(newDoc.ID, "_design/") {
-		err = db.viewmgr.ValidateDDoc(newDoc)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if err := writer.Commit(); err != nil {

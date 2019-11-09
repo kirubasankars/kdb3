@@ -21,16 +21,15 @@ var (
 	ErrInvalidSQLStmt  = errors.New("invalid_sql_stmt")
 	ErrInternalError   = errors.New("internal_error")
 
-	MSG_INTERAL_ERROR     = "internal error"
-	MSG_DB_EXISTS         = "database already exists"
-	MSG_BAD_JSON          = "invalid json format"
-	MSG_DB_NOT_FOUND      = "database not found"
-	MSG_INVALID_DB_NAME   = "invalid db name"
-	MSG_INVALID_DOC_ID    = "invalid doc id"
-	MSG_DOC_CONFLICT      = "document conflict"
-	MSG_DOC_NOT_FOUND     = "document not found"
-	MSG_VIEW_NOT_FOUND    = "view not found"
-	MSG_VIEW_RESULT_ERROR = "view expect 1 column"
+	MsgInterError    = "internal error"
+	MsgDBExists      = "database already exists"
+	MsgBadJSON       = "invalid json format"
+	MsgDBNotFound    = "database not found"
+	MsgDBInvalidName = "invalid db name"
+	MsgDocInvalidID  = "invalid doc id"
+	MsgDocConflict   = "document conflict"
+	MsgDocNotFound   = "document not found"
+	MsgViewNotFound  = "view not found"
 )
 
 func getErrorDescription(err error) string {
@@ -44,21 +43,21 @@ func getErrorDescription(err error) string {
 func errorString(err error) (string, string) {
 	switch {
 	case errors.Is(err, ErrDBExists):
-		return err.Error(), MSG_DB_EXISTS
+		return err.Error(), MsgDBExists
 	case errors.Is(err, ErrBadJSON):
 		return ErrBadJSON.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDBNotFound):
-		return ErrDBNotFound.Error(), MSG_DB_NOT_FOUND
+		return ErrDBNotFound.Error(), MsgDBNotFound
 	case errors.Is(err, ErrDBInvalidName):
 		return ErrDBInvalidName.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocInvalidID):
 		return ErrDocInvalidID.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocConflict):
-		return ErrDocConflict.Error(), MSG_DOC_CONFLICT
+		return ErrDocConflict.Error(), MsgDocConflict
 	case errors.Is(err, ErrDocNotFound):
-		return ErrDocNotFound.Error(), MSG_DOC_NOT_FOUND
+		return ErrDocNotFound.Error(), MsgDocNotFound
 	case errors.Is(err, ErrViewNotFound):
-		return ErrViewNotFound.Error(), MSG_VIEW_NOT_FOUND
+		return ErrViewNotFound.Error(), MsgViewNotFound
 	case errors.Is(err, ErrViewResult):
 		return ErrViewResult.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrInvalidSQLStmt):

@@ -49,7 +49,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc.ID = "_design/_views"
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
-	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key TEXT PRIMARY KEY, value TEXT, doc_id TEXT)")
+	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key))")
 	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT doc_id FROM latest_changes)")
 	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version',JSON_EXTRACT(data, '$._version')), doc_id FROM latest_documents")
 	ddv.Select = make(map[string]string)

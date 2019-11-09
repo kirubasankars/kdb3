@@ -6,7 +6,7 @@ import (
 
 func TestErrorDB_EXISTS(t *testing.T) {
 	code, reason := errorString(ErrDBExists)
-	if code != ErrDBExists.Error() || reason != MSG_DB_EXISTS {
+	if code != ErrDBExists.Error() || reason != MsgDBExists {
 		t.Errorf("expected %s, got %s", ErrDBExists, code)
 	}
 }
@@ -20,7 +20,7 @@ func TestErrorBAD_JSON(t *testing.T) {
 
 func TestErrorDB_NOT_FOUND(t *testing.T) {
 	code, reason := errorString(ErrDBNotFound)
-	if code != ErrDBNotFound.Error() || reason != MSG_DB_NOT_FOUND {
+	if code != ErrDBNotFound.Error() || reason != MsgDBNotFound {
 		t.Errorf("expected %s, got %s", ErrDBNotFound, code)
 	}
 }
@@ -41,21 +41,21 @@ func TestErrorINVALID_DOC_ID(t *testing.T) {
 
 func TestErrorDOC_CONFLICT(t *testing.T) {
 	code, reason := errorString(ErrDocConflict)
-	if code != ErrDocConflict.Error() || reason != MSG_DOC_CONFLICT {
+	if code != ErrDocConflict.Error() || reason != MsgDocConflict {
 		t.Errorf("expected %s, got %s", ErrDocConflict, code)
 	}
 }
 
 func TestErrorDOC_NOT_FOUND(t *testing.T) {
 	code, reason := errorString(ErrDocNotFound)
-	if code != ErrDocNotFound.Error() || reason != MSG_DOC_NOT_FOUND {
+	if code != ErrDocNotFound.Error() || reason != MsgDocNotFound {
 		t.Errorf("expected %s, got %s", ErrDocNotFound, code)
 	}
 }
 
 func TestErrorVIEW_NOT_FOUND(t *testing.T) {
 	code, reason := errorString(ErrViewNotFound)
-	if code != ErrViewNotFound.Error() || reason != MSG_VIEW_NOT_FOUND {
+	if code != ErrViewNotFound.Error() || reason != MsgViewNotFound {
 		t.Errorf("expected %s, got %s", ErrViewNotFound, code)
 	}
 }
