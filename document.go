@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/valyala/fastjson"
 )
+
+var documentPool DocumentPool
+var parserPool fastjson.ParserPool
 
 type Document struct {
 	ID      string
@@ -30,13 +34,13 @@ func (doc *Document) CalculateVersion() {
 	doc.Data = data
 }
 
-var parser fastjson.Parser
-
 func ParseDocument(value []byte) (*Document, error) {
+	parser := parserPool.Get()
 	v, err := parser.ParseBytes(value)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err, ErrBadJSON)
 	}
+	parserPool.Put(parser)
 
 	obj := v.GetObject()
 	if obj == nil {
@@ -77,6 +81,26 @@ func ParseDocument(value []byte) (*Document, error) {
 	var b []byte
 	value = v.MarshalTo(b)
 
-	doc := &Document{ID: id, Version: version, Deleted: deleted, Data: value}
+	doc := documentPool.Get()
+	doc.ID = id
+	doc.Version = version
+	doc.Deleted = deleted
+	doc.Data = value
+
 	return doc, nil
+}
+
+type DocumentPool struct {
+	pool sync.Pool
+}
+
+func (pp *DocumentPool) Get() *Document {
+	v := pp.pool.Get()
+	if v == nil {
+		return &Document{}
+	}
+	return v.(*Document)
+}
+func (pp *DocumentPool) Put(p *Document) {
+	pp.pool.Put(p)
 }

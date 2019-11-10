@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"encoding/json"
 	"fmt"
@@ -381,3 +382,4 @@ func BenchmarkParseDocument(b *testing.B) {
 		ParseDocument([]byte(`{"test":1}`))
 	}
 }
+*/

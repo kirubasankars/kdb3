@@ -108,31 +108,33 @@ func DatabaseCompact(w http.ResponseWriter, r *http.Request) {
 }
 
 func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
-	//body, err := ioutil.ReadAll(r.Body)
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
-	input, err := ParseDocument(body)
+	inputDoc, err := ParseDocument(body)
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
-	if docid != "" && docid != input.ID {
+	if docid != "" && docid != inputDoc.ID {
 		NotOK(errors.New("mismatch_id"), w)
 		return
 	}
-	doc, err := kdb.PutDocument(db, input)
+	outputDoc, err := kdb.PutDocument(db, inputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
-	output := formatDocString(doc.ID, doc.Version, doc.Deleted)
+	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(output))
+
+	documentPool.Put(inputDoc)
+	documentPool.Put(outputDoc)
 }
 
 func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -146,13 +148,13 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		jsondoc = formatDocString(docid, 0, false)
 	}
 
-	doc, err := ParseDocument([]byte(jsondoc))
+	inputDoc, err := ParseDocument([]byte(jsondoc))
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
 
-	rec, err := kdb.GetDocument(db, doc, true)
+	outputDoc, err := kdb.GetDocument(db, inputDoc, true)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -160,7 +162,10 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(rec.Data)
+	w.Write(outputDoc.Data)
+
+	documentPool.Put(inputDoc)
+	documentPool.Put(outputDoc)
 }
 
 func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -175,13 +180,13 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	}
 	version, _ := strconv.Atoi(ver)
 	jsondoc := formatDocString(docid, version, true)
-	doc, err := ParseDocument([]byte(jsondoc))
+	inputDoc, err := ParseDocument([]byte(jsondoc))
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
 
-	_, err = kdb.DeleteDocument(db, doc)
+	outputDoc, err := kdb.DeleteDocument(db, inputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -189,7 +194,10 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"ok":true}`)
+	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+
+	documentPool.Put(inputDoc)
+	documentPool.Put(outputDoc)
 }
 
 func GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -229,19 +237,23 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
 	for idx, item := range fValues.GetArray("_docs") {
-		idoc, _ := ParseDocument([]byte(item.String()))
+		inputDoc, _ := ParseDocument([]byte(item.String()))
 		var jsonb []byte
-		odoc, err := kdb.PutDocument(db, idoc)
+		outputDoc, err := kdb.PutDocument(db, inputDoc)
 		if err != nil {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
-			jsonb = []byte(formatDocString(odoc.ID, odoc.Version, odoc.Deleted))
+			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
+
+		documentPool.Put(inputDoc)
+		documentPool.Put(outputDoc)
 	}
 	w.Write([]byte(outputs.String()))
+
 }
 
 func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
@@ -259,17 +271,20 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
 	for idx, item := range fValues.GetArray("_docs") {
-		idoc, _ := ParseDocument([]byte(item.String()))
+		inputDoc, _ := ParseDocument([]byte(item.String()))
 		var jsonb []byte
-		odoc, err := kdb.GetDocument(db, idoc, true)
+		outputDoc, err := kdb.GetDocument(db, inputDoc, true)
 		if err != nil {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
-			jsonb = odoc.Data
+			jsonb = outputDoc.Data
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
+
+		documentPool.Put(inputDoc)
+		documentPool.Put(outputDoc)
 	}
 	w.Write([]byte(`{"results":` + outputs.String() + `}`))
 }

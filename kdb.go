@@ -130,7 +130,7 @@ func (kdb *KDBEngine) Delete(name string) error {
 
 	for idx := range list {
 		name := list[idx].Name()
-		if strings.HasPrefix(name, db.name+"$") && strings.HasSuffix(name, dbExt) {
+		if strings.HasPrefix(name, db.Name+"$") && strings.HasSuffix(name, dbExt) {
 			os.Remove(filepath.Join(kdb.viewPath, name))
 		}
 	}
@@ -198,7 +198,7 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 		return ErrDBNotFound
 	}
 
-	db.viewmgr.Vacuum()
+	db.viewManager.Vacuum()
 	return db.Vacuum()
 }
 

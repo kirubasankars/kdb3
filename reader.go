@@ -48,7 +48,7 @@ func (reader *DefaultDatabaseReader) Commit() error {
 }
 
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
-	doc := Document{}
+	doc := documentPool.Get()
 
 	row := reader.tx.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, Version)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted)
@@ -61,14 +61,14 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 	}
 
 	if doc.Deleted == true {
-		return &doc, ErrDocNotFound
+		return doc, ErrDocNotFound
 	}
 
-	return &doc, nil
+	return doc, nil
 }
 
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
-	doc := Document{}
+	doc := documentPool.Get()
 
 	row := reader.tx.QueryRow("SELECT doc_id, version, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted)
@@ -81,14 +81,14 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 	}
 
 	if doc.Deleted == true {
-		return &doc, ErrDocNotFound
+		return doc, ErrDocNotFound
 	}
 
-	return &doc, nil
+	return doc, nil
 }
 
 func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
-	doc := &Document{}
+	doc := documentPool.Get()
 
 	row := reader.tx.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID, ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data)
