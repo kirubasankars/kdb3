@@ -22,7 +22,7 @@ type ViewManager interface {
 	Initialize(db *Database) error
 	ListViewFiles() ([]string, error)
 	OpenView(viewName string, ddoc *DesignDocument) error
-	SelectView(updateSeqID, ddocID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
 	UpdateDesignDocument(doc *Document) error
@@ -171,8 +171,8 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqID, ddocID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-
+func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	ddocID := doc.ID
 	name := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()

@@ -4,10 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/valyala/fastjson"
 )
 
 //https://blog.questionable.services/article/testing-http-handlers-go/
 func TestGetUUID(t *testing.T) {
+	var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/_uuids?count=10", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()
@@ -54,6 +57,7 @@ func testExpect200(t *testing.T, rr *httptest.ResponseRecorder) {
 	}
 }
 func TestGetInfo(t *testing.T) {
+	var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter()

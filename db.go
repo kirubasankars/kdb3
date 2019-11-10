@@ -8,17 +8,16 @@ import (
 )
 
 type Database struct {
-	name        string
-	updateSeqID string
+	Name      string
+	UpdateSeq string
+	DBPath    string
 
-	dbPath  string
-	readers DatabaseReaderPool
-	writer  DatabaseWriter
-	mux     sync.Mutex
-
-	changeSeq *ChangeSequenceGenarator
-	idSeq     *SequenceUUIDGenarator
-	viewmgr   ViewManager
+	mux         sync.Mutex
+	readers     DatabaseReaderPool
+	writer      DatabaseWriter
+	changeSeq   *ChangeSequenceGenarator
+	idSeq       *SequenceUUIDGenarator
+	viewManager ViewManager
 }
 
 func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Database, error) {
@@ -34,10 +33,10 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 		}
 	}
 
-	db := &Database{name: name, dbPath: path}
+	db := &Database{Name: name, DBPath: path}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	connStr := db.dbPath + "?_journal=WAL"
+	connStr := db.DBPath + "?_journal=WAL"
 	db.writer = new(DefaultDatabaseWriter)
 	db.writer.Open(connStr)
 	db.readers = NewDatabaseReaderPool(connStr, 4)
@@ -51,16 +50,16 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	}
 
 	db.Open()
-	db.viewmgr = NewViewManager(path, viewPath, name)
+	db.viewManager = NewViewManager(path, viewPath, name)
 
 	if createIfNotExists {
-		err := db.viewmgr.SetupViews(db)
+		err := db.viewManager.SetupViews(db)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	err := db.viewmgr.Initialize(db)
+	err := db.viewManager.Initialize(db)
 	if err != nil {
 		return nil, err
 	}
@@ -69,17 +68,17 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 }
 
 func (db *Database) GetViewManager() ViewManager {
-	return db.viewmgr
+	return db.viewManager
 }
 
 func (db *Database) Open() error {
-	db.updateSeqID = db.GetLastUpdateSequence()
-	db.changeSeq = NewChangeSequenceGenarator(138, db.updateSeqID)
+	db.UpdateSeq = db.GetLastUpdateSequence()
+	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
 	return nil
 }
 
 func (db *Database) Close() error {
-	db.viewmgr.Close()
+	db.viewManager.Close()
 	db.writer.Close()
 	db.readers.Close()
 	return nil
@@ -137,7 +136,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	db.updateSeqID = updateSeqID
+	db.UpdateSeq = updateSeqID
 
 	doc := Document{
 		ID:      newDoc.ID,
@@ -216,25 +215,29 @@ func (db *Database) GetDocumentCount() int {
 
 func (db *Database) Stat() *DBStat {
 	stat := &DBStat{}
-	stat.DBName = db.name
-	stat.UpdateSeq = db.updateSeqID
+	stat.DBName = db.Name
+	stat.UpdateSeq = db.UpdateSeq
 	stat.DocCount = db.GetDocumentCount()
 	return stat
 }
 
 func (db *Database) Vacuum() error {
-	db.viewmgr.Vacuum()
+	db.viewManager.Vacuum()
 	return db.writer.Vacuum()
 }
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	idoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
+	inputDoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
+	defer documentPool.Put(inputDoc)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := db.GetDocument(idoc, true)
+	outputDoc, err := db.GetDocument(inputDoc, true)
+	defer documentPool.Put(outputDoc)
+
 	if err != nil {
 		return nil, err
 	}
-	return db.viewmgr.SelectView(db.updateSeqID, ddocID, doc, viewName, selectName, values, stale)
+
+	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
 }
