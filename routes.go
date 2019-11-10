@@ -1,7 +1,10 @@
 package main
 
 import (
+	"expvar"
 	"net/http"
+	"net/http/pprof"
+	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
 )
@@ -17,6 +20,10 @@ type Routes []Route
 
 func NewRouter() *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
+
+	router.Handle("/_debug/vars", expvar.Handler())
+	router.HandleFunc("/_debug/pprof", pprof.Index)
+	router.Handle("/_debug/heap", pprof.Handler("heap"))
 
 	router.PathPrefix("/_utils").
 		Handler(http.StripPrefix("/_utils", http.FileServer(http.Dir("./share/www/"))))

@@ -26,7 +26,7 @@ type ViewManager interface {
 	Close() error
 	Vacuum() error
 	UpdateDesignDocument(doc *Document) error
-	ValidateDDoc(doc *Document) error
+	ValidateDesignDocument(doc *Document) error
 	CalculateSignature(ddocv *DesignDocumentView) string
 	ParseQuery(query string) (string, []string)
 	GetView(name string) (*View, bool)
@@ -72,11 +72,13 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	err := encoder.Encode(ddoc)
 
 	designDoc, err := ParseDocument(buffer.Bytes())
+	defer documentPool.Put(designDoc)
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = db.PutDocument(designDoc)
+	doc, err := db.PutDocument(designDoc)
+	documentPool.Put(doc)
 	if err != nil {
 		return err
 	}
@@ -357,7 +359,7 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) ValidateDDoc(doc *Document) error {
+func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	newDDoc := &DesignDocument{}
 	err := json.Unmarshal(doc.Data, newDDoc)
 	if err != nil {
