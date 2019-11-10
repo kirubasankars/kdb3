@@ -125,11 +125,11 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		}
 	}
 
-	newDoc.CalculateVersion()
+	newDoc.CalculateNextVersion()
 
-	updateSeqID := db.changeSeq.Next()
+	updateSeq := db.changeSeq.Next()
 
-	err = writer.PutDocument(updateSeqID, newDoc, currentDoc)
+	err = writer.PutDocument(updateSeq, newDoc, currentDoc)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	db.UpdateSeq = updateSeqID
+	db.UpdateSeq = updateSeq
 
 	doc := Document{
 		ID:      newDoc.ID,
