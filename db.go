@@ -102,6 +102,8 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
+	defer documentPool.Put(currentDoc)
+
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}

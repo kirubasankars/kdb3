@@ -108,7 +108,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 }
 
 func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
-	doc := &Document{}
+	doc := documentPool.Get()
 
 	row := reader.tx.QueryRow("SELECT doc_id, version, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, ID, Version)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data)
@@ -179,16 +179,16 @@ func (db *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, er
 }
 
 func (db *DefaultDatabaseReader) GetLastUpdateSequence() string {
-	var maxSeqID string
+	var maxUpdateSeq string
 	sqlGetMaxSeq := "SELECT IFNULL(seq_id, '') FROM (SELECT MAX(seq_id) as seq_id FROM changes)"
 
 	row := db.tx.QueryRow(sqlGetMaxSeq)
-	err := row.Scan(&maxSeqID)
+	err := row.Scan(&maxUpdateSeq)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		panic(err)
 	}
 
-	return maxSeqID
+	return maxUpdateSeq
 }
 
 func (db *DefaultDatabaseReader) GetDocumentCount() int {

@@ -90,17 +90,27 @@ func ParseDocument(value []byte) (*Document, error) {
 	return doc, nil
 }
 
+func (doc *Document) Reset() {
+	doc.ID = ""
+	doc.Version = 0
+	doc.Deleted = false
+	doc.Data = []byte("")
+}
+
 type DocumentPool struct {
 	pool sync.Pool
 }
 
-func (pp *DocumentPool) Get() *Document {
-	v := pp.pool.Get()
+func (pp DocumentPool) Get() *Document {
+	return &Document{}
+	/*v := pp.pool.Get()
 	if v == nil {
 		return &Document{}
 	}
-	return v.(*Document)
+	doc := v.(*Document)
+	doc.Reset()
+	return doc*/
 }
-func (pp *DocumentPool) Put(p *Document) {
-	pp.pool.Put(p)
+func (pp DocumentPool) Put(p *Document) {
+	//pp.pool.Put(p)
 }
