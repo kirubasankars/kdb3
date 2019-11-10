@@ -9,7 +9,7 @@ import (
 	"github.com/valyala/fastjson"
 )
 
-var documentPool DocumentPool
+var documentPool = NewDocumentPool()
 var parserPool fastjson.ParserPool
 
 type Document struct {
@@ -19,7 +19,7 @@ type Document struct {
 	Data    []byte
 }
 
-func (doc *Document) CalculateVersion() {
+func (doc *Document) CalculateNextVersion() {
 
 	doc.Version = doc.Version + 1
 	var meta string
@@ -98,19 +98,26 @@ func (doc *Document) Reset() {
 }
 
 type DocumentPool struct {
-	pool sync.Pool
+	pool *sync.Pool
 }
 
-func (pp DocumentPool) Get() *Document {
-	return &Document{}
-	/*v := pp.pool.Get()
-	if v == nil {
+func (pp *DocumentPool) Get() *Document {
+	v := pp.pool.Get()
+	doc, _ := v.(*Document)
+	if doc == nil {
+		fmt.Println("created")
 		return &Document{}
 	}
-	doc := v.(*Document)
+	fmt.Println("from pool")
 	doc.Reset()
-	return doc*/
+	return doc
 }
-func (pp DocumentPool) Put(p *Document) {
-	//pp.pool.Put(p)
+func (pp *DocumentPool) Put(p *Document) {
+	pp.pool.Put(p)
+}
+
+func NewDocumentPool() *DocumentPool {
+	return &DocumentPool{
+		pool: new(sync.Pool),
+	}
 }

@@ -114,6 +114,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputDoc, err := ParseDocument(body)
+	defer documentPool.Put(inputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -123,6 +124,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outputDoc, err := kdb.PutDocument(db, inputDoc)
+	defer documentPool.Put(outputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -132,9 +134,6 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(output))
-
-	documentPool.Put(inputDoc)
-	documentPool.Put(outputDoc)
 }
 
 func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
