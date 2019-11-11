@@ -8,28 +8,28 @@ import (
 func TestParseDocumentBadJSON(t *testing.T) {
 	_, err := ParseDocument([]byte(`{"_name"}`))
 	if err == nil {
-		t.Errorf("expected to fail with %s", ErrBadJSON)
+		t.Errorf("expected err %s, failed", ErrBadJSON)
 	}
 	if err != nil && !errors.Is(err, ErrBadJSON) {
-		t.Errorf("expected to fail with %s", ErrBadJSON)
+		t.Errorf("expected err %s, failed", ErrBadJSON)
 	}
 }
 
 func TestParseDocumentWithVerisonandNoID(t *testing.T) {
 	_, err := ParseDocument([]byte(`{"_version":1}`))
 	if err == nil {
-		t.Errorf("expected to fail with %s", ErrDocInvalidID)
+		t.Errorf("expected err %s, failed", ErrDocInvalidID)
 	}
 
 	if err != nil && !errors.Is(err, ErrDocInvalidInput) {
-		t.Errorf("expected to fail with %s", ErrDocInvalidID)
+		t.Errorf("expected err %s, failed", ErrDocInvalidID)
 	}
 }
 
 func TestParseDocumentGoodDoc(t *testing.T) {
 	doc, err := ParseDocument([]byte(`{"_version":1, "_id":1, "test":"1"}`))
 	if err != nil {
-		t.Errorf("unexpected to fail with %s", err.Error())
+		t.Errorf("unexpected err %s", err.Error())
 	}
 
 	if doc.ID != "1" || doc.Version != 1 || doc.Deleted || string(doc.Data) != `{"test":"1"}` {
@@ -40,10 +40,20 @@ func TestParseDocumentGoodDoc(t *testing.T) {
 func TestParseDocumentGoodDocDeleted(t *testing.T) {
 	doc, err := ParseDocument([]byte(`{"_version":1, "_id":1, "_deleted":true}`))
 	if err != nil {
-		t.Errorf("unexpected to fail with %s", err.Error())
+		t.Errorf("unexpected err %s", err.Error())
 	}
 
 	if doc.ID != "1" || doc.Version != 1 || !doc.Deleted {
 		t.Errorf("failed to parse doc")
+	}
+}
+
+func TestParseDocumentObject(t *testing.T) {
+	_, err := ParseDocument([]byte(`[]`))
+	if err == nil {
+		t.Errorf("expected err %s", ErrDocInvalidInput)
+	}
+	if !errors.Is(err, ErrDocInvalidInput) {
+		t.Errorf("expected err %s, got %s", ErrDocInvalidInput, err)
 	}
 }

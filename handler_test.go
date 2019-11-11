@@ -1,6 +1,6 @@
 package main
 
-import (
+/*import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,3 +106,4 @@ func TestDeleteDatabase(t *testing.T) {
 
 	testExpectJSONContentType(t, rr)
 }
+*/

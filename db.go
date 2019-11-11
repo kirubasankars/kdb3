@@ -42,11 +42,9 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	db.readers = NewDatabaseReaderPool(connStr, 4)
 
 	if createIfNotExists {
-		db.writer.Begin()
 		if err := db.writer.ExecBuildScript(); err != nil {
 			return nil, err
 		}
-		db.writer.Commit()
 	}
 
 	db.Open()
@@ -91,19 +89,11 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
-	err := writer.Begin()
-	defer writer.Rollback()
-	if err != nil {
-		return nil, err
-	}
-
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-	defer documentPool.Put(currentDoc)
-
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
@@ -134,28 +124,19 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	if err := writer.Commit(); err != nil {
-		return nil, err
-	}
-
 	db.UpdateSeq = updateSeq
 
-	doc := Document{
-		ID:      newDoc.ID,
-		Version: newDoc.Version,
-		Deleted: newDoc.Deleted,
-	}
-
-	return &doc, nil
+	doc := &Document{}
+	doc.ID = newDoc.ID
+	doc.Version = newDoc.Version
+	doc.Deleted = newDoc.Deleted
+	return doc, nil
 }
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
-
-	reader.Begin()
-	defer reader.Commit()
 
 	if includeData {
 		if doc.Version > 0 {
@@ -174,9 +155,6 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
-	reader.Begin()
-	defer reader.Commit()
-
 	return reader.GetAllDesignDocuments()
 }
 
@@ -189,18 +167,13 @@ func (db *Database) GetLastUpdateSequence() string {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
-	reader.Begin()
-	defer reader.Commit()
-
-	return reader.GetLastUpdateSequence()
+	seq, _ := reader.GetLastUpdateSequence()
+	return seq
 }
 
 func (db *Database) GetChanges(since string, limit int) ([]byte, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
-
-	reader.Begin()
-	defer reader.Commit()
 
 	return reader.GetChanges(since, limit)
 }
@@ -209,10 +182,8 @@ func (db *Database) GetDocumentCount() int {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
-	reader.Begin()
-	defer reader.Commit()
-
-	return reader.GetDocumentCount()
+	count, _ := reader.GetDocumentCount()
+	return count
 }
 
 func (db *Database) Stat() *DBStat {
@@ -230,13 +201,10 @@ func (db *Database) Vacuum() error {
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	inputDoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
-	defer documentPool.Put(inputDoc)
 	if err != nil {
 		return nil, err
 	}
 	outputDoc, err := db.GetDocument(inputDoc, true)
-	defer documentPool.Put(outputDoc)
-
 	if err != nil {
 		return nil, err
 	}
