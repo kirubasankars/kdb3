@@ -72,13 +72,11 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	err := encoder.Encode(ddoc)
 
 	designDoc, err := ParseDocument(buffer.Bytes())
-	defer documentPool.Put(designDoc)
 	if err != nil {
 		panic(err)
 	}
 
-	doc, err := db.PutDocument(designDoc)
-	documentPool.Put(doc)
+	_, err = db.PutDocument(designDoc)
 	if err != nil {
 		return err
 	}

@@ -102,7 +102,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-	defer documentPool.Put(currentDoc)
 
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
@@ -230,13 +229,11 @@ func (db *Database) Vacuum() error {
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	inputDoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
-	defer documentPool.Put(inputDoc)
 	if err != nil {
 		return nil, err
 	}
-	outputDoc, err := db.GetDocument(inputDoc, true)
-	defer documentPool.Put(outputDoc)
 
+	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err
 	}

@@ -114,7 +114,6 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputDoc, err := ParseDocument(body)
-	defer documentPool.Put(inputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -124,7 +123,6 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outputDoc, err := kdb.PutDocument(db, inputDoc)
-	defer documentPool.Put(outputDoc)
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -162,9 +160,6 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(outputDoc.Data)
-
-	documentPool.Put(inputDoc)
-	documentPool.Put(outputDoc)
 }
 
 func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -194,9 +189,6 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
-
-	documentPool.Put(inputDoc)
-	documentPool.Put(outputDoc)
 }
 
 func GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -247,9 +239,6 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
-
-		documentPool.Put(inputDoc)
-		documentPool.Put(outputDoc)
 	}
 	w.Write([]byte(outputs.String()))
 
@@ -281,9 +270,6 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
-
-		documentPool.Put(inputDoc)
-		documentPool.Put(outputDoc)
 	}
 	w.Write([]byte(`{"results":` + outputs.String() + `}`))
 }
