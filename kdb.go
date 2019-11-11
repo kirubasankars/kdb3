@@ -155,6 +155,10 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
+		if newDoc.ID == "_design/_views" {
+			return nil, fmt.Errorf("%s: %w", "default view can't be updated.", ErrDocInvalidInput)
+		}
+
 		err := db.GetViewManager().ValidateDesignDocument(newDoc)
 		if err != nil {
 			return nil, err

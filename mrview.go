@@ -58,27 +58,17 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 
 	ddoc.Views["_all_docs"] = ddv
 
-	/*ddvlatestchanges := &DesignDocumentView{}
-	ddvlatestchanges.Select = make(map[string]string)
-	ddvlatestchanges.Select["default"] = "SELECT JSON_GROUP_ARRAY(doc_id) FROM latest_changes"
-	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', data)) FROM latest_documents"
-
-	ddoc.Views["latest_changes"] = ddvlatestchanges
-	*/
-
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
 	err := encoder.Encode(ddoc)
 
 	designDoc, err := ParseDocument(buffer.Bytes())
-	defer documentPool.Put(designDoc)
 	if err != nil {
 		panic(err)
 	}
 
-	doc, err := db.PutDocument(designDoc)
-	documentPool.Put(doc)
+	_, err = db.PutDocument(designDoc)
 	if err != nil {
 		return err
 	}
