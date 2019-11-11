@@ -20,10 +20,11 @@ type Database struct {
 	viewManager ViewManager
 }
 
-func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Database, error) {
+func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileControl FileHandler,
+	databaseWriter DatabaseWriter, databaseReaderPool DatabaseReaderPool, viewManager ViewManager) (*Database, error) {
 	path := filepath.Join(dbPath, name+dbExt)
-	var fileHandler DefaultFileHandler
-	if !fileHandler.IsFileExists(path) {
+
+	if !fileControl.IsFileExists(path) {
 		if !createIfNotExists {
 			return nil, ErrDBNotFound
 		}
@@ -37,18 +38,16 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	db.idSeq = NewSequenceUUIDGenarator()
 
 	connStr := db.DBPath + "?_journal=WAL"
-	db.writer = new(DefaultDatabaseWriter)
+	db.writer = databaseWriter
 	db.writer.Open(connStr)
-	db.readers = NewDatabaseReaderPool(connStr, 4)
+	db.readers = databaseReaderPool
 
-	if createIfNotExists {
-		if err := db.writer.ExecBuildScript(); err != nil {
-			return nil, err
-		}
+	if err := db.writer.ExecBuildScript(); err != nil {
+		return nil, err
 	}
 
 	db.Open()
-	db.viewManager = NewViewManager(path, viewPath, name)
+	db.viewManager = viewManager
 
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)

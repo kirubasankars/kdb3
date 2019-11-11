@@ -102,8 +102,13 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if _, ok := kdb.dbs[name]; ok && !createIfNotExists {
 		return nil
 	}
+	var databaseWriter DatabaseWriter = new(DefaultDatabaseWriter)
+	var databaseReaderPool DatabaseReaderPool = new(DefaultDatabaseReaderPool)
+	var viewManager ViewManager = NewViewManager(kdb.dbPath, kdb.viewPath, name)
 
-	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists)
+	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists,
+		kdb.fileHandler, databaseWriter, databaseReaderPool, viewManager)
+
 	if err != nil {
 		return err
 	}
