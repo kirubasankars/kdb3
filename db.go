@@ -43,13 +43,15 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 	db.writer.Open(connStr)
 	db.readers = databaseReaderPool
 
-	if err := db.writer.ExecBuildScript(); err != nil {
-		return nil, err
+	if createIfNotExists {
+		if err := db.writer.ExecBuildScript(); err != nil {
+			return nil, err
+		}
 	}
 
 	db.Open()
-	db.viewManager = viewManager
 
+	db.viewManager = viewManager
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)
 		if err != nil {
