@@ -76,7 +76,6 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 }
 
 func (mgr *DefaultViewManager) Initialize(db *Database) error {
-
 	mgr.rwmux = sync.RWMutex{}
 
 	mgr.rwmux.Lock()

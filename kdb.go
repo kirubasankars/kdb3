@@ -102,9 +102,11 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if _, ok := kdb.dbs[name]; ok && !createIfNotExists {
 		return nil
 	}
+
+	path := filepath.Join(kdb.dbPath, name+dbExt)
 	var databaseWriter DatabaseWriter = new(DefaultDatabaseWriter)
-	var databaseReaderPool DatabaseReaderPool = new(DefaultDatabaseReaderPool)
-	var viewManager ViewManager = NewViewManager(kdb.dbPath, kdb.viewPath, name)
+	var databaseReaderPool DatabaseReaderPool = NewDatabaseReaderPool(path, 4)
+	var viewManager ViewManager = NewViewManager(path, kdb.viewPath, name)
 
 	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists,
 		kdb.fileHandler, databaseWriter, databaseReaderPool, viewManager)
