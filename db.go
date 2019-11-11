@@ -48,7 +48,7 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 	}
 
 	db.Open()
-	//db.viewManager = viewManager
+	db.viewManager = viewManager
 
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)

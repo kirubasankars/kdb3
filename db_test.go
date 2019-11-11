@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 )
 
@@ -127,6 +128,57 @@ func (db *FakeDatabaseReader) GetDocumentCount() (int, error) {
 
 func (reader *FakeDatabaseReader) Close() error {
 	return nil
+}
+
+type FakeFileControl struct {
+}
+
+func (fh *FakeFileControl) IsFileExists(path string) bool {
+	return false
+}
+
+func (fh *FakeFileControl) MkdirAll(path string) error {
+	return nil
+}
+
+type FakeViewManager struct {
+}
+
+func (vm *FakeViewManager) SetupViews(db *Database) error {
+	return nil
+}
+func (vm *FakeViewManager) Initialize(db *Database) error {
+	return nil
+}
+func (vm *FakeViewManager) ListViewFiles() ([]string, error) {
+	return nil, nil
+}
+func (vm *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+	return nil
+}
+func (vm *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	return nil, nil
+}
+func (vm *FakeViewManager) Close() error {
+	return nil
+}
+func (vm *FakeViewManager) Vacuum() error {
+	return nil
+}
+func (vm *FakeViewManager) UpdateDesignDocument(doc *Document) error {
+	return nil
+}
+func (vm *FakeViewManager) ValidateDesignDocument(doc *Document) error {
+	return nil
+}
+func (vm *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+	return ""
+}
+func (vm *FakeViewManager) ParseQuery(query string) (string, []string) {
+	return "", nil
+}
+func (vm *FakeViewManager) GetView(name string) (*View, bool) {
+	return nil, false
 }
 
 func TestDBStat(t *testing.T) {
@@ -592,4 +644,14 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected to fail, when you update deleted doc with old verison")
 	}
+}
+
+func TestDBNewDatabase(t *testing.T) {
+	fileHandler := new(FakeFileControl)
+	reader := new(FakeDatabaseReader)
+	writer := new(FakeDatabaseWriter)
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	viewManager := new(FakeViewManager)
+	db, _ := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, fileHandler, writer, pool, viewManager)
+	_ = db
 }
