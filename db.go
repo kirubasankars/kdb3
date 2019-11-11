@@ -22,6 +22,7 @@ type Database struct {
 
 func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileControl FileHandler,
 	databaseWriter DatabaseWriter, databaseReaderPool DatabaseReaderPool, viewManager ViewManager) (*Database, error) {
+
 	path := filepath.Join(dbPath, name+dbExt)
 
 	if !fileControl.IsFileExists(path) {
@@ -47,7 +48,7 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 	}
 
 	db.Open()
-	db.viewManager = viewManager
+	//db.viewManager = viewManager
 
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)
@@ -132,6 +133,11 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	return doc, nil
 }
 
+func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
+	doc.Deleted = true
+	return db.PutDocument(doc)
+}
+
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.readers.Borrow()
@@ -155,11 +161,6 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	defer db.readers.Return(reader)
 
 	return reader.GetAllDesignDocuments()
-}
-
-func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
-	doc.Deleted = true
-	return db.PutDocument(doc)
 }
 
 func (db *Database) GetLastUpdateSequence() string {
