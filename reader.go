@@ -5,7 +5,7 @@ import (
 )
 
 type DatabaseReader interface {
-	Open(path string) error
+	Open() error
 	Close() error
 	Begin() error
 	Commit() error
@@ -24,12 +24,13 @@ type DatabaseReader interface {
 }
 
 type DefaultDatabaseReader struct {
-	conn *sql.DB
-	tx   *sql.Tx
+	connectionString string
+	conn             *sql.DB
+	tx               *sql.Tx
 }
 
-func (reader *DefaultDatabaseReader) Open(path string) error {
-	con, err := sql.Open("sqlite3", path)
+func (reader *DefaultDatabaseReader) Open() error {
+	con, err := sql.Open("sqlite3", reader.connectionString)
 	if err != nil {
 		return err
 	}
@@ -213,14 +214,17 @@ type DefaultDatabaseReaderPool struct {
 	pool chan DatabaseReader
 }
 
-func NewDatabaseReaderPool(path string, limit int) DatabaseReaderPool {
+func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
 	readers := DefaultDatabaseReaderPool{
-		path: path,
+		path: connectionString,
 		pool: make(chan DatabaseReader, limit),
 	}
 	for x := 0; x < limit; x++ {
-		r := &DefaultDatabaseReader{}
-		_ = r.Open(path)
+		r := serviceLocator.GetDatabaseReader(connectionString)
+		err := r.Open()
+		if err != nil {
+			panic(err)
+		}
 		readers.pool <- r
 	}
 	return &readers

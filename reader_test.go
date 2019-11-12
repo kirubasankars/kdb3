@@ -11,8 +11,9 @@ import (
 func setupTestDatabaseWithWriter() error {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 
@@ -57,9 +58,9 @@ func TestReaderGetDocumentByID(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -79,9 +80,9 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -101,9 +102,9 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -123,9 +124,9 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -145,9 +146,9 @@ func TestReaderGetDocumentCount(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -168,9 +169,9 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -191,9 +192,9 @@ func TestReaderGetChanges(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":1},{"seq":"seqID2","version":1,"id":"2"},{"seq":"seqID1","version":1,"id":"1"}]}`
@@ -213,9 +214,9 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 		t.Errorf("unable to setup a database. %s", err.Error())
 	}
 
-	var reader DatabaseReader = new(DefaultDatabaseReader)
-
-	reader.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
+	reader.Open()
 
 	reader.Begin()
 
@@ -239,7 +240,8 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 }
 
 func TestReaderPool(t *testing.T) {
-	readers := NewDatabaseReaderPool(testConnectionString, 1)
+	serviceLocator := new(DefaultServiceLocator)
+	readers := serviceLocator.GetDatabaseReaderPool(testConnectionString, 1)
 	r1 := readers.Borrow()
 
 	var wg sync.WaitGroup

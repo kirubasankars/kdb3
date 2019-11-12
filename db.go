@@ -20,9 +20,9 @@ type Database struct {
 	viewManager ViewManager
 }
 
-func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Database, error) {
+func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+	fileHandler := serviceLocator.GetFileHandler()
 	path := filepath.Join(dbPath, name+dbExt)
-	var fileHandler DefaultFileHandler
 	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
 			return nil, ErrDBNotFound
@@ -36,10 +36,10 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	db := &Database{Name: name, DBPath: path}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	connStr := db.DBPath + "?_journal=WAL"
-	db.writer = new(DefaultDatabaseWriter)
-	db.writer.Open(connStr)
-	db.readers = NewDatabaseReaderPool(connStr, 4)
+	connectionString := db.DBPath + "?_journal=WAL"
+	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
+	db.writer.Open()
+	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
 
 	if createIfNotExists {
 		db.writer.Begin()
@@ -50,7 +50,13 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 	}
 
 	db.Open()
-	db.viewManager = NewViewManager(path, viewPath, name)
+
+	absoluteDBPath, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+
+	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, viewPath)
 
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)
@@ -59,12 +65,16 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool) (*Databa
 		}
 	}
 
-	err := db.viewManager.Initialize(db)
+	err = db.viewManager.Initialize(db)
 	if err != nil {
 		return nil, err
 	}
 
 	return db, nil
+}
+
+func (db *Database) Initialize() {
+
 }
 
 func (db *Database) GetViewManager() ViewManager {

@@ -33,15 +33,15 @@ type ViewManager interface {
 }
 
 type DefaultViewManager struct {
-	viewPath string
-	dbPath   string
-	dbName   string
-	views    map[string]*View
-	ddocs    map[string]*DesignDocument
+	viewPath             string
+	absoluteDatabasePath string
+	dbName               string
+	views                map[string]*View
+	ddocs                map[string]*DesignDocument
 
-	viewFiles map[string]map[string]bool
-
-	rwmux sync.RWMutex
+	viewFiles      map[string]map[string]bool
+	serviceLocator ServiceLocator
+	rwmux          sync.RWMutex
 }
 
 func (mgr *DefaultViewManager) SetupViews(db *Database) error {
@@ -57,14 +57,6 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM docsdb.documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
 
 	ddoc.Views["_all_docs"] = ddv
-
-	/*ddvlatestchanges := &DesignDocumentView{}
-	ddvlatestchanges.Select = make(map[string]string)
-	ddvlatestchanges.Select["default"] = "SELECT JSON_GROUP_ARRAY(doc_id) FROM latest_changes"
-	ddvlatestchanges.Select["with_docs"] = "SELECT JSON_GROUP_ARRAY(JSON_OBJECT('doc_id', doc_id, 'doc', data)) FROM latest_documents"
-
-	ddoc.Views["latest_changes"] = ddvlatestchanges
-	*/
 
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
@@ -158,10 +150,10 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return nil
 	}
 
-	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
-	viewFilePath += "?_journal=MEMORY"
+	viewPath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
+	viewConnectionString := viewPath + "?_journal=MEMORY"
 
-	view := NewView(mgr.dbPath, viewFilePath, viewName, ddoc, mgr)
+	view := mgr.serviceLocator.GetView(viewName, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
 	if err := view.Open(); err != nil {
 		return err
 	}
@@ -455,15 +447,16 @@ func (mgr *DefaultViewManager) ParseQuery(query string) (string, []string) {
 	return text, params
 }
 
-func NewViewManager(dbPath, viewPath, dbName string) *DefaultViewManager {
+func NewViewManager(dbName, absoluteDatabasePath, viewPath string, serviceLocator ServiceLocator) *DefaultViewManager {
 	mgr := &DefaultViewManager{
-		dbPath:   dbPath,
-		viewPath: viewPath,
-		dbName:   dbName,
+		absoluteDatabasePath: absoluteDatabasePath,
+		viewPath:             viewPath,
+		dbName:               dbName,
 	}
 	mgr.views = make(map[string]*View)
 	mgr.ddocs = make(map[string]*DesignDocument)
 	mgr.viewFiles = make(map[string]map[string]bool)
+	mgr.serviceLocator = serviceLocator
 	return mgr
 }
 
@@ -473,9 +466,9 @@ type View struct {
 
 	currentSeqID string
 
-	viewFilePath string
-	dbFilePath   string
-	con          *sql.DB
+	connectionString     string
+	absoluteDatabasePath string
+	con                  *sql.DB
 
 	setupScripts  []Query
 	deleteScripts []Query
@@ -483,15 +476,15 @@ type View struct {
 	selectScripts map[string]Query
 }
 
-func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, viewm ViewManager) *View {
+func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
 	view := &View{}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
 	}
 
-	view.viewFilePath = viewFilePath
-	view.dbFilePath = dbFilePath
+	view.connectionString = connectionString
+	view.absoluteDatabasePath = absoluteDatabasePath
 
 	view.name = viewName
 	view.ddocID = ddoc.ID
@@ -503,20 +496,20 @@ func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, vi
 	designDocView := ddoc.Views[viewName]
 
 	for _, x := range designDocView.Setup {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQuery(x)
 		view.setupScripts = append(view.setupScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Delete {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQuery(x)
 		view.deleteScripts = append(view.deleteScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Update {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQuery(x)
 		view.updateScripts = append(view.updateScripts, Query{text: text, params: params})
 	}
 
 	for k, v := range designDocView.Select {
-		text, params := viewm.ParseQuery(v)
+		text, params := viewManager.ParseQuery(v)
 		view.selectScripts[k] = Query{text: text, params: params}
 	}
 
@@ -524,7 +517,7 @@ func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, vi
 }
 
 func (view *View) Open() error {
-	db, err := sql.Open("sqlite3", view.viewFilePath)
+	db, err := sql.Open("sqlite3", view.connectionString)
 	if err != nil {
 		return err
 	}
@@ -543,12 +536,7 @@ func (view *View) Open() error {
 		return err
 	}
 
-	absoluteDBPath, err := filepath.Abs(view.dbFilePath)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + "' as docsdb;")
+	_, err = db.Exec("ATTACH DATABASE '" + view.absoluteDatabasePath + "' as docsdb;")
 	if err != nil {
 		return err
 	}

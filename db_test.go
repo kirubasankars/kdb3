@@ -45,7 +45,7 @@ func (reader *FakeDatabaseReader) Reset() {
 	reader.commit = false
 }
 
-func (reader *FakeDatabaseReader) Open(path string) error {
+func (reader *FakeDatabaseReader) Open() error {
 	return nil
 }
 
@@ -71,7 +71,7 @@ type FakeDatabaseWriter struct {
 	getdocerror bool
 }
 
-func (writer *FakeDatabaseWriter) Open(path string) error {
+func (writer *FakeDatabaseWriter) Open() error {
 	return nil
 }
 
