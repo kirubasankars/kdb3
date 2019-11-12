@@ -10,8 +10,9 @@ var testConnectionString string = "./data/dbs/testdb.db"
 func TestWriterPutDocument(t *testing.T) {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 
@@ -46,8 +47,9 @@ func TestWriterPutDocument(t *testing.T) {
 func TestWriterPutDocumentWithConflict(t *testing.T) {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 
@@ -84,8 +86,9 @@ func TestWriterPutDocumentWithConflict(t *testing.T) {
 func TestWriterPutDocumentWithDeplicateSeqID(t *testing.T) {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 
@@ -130,8 +133,9 @@ func TestWriterPutDocumentWithDeplicateSeqID(t *testing.T) {
 func TestWriterDeleteDocument(t *testing.T) {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 
@@ -171,8 +175,9 @@ func TestWriterDeleteDocument(t *testing.T) {
 func TestWriterDocNotFound(t *testing.T) {
 	os.Remove(testConnectionString)
 
-	var writer DatabaseWriter = new(DefaultDatabaseWriter)
-	writer.Open(testConnectionString)
+	serviceLocator := new(DefaultServiceLocator)
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
+	writer.Open()
 
 	writer.Begin()
 

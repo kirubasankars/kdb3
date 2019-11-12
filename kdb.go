@@ -20,9 +20,10 @@ type KDBEngine struct {
 	dbPath   string
 	viewPath string
 
-	dbs         map[string]*Database
-	rwmux       sync.RWMutex
-	fileHandler FileHandler
+	dbs            map[string]*Database
+	rwmux          sync.RWMutex
+	serviceLocator ServiceLocator
+	fileHandler    FileHandler
 }
 
 func NewKDB() (*KDBEngine, error) {
@@ -31,16 +32,18 @@ func NewKDB() (*KDBEngine, error) {
 	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
-	kdb.fileHandler = new(DefaultFileHandler)
+	kdb.serviceLocator = NewServiceLocator()
 
-	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
-		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	fileHandler := kdb.serviceLocator.GetFileHandler()
+
+	if !fileHandler.IsFileExists(kdb.dbPath) {
+		if err := fileHandler.MkdirAll(kdb.dbPath); err != nil {
 			return nil, err
 		}
 	}
 
-	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
-		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	if !fileHandler.IsFileExists(kdb.dbPath) {
+		if err := fileHandler.MkdirAll(kdb.dbPath); err != nil {
 			return nil, err
 		}
 	}
@@ -103,7 +106,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 		return nil
 	}
 
-	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists)
+	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
 	if err != nil {
 		return err
 	}

@@ -5,7 +5,7 @@ import (
 )
 
 type DatabaseWriter interface {
-	Open(path string) error
+	Open() error
 	Close() error
 
 	Begin() error
@@ -20,20 +20,19 @@ type DatabaseWriter interface {
 }
 
 type DefaultDatabaseWriter struct {
-	reader *DefaultDatabaseReader
-	conn   *sql.DB
-	tx     *sql.Tx
+	connectionString string
+	reader           *DefaultDatabaseReader
+	conn             *sql.DB
+	tx               *sql.Tx
 }
 
-func (writer *DefaultDatabaseWriter) Open(path string) error {
-	con, err := sql.Open("sqlite3", path)
+func (writer *DefaultDatabaseWriter) Open() error {
+	con, err := sql.Open("sqlite3", writer.connectionString)
 	if err != nil {
 		return err
 	}
 	writer.conn = con
-	reader := new(DefaultDatabaseReader)
-	reader.conn = con
-	writer.reader = reader
+	writer.reader.conn = con
 	return nil
 }
 
@@ -103,7 +102,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 
 	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
-			return ErrInternalError
+			return ErrDocConflict
 		}
 		if err.Error() == "UNIQUE constraint failed: changes.seq_id" {
 			return ErrInternalError
