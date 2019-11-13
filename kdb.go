@@ -42,8 +42,8 @@ func NewKDB() (*KDBEngine, error) {
 		}
 	}
 
-	if !fileHandler.IsFileExists(kdb.dbPath) {
-		if err := fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	if !fileHandler.IsFileExists(kdb.viewPath) {
+		if err := fileHandler.MkdirAll(kdb.viewPath); err != nil {
 			return nil, err
 		}
 	}
@@ -55,7 +55,6 @@ func NewKDB() (*KDBEngine, error) {
 
 	for idx := range list {
 		name := list[idx]
-
 		if err = kdb.Open(name, false); err != nil {
 			return nil, err
 		}
@@ -158,7 +157,7 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
-		err := db.GetViewManager().ValidateDesignDocument(newDoc)
+		err := db.ValidateDesignDocument(newDoc)
 		if err != nil {
 			return nil, err
 		}
@@ -235,10 +234,10 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	var version, sqlite_source_id string
+	var version, sqliteSourceId string
 	con, _ := sql.Open("sqlite3", ":memory:")
 	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
-	row.Scan(&version, &sqlite_source_id)
+	row.Scan(&version, &sqliteSourceId)
 	con.Close()
-	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqlite_source_id))
+	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqliteSourceId))
 }
