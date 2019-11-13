@@ -223,7 +223,7 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	fValues, err := fastjson.ParseBytes(body)
 	if err != nil {
-		NotOK(errors.New("bad_json"), w)
+		NotOK(fmt.Errorf("%s:%w", err, ErrBadJSON), w)
 		return
 	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))

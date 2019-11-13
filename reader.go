@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 )
 
 type DatabaseReader interface {
@@ -182,13 +183,11 @@ func (db *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, er
 func (db *DefaultDatabaseReader) GetLastUpdateSequence() string {
 	var maxUpdateSeq string
 	sqlGetMaxSeq := "SELECT IFNULL(seq_id, '') FROM (SELECT MAX(seq_id) as seq_id FROM changes)"
-
 	row := db.tx.QueryRow(sqlGetMaxSeq)
 	err := row.Scan(&maxUpdateSeq)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		panic(err)
 	}
-
 	return maxUpdateSeq
 }
 
@@ -215,10 +214,12 @@ type DefaultDatabaseReaderPool struct {
 }
 
 func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
+
 	readers := DefaultDatabaseReaderPool{
 		path: connectionString,
 		pool: make(chan DatabaseReader, limit),
 	}
+
 	for x := 0; x < limit; x++ {
 		r := serviceLocator.GetDatabaseReader(connectionString)
 		err := r.Open()
@@ -227,6 +228,8 @@ func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator Se
 		}
 		readers.pool <- r
 	}
+	fmt.Println(connectionString, limit)
+
 	return &readers
 }
 

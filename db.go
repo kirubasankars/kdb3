@@ -38,7 +38,11 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceL
 
 	connectionString := db.DBPath + "?_journal=WAL"
 	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
-	db.writer.Open()
+	err := db.writer.Open()
+	if err != nil {
+		panic(err)
+	}
+
 	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
 
 	if createIfNotExists {
@@ -49,7 +53,10 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceL
 		db.writer.Commit()
 	}
 
-	db.Open()
+	err = db.Open()
+	if err != nil {
+		panic(err)
+	}
 
 	absoluteDBPath, err := filepath.Abs(path)
 	if err != nil {
@@ -73,12 +80,8 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceL
 	return db, nil
 }
 
-func (db *Database) Initialize() {
-
-}
-
-func (db *Database) GetViewManager() ViewManager {
-	return db.viewManager
+func (db *Database) ValidateDesignDocument(doc *Document) error {
+	return db.viewManager.ValidateDesignDocument(doc)
 }
 
 func (db *Database) Open() error {

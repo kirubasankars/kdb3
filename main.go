@@ -1,14 +1,20 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 )
 
-var kdb, _ = NewKDB()
+var kdb *KDBEngine
 
 func main() {
+	var err error
+	kdb, err = NewKDB()
+	if err != nil {
+		panic(err)
+	}
 
 	router := NewRouter()
 
@@ -20,4 +26,6 @@ func main() {
 	}
 
 	log.Fatal(srv.ListenAndServe())
+
+	fmt.Println("Started")
 }
