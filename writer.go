@@ -5,8 +5,12 @@ import (
 )
 
 type DatabaseWriter interface {
-	Open(path string) error
+	Open() error
 	Close() error
+
+	Begin() error
+	Commit() error
+	Rollback() error
 
 	ExecBuildScript() error
 	Vacuum() error
@@ -16,19 +20,19 @@ type DatabaseWriter interface {
 }
 
 type DefaultDatabaseWriter struct {
-	reader *DefaultDatabaseReader
-	conn   *sql.DB
+	connectionString string
+	reader           *DefaultDatabaseReader
+	conn             *sql.DB
+	tx               *sql.Tx
 }
 
-func (writer *DefaultDatabaseWriter) Open(path string) error {
-	con, err := sql.Open("sqlite3", path)
+func (writer *DefaultDatabaseWriter) Open() error {
+	con, err := sql.Open("sqlite3", writer.connectionString)
 	if err != nil {
 		return err
 	}
 	writer.conn = con
-	reader := new(DefaultDatabaseReader)
-	reader.conn = con
-	writer.reader = reader
+	writer.reader.conn = con
 	return nil
 }
 
@@ -37,12 +41,23 @@ func (writer *DefaultDatabaseWriter) Close() error {
 	return err
 }
 
+func (writer *DefaultDatabaseWriter) Begin() error {
+	var err error
+	writer.tx, err = writer.conn.Begin()
+	writer.reader.tx = writer.tx
+	return err
+}
+
+func (writer *DefaultDatabaseWriter) Commit() error {
+	return writer.tx.Commit()
+}
+
+func (writer *DefaultDatabaseWriter) Rollback() error {
+	return writer.tx.Rollback()
+}
+
 func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
-	tx, err := writer.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Commit()
+	tx := writer.tx
 
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS documents (
@@ -66,7 +81,7 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_version ON changes 
 			(doc_id, version);`
 
-	if _, err = tx.Exec(buildSQL); err != nil {
+	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
 	}
 
@@ -83,14 +98,9 @@ func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Doc
 }
 
 func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
+	tx := writer.tx
 
-	tx, err := writer.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err = tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
+	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, deleted) VALUES(?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
 			return ErrDocConflict
 		}
@@ -115,8 +125,6 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 			return err
 		}
 	}
-
-	tx.Commit()
 
 	return nil
 }

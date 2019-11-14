@@ -20,12 +20,10 @@ type Database struct {
 	viewManager ViewManager
 }
 
-func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileControl FileHandler,
-	databaseWriter DatabaseWriter, databaseReaderPool DatabaseReaderPool, viewManager ViewManager) (*Database, error) {
-
+func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+	fileHandler := serviceLocator.GetFileHandler()
 	path := filepath.Join(dbPath, name+dbExt)
-
-	if !fileControl.IsFileExists(path) {
+	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
 			return nil, ErrDBNotFound
 		}
@@ -38,20 +36,35 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 	db := &Database{Name: name, DBPath: path}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	connStr := db.DBPath + "?_journal=WAL"
-	db.writer = databaseWriter
-	db.writer.Open(connStr)
-	db.readers = databaseReaderPool
+	connectionString := db.DBPath + "?_journal=WAL"
+	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
+	err := db.writer.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
 
 	if createIfNotExists {
+		db.writer.Begin()
 		if err := db.writer.ExecBuildScript(); err != nil {
 			return nil, err
 		}
+		db.writer.Commit()
 	}
 
-	db.Open()
+	err = db.Open()
+	if err != nil {
+		panic(err)
+	}
 
-	db.viewManager = viewManager
+	absoluteDBPath, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+
+	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, viewPath)
+
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)
 		if err != nil {
@@ -59,7 +72,7 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 		}
 	}
 
-	err := db.viewManager.Initialize(db)
+	err = db.viewManager.Initialize(db)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +80,8 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, fileCont
 	return db, nil
 }
 
-func (db *Database) GetViewManager() ViewManager {
-	return db.viewManager
+func (db *Database) ValidateDesignDocument(doc *Document) error {
+	return db.viewManager.ValidateDesignDocument(doc)
 }
 
 func (db *Database) Open() error {
@@ -91,11 +104,18 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
+	err := writer.Begin()
+	defer writer.Rollback()
+	if err != nil {
+		return nil, err
+	}
+
 	if newDoc.ID == "" {
 		newDoc.ID = db.idSeq.Next()
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
+
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
@@ -126,24 +146,28 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
+	if err := writer.Commit(); err != nil {
+		return nil, err
+	}
+
 	db.UpdateSeq = updateSeq
 
-	doc := &Document{}
-	doc.ID = newDoc.ID
-	doc.Version = newDoc.Version
-	doc.Deleted = newDoc.Deleted
-	return doc, nil
-}
+	doc := Document{
+		ID:      newDoc.ID,
+		Version: newDoc.Version,
+		Deleted: newDoc.Deleted,
+	}
 
-func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
-	doc.Deleted = true
-	return db.PutDocument(doc)
+	return &doc, nil
 }
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
 
 	if includeData {
 		if doc.Version > 0 {
@@ -162,20 +186,33 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
+	reader.Begin()
+	defer reader.Commit()
+
 	return reader.GetAllDesignDocuments()
+}
+
+func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
+	doc.Deleted = true
+	return db.PutDocument(doc)
 }
 
 func (db *Database) GetLastUpdateSequence() string {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
-	seq, _ := reader.GetLastUpdateSequence()
-	return seq
+	reader.Begin()
+	defer reader.Commit()
+
+	return reader.GetLastUpdateSequence()
 }
 
 func (db *Database) GetChanges(since string, limit int) ([]byte, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
+
+	reader.Begin()
+	defer reader.Commit()
 
 	return reader.GetChanges(since, limit)
 }
@@ -184,8 +221,10 @@ func (db *Database) GetDocumentCount() int {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
-	count, _ := reader.GetDocumentCount()
-	return count
+	reader.Begin()
+	defer reader.Commit()
+
+	return reader.GetDocumentCount()
 }
 
 func (db *Database) Stat() *DBStat {
@@ -206,6 +245,7 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	if err != nil {
 		return nil, err
 	}
+
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err

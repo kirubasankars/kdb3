@@ -20,9 +20,10 @@ type KDBEngine struct {
 	dbPath   string
 	viewPath string
 
-	dbs         map[string]*Database
-	rwmux       sync.RWMutex
-	fileHandler FileHandler
+	dbs            map[string]*Database
+	rwmux          sync.RWMutex
+	serviceLocator ServiceLocator
+	fileHandler    FileHandler
 }
 
 func NewKDB() (*KDBEngine, error) {
@@ -31,16 +32,18 @@ func NewKDB() (*KDBEngine, error) {
 	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
-	kdb.fileHandler = new(DefaultFileHandler)
+	kdb.serviceLocator = NewServiceLocator()
 
-	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
-		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	fileHandler := kdb.serviceLocator.GetFileHandler()
+
+	if !fileHandler.IsFileExists(kdb.dbPath) {
+		if err := fileHandler.MkdirAll(kdb.dbPath); err != nil {
 			return nil, err
 		}
 	}
 
-	if !kdb.fileHandler.IsFileExists(kdb.dbPath) {
-		if err := kdb.fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	if !fileHandler.IsFileExists(kdb.viewPath) {
+		if err := fileHandler.MkdirAll(kdb.viewPath); err != nil {
 			return nil, err
 		}
 	}
@@ -52,7 +55,6 @@ func NewKDB() (*KDBEngine, error) {
 
 	for idx := range list {
 		name := list[idx]
-
 		if err = kdb.Open(name, false); err != nil {
 			return nil, err
 		}
@@ -103,14 +105,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 		return nil
 	}
 
-	path := filepath.Join(kdb.dbPath, name+dbExt)
-	var databaseWriter DatabaseWriter = new(DefaultDatabaseWriter)
-	var databaseReaderPool DatabaseReaderPool = NewDatabaseReaderPool(path, 4)
-	var viewManager ViewManager = NewViewManager(path, kdb.viewPath, name)
-
-	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists,
-		kdb.fileHandler, databaseWriter, databaseReaderPool, viewManager)
-
+	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
 	if err != nil {
 		return err
 	}
@@ -162,11 +157,7 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
-		if newDoc.ID == "_design/_views" {
-			return nil, fmt.Errorf("%s: %w", "default view can't be updated.", ErrDocInvalidInput)
-		}
-
-		err := db.GetViewManager().ValidateDesignDocument(newDoc)
+		err := db.ValidateDesignDocument(newDoc)
 		if err != nil {
 			return nil, err
 		}
@@ -243,10 +234,10 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	var version, sqlite_source_id string
+	var version, sqliteSourceID string
 	con, _ := sql.Open("sqlite3", ":memory:")
 	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
-	row.Scan(&version, &sqlite_source_id)
+	row.Scan(&version, &sqliteSourceID)
 	con.Close()
-	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqlite_source_id))
+	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }

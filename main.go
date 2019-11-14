@@ -1,23 +1,31 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 )
 
-var kdb, _ = NewKDB()
+var kdb *KDBEngine
 
 func main() {
+	var err error
+	kdb, err = NewKDB()
+	if err != nil {
+		panic(err)
+	}
 
 	router := NewRouter()
 
 	srv := &http.Server{
 		Handler:      router,
 		Addr:         "127.0.0.1:8001",
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 1 * time.Hour,
+		ReadTimeout:  1 * time.Hour,
 	}
 
 	log.Fatal(srv.ListenAndServe())
+
+	fmt.Println("Started")
 }
