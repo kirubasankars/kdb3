@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 )
 
 type DatabaseReader interface {
@@ -228,7 +227,6 @@ func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator Se
 		}
 		readers.pool <- r
 	}
-	fmt.Println(connectionString, limit)
 
 	return &readers
 }

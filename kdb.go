@@ -234,10 +234,10 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 }
 
 func (kdb *KDBEngine) Info() []byte {
-	var version, sqliteSourceId string
+	var version, sqliteSourceID string
 	con, _ := sql.Open("sqlite3", ":memory:")
 	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
-	row.Scan(&version, &sqliteSourceId)
+	row.Scan(&version, &sqliteSourceID)
 	con.Close()
-	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqliteSourceId))
+	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }
