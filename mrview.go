@@ -28,20 +28,19 @@ type ViewManager interface {
 	UpdateDesignDocument(doc *Document) error
 	ValidateDesignDocument(doc *Document) error
 	CalculateSignature(ddocv *DesignDocumentView) string
-	ParseQuery(query string) (string, []string)
-	GetView(name string) (*View, bool)
+	ParseQueryParams(query string) (string, []string)
 }
 
 type DefaultViewManager struct {
-	viewPath string
-	dbPath   string
-	dbName   string
-	views    map[string]*View
-	ddocs    map[string]*DesignDocument
+	viewPath             string
+	absoluteDatabasePath string
+	dbName               string
+	views                map[string]*View
+	ddocs                map[string]*DesignDocument
 
-	viewFiles map[string]map[string]bool
-
-	rwmux sync.RWMutex
+	viewFiles      map[string]map[string]bool
+	serviceLocator ServiceLocator
+	rwmux          sync.RWMutex
 }
 
 func (mgr *DefaultViewManager) SetupViews(db *Database) error {
@@ -49,8 +48,8 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc.ID = "_design/_views"
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
-	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key))")
-	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id IN (SELECT doc_id FROM latest_changes)")
+	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
+	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes)")
 	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version',JSON_EXTRACT(data, '$._version')), doc_id FROM latest_documents")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
@@ -76,6 +75,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 }
 
 func (mgr *DefaultViewManager) Initialize(db *Database) error {
+
 	mgr.rwmux = sync.RWMutex{}
 
 	mgr.rwmux.Lock()
@@ -149,10 +149,10 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return nil
 	}
 
-	viewFilePath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
-	viewFilePath += "?_journal=MEMORY"
+	viewPath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
+	viewConnectionString := viewPath + "?_journal=MEMORY"
 
-	view := NewView(mgr.dbPath, viewFilePath, viewName, ddoc, mgr)
+	view := mgr.serviceLocator.GetView(viewName, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
 	if err := view.Open(); err != nil {
 		return err
 	}
@@ -181,21 +181,20 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 
 	view, ok := mgr.views[name]
 	if !ok {
-		ddoc, ok := mgr.ddocs[ddocID]
-		if !ok {
-			return nil, ErrDocNotFound
-		}
-		_, ok = ddoc.Views[viewName]
-		if !ok {
-			return nil, ErrViewNotFound
-		}
 
 		RUnlock()
-		err := mgr.OpenView(viewName, ddoc)
+		ResetRUnlock()
+		ddoc := &DesignDocument{}
+
+		err := json.Unmarshal(doc.Data, ddoc)
+		if err != nil {
+			panic("invalid_design_document " + ddocID)
+		}
+
+		err = mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
-		ResetRUnlock()
 		mgr.rwmux.RLock()
 
 		view = mgr.views[name]
@@ -206,13 +205,16 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 	}
 
 	if !stale {
-		vdoc := mgr.ddocs[ddocID]
+		ddoc, ok := mgr.ddocs[ddocID]
 
-		if doc.Version != vdoc.Version {
+		if !ok || doc.Version != ddoc.Version {
+			RUnlock()
+			ResetRUnlock()
 			err := mgr.UpdateDesignDocument(doc)
 			if err != nil {
 				return nil, err
 			}
+			mgr.rwmux.RLock()
 
 			ddoc, ok := mgr.ddocs[ddocID]
 			if !ok {
@@ -253,13 +255,6 @@ func (mgr *DefaultViewManager) Close() error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) GetView(name string) (*View, bool) {
-	if view, ok := mgr.views[name]; true {
-		return view, ok
-	}
-	return nil, false
-}
-
 func (mgr *DefaultViewManager) Vacuum() error {
 	mgr.rwmux.RLock()
 	defer mgr.rwmux.RUnlock()
@@ -270,6 +265,8 @@ func (mgr *DefaultViewManager) Vacuum() error {
 }
 
 func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
 
 	ddocID := doc.ID
 	var updatedViews map[string]string = make(map[string]string)
@@ -364,7 +361,7 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	defer tx.Rollback()
 	defer db.Close()
 
-	_, err = tx.Exec("CREATE TABLE latest_changes(doc_id); CREATE table latest_documents (doc_id, version, data);")
+	_, err = tx.Exec("CREATE table latest_changes(doc_id); CREATE table latest_documents (doc_id, version, data);")
 
 	var sqlErr string = ""
 
@@ -435,7 +432,7 @@ func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) str
 	return ""
 }
 
-func (mgr *DefaultViewManager) ParseQuery(query string) (string, []string) {
+func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string) {
 	re := regexp.MustCompile(`\$\{(.*?)\}`)
 	o := re.FindAllStringSubmatch(query, -1)
 	var params []string
@@ -446,15 +443,16 @@ func (mgr *DefaultViewManager) ParseQuery(query string) (string, []string) {
 	return text, params
 }
 
-func NewViewManager(dbPath, viewPath, dbName string) *DefaultViewManager {
+func NewViewManager(dbName, absoluteDatabasePath, viewPath string, serviceLocator ServiceLocator) *DefaultViewManager {
 	mgr := &DefaultViewManager{
-		dbPath:   dbPath,
-		viewPath: viewPath,
-		dbName:   dbName,
+		absoluteDatabasePath: absoluteDatabasePath,
+		viewPath:             viewPath,
+		dbName:               dbName,
 	}
 	mgr.views = make(map[string]*View)
 	mgr.ddocs = make(map[string]*DesignDocument)
 	mgr.viewFiles = make(map[string]map[string]bool)
+	mgr.serviceLocator = serviceLocator
 	return mgr
 }
 
@@ -464,9 +462,9 @@ type View struct {
 
 	currentSeqID string
 
-	viewFilePath string
-	dbFilePath   string
-	con          *sql.DB
+	connectionString     string
+	absoluteDatabasePath string
+	con                  *sql.DB
 
 	setupScripts  []Query
 	deleteScripts []Query
@@ -474,15 +472,15 @@ type View struct {
 	selectScripts map[string]Query
 }
 
-func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, viewm ViewManager) *View {
+func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
 	view := &View{}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
 		return nil
 	}
 
-	view.viewFilePath = viewFilePath
-	view.dbFilePath = dbFilePath
+	view.connectionString = connectionString
+	view.absoluteDatabasePath = absoluteDatabasePath
 
 	view.name = viewName
 	view.ddocID = ddoc.ID
@@ -494,20 +492,20 @@ func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, vi
 	designDocView := ddoc.Views[viewName]
 
 	for _, x := range designDocView.Setup {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQueryParams(x)
 		view.setupScripts = append(view.setupScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Delete {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQueryParams(x)
 		view.deleteScripts = append(view.deleteScripts, Query{text: text, params: params})
 	}
 	for _, x := range designDocView.Update {
-		text, params := viewm.ParseQuery(x)
+		text, params := viewManager.ParseQueryParams(x)
 		view.updateScripts = append(view.updateScripts, Query{text: text, params: params})
 	}
 
 	for k, v := range designDocView.Select {
-		text, params := viewm.ParseQuery(v)
+		text, params := viewManager.ParseQueryParams(v)
 		view.selectScripts[k] = Query{text: text, params: params}
 	}
 
@@ -515,7 +513,7 @@ func NewView(dbFilePath, viewFilePath, viewName string, ddoc *DesignDocument, vi
 }
 
 func (view *View) Open() error {
-	db, err := sql.Open("sqlite3", view.viewFilePath)
+	db, err := sql.Open("sqlite3", view.connectionString)
 	if err != nil {
 		return err
 	}
@@ -534,12 +532,7 @@ func (view *View) Open() error {
 		return err
 	}
 
-	absoluteDBPath, err := filepath.Abs(view.dbFilePath)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Exec("ATTACH DATABASE '" + absoluteDBPath + "' as docsdb;")
+	_, err = db.Exec("ATTACH DATABASE '" + view.absoluteDatabasePath + "' as docsdb;")
 	if err != nil {
 		return err
 	}

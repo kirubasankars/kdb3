@@ -42,7 +42,7 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	obj := v.GetObject()
 	if obj == nil {
-		return nil, fmt.Errorf("%s: %w", fmt.Sprintf("expected json object, got %s", v.Type().String()), ErrDocInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "payload expected as json object", ErrDocInvalidInput)
 	}
 
 	var (

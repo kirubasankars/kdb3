@@ -17,6 +17,10 @@ import (
 func GetDatabase(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
+	if err := kdb.Open(db, false); err != nil {
+		NotOK(err, w)
+		return
+	}
 	stat, err := kdb.DBStat(db)
 	if err != nil {
 		NotOK(err, w)
@@ -123,7 +127,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	output := OK(true, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -184,7 +188,7 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, OK(true, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)))
+	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
 }
 
 func GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +223,7 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	fValues, err := fastjson.ParseBytes(body)
 	if err != nil {
-		NotOK(errors.New("bad_json"), w)
+		NotOK(fmt.Errorf("%s:%w", err, ErrBadJSON), w)
 		return
 	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))

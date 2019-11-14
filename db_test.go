@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"net/url"
 	"testing"
 )
 
@@ -46,20 +45,68 @@ func (reader *FakeDatabaseReader) Reset() {
 	reader.commit = false
 }
 
-func (reader *FakeDatabaseReader) Open(path string) error {
+func (reader *FakeDatabaseReader) Open() error {
+	return nil
+}
+
+func (reader *FakeDatabaseReader) Begin() error {
+	reader.begin = true
+	return nil
+}
+
+func (reader *FakeDatabaseReader) Commit() error {
+	reader.commit = true
 	return nil
 }
 
 type FakeDatabaseWriter struct {
+	begin    bool
+	commit   bool
+	rollback bool
+
+	beginerr    bool
+	commiterr   bool
+	roolbackerr bool
 	putdocerror bool
 	getdocerror bool
 }
 
-func (writer *FakeDatabaseWriter) Open(path string) error {
+func (writer *FakeDatabaseWriter) Open() error {
 	return nil
 }
 
 func (writer *FakeDatabaseWriter) Close() error {
+	return nil
+}
+
+func (writer *FakeDatabaseWriter) Begin() error {
+	if writer.beginerr {
+		return ErrInternalError
+	}
+	writer.begin = true
+	return nil
+}
+
+func (writer *FakeDatabaseWriter) Commit() error {
+	if writer.commiterr {
+		return ErrInternalError
+	}
+	writer.commit = true
+	return nil
+}
+
+func (writer *FakeDatabaseWriter) Rollback() error {
+	if writer.roolbackerr {
+		return ErrInternalError
+	}
+	writer.rollback = true
+	return nil
+}
+
+func (writer *FakeDatabaseWriter) Reset() error {
+	writer.rollback = false
+	writer.begin = false
+	writer.commit = false
 	return nil
 }
 
@@ -118,88 +165,47 @@ func (db *FakeDatabaseReader) GetChanges(since string, limit int) ([]byte, error
 	return nil, nil
 }
 
-func (db *FakeDatabaseReader) GetLastUpdateSequence() (string, error) {
-	return "GiJYxpHX92iFe_tvtuAICAkmdnOMXEm1erk_0RkfgCC7JHvbN64M2bv5CxtZrfSrrA1b48HGNvV57GbHuqVJrRv9L_1NuceGQQt0OGUs7BskxKjW51aylNDA5Zjqzir44wrUMm6x5W", nil
+func (db *FakeDatabaseReader) GetLastUpdateSequence() string {
+	return "GiJYxpHX92iFe_tvtuAICAkmdnOMXEm1erk_0RkfgCC7JHvbN64M2bv5CxtZrfSrrA1b48HGNvV57GbHuqVJrRv9L_1NuceGQQt0OGUs7BskxKjW51aylNDA5Zjqzir44wrUMm6x5W"
 }
 
-func (db *FakeDatabaseReader) GetDocumentCount() (int, error) {
-	return 3, nil
+func (db *FakeDatabaseReader) GetDocumentCount() int {
+	return 3
 }
 
 func (reader *FakeDatabaseReader) Close() error {
 	return nil
 }
 
-type FakeFileControl struct {
-}
-
-func (fh *FakeFileControl) IsFileExists(path string) bool {
-	return false
-}
-
-func (fh *FakeFileControl) MkdirAll(path string) error {
-	return nil
-}
-
-type FakeViewManager struct {
-}
-
-func (vm *FakeViewManager) SetupViews(db *Database) error {
-	return nil
-}
-func (vm *FakeViewManager) Initialize(db *Database) error {
-	return nil
-}
-func (vm *FakeViewManager) ListViewFiles() ([]string, error) {
-	return nil, nil
-}
-func (vm *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
-	return nil
-}
-func (vm *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return nil, nil
-}
-func (vm *FakeViewManager) Close() error {
-	return nil
-}
-func (vm *FakeViewManager) Vacuum() error {
-	return nil
-}
-func (vm *FakeViewManager) UpdateDesignDocument(doc *Document) error {
-	return nil
-}
-func (vm *FakeViewManager) ValidateDesignDocument(doc *Document) error {
-	return nil
-}
-func (vm *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
-	return ""
-}
-func (vm *FakeViewManager) ParseQuery(query string) (string, []string) {
-	return "", nil
-}
-func (vm *FakeViewManager) GetView(name string) (*View, bool) {
-	return nil, false
-}
-
-func TestDBStat(t *testing.T) {
+func TestDBLoadUpdateSeqID(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.Open()
 
-	stat := db.Stat()
+	l := reader.GetLastUpdateSequence()
+
+	if db.UpdateSeq != l {
+		t.Errorf("failed to load last update seq id.")
+	}
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if !pool.borrowed || !pool.returned {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
 
-	if stat.DocCount != 3 {
-		t.Errorf("expected doc count %d, got %d", 3, stat.DocCount)
+	pool.Reset()
+	reader.Reset()
+
+	if db.GetLastUpdateSequence() != l {
+		t.Errorf("failed to load last update seq id.")
 	}
 
-	seq, _ := reader.GetLastUpdateSequence()
-	if stat.UpdateSeq != seq {
-		t.Errorf("expected to load last update seq. failed")
+	if !pool.borrowed || !pool.returned {
+		t.Errorf("expected to call borrow and return, failed.")
 	}
 }
 
@@ -211,7 +217,11 @@ func TestDBDocumentCount(t *testing.T) {
 	v := db.GetDocumentCount()
 
 	if v != 3 {
-		t.Errorf("expected docs %d, got %d", 3, v)
+		t.Errorf("expected %d, got %d", 3, v)
+	}
+
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if !pool.borrowed || !pool.returned {
@@ -226,21 +236,8 @@ func TestDBGetChanges(t *testing.T) {
 	db.readers = pool
 	_, _ = db.GetChanges("", 0)
 
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-}
-
-func TestDBGetLastUpdateSequence(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.Open()
-
-	l, _ := reader.GetLastUpdateSequence()
-	if db.UpdateSeq != l {
-		t.Errorf("expected to load last update seq, failed.")
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if !pool.borrowed || !pool.returned {
@@ -255,8 +252,39 @@ func TestDBGetDesignDocuments(t *testing.T) {
 	db.readers = pool
 	_, _ = db.GetAllDesignDocuments()
 
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if !pool.borrowed || !pool.returned {
 		t.Errorf("expected to call borrow and return, failed.")
+	}
+}
+
+func TestDBStat(t *testing.T) {
+	db := &Database{}
+	reader := new(FakeDatabaseReader)
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	db.readers = pool
+
+	db.Open()
+
+	stat := db.Stat()
+
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
+	if !pool.borrowed || !pool.returned {
+		t.Errorf("expected to call borrow and return, failed.")
+	}
+
+	if stat.DocCount != 3 {
+		t.Errorf("expected doc count %d, got %d", 3, stat.DocCount)
+	}
+
+	if stat.UpdateSeq != reader.GetLastUpdateSequence() {
+		t.Errorf("expected to load last update seqid. failed")
 	}
 }
 
@@ -273,11 +301,15 @@ func TestDBGetDocumentRevisionByID(t *testing.T) {
 	}
 
 	if odoc.ID != "1" {
-		t.Errorf("expected doc_id %s, got %s", "1", odoc.ID)
+		t.Errorf("expected doc id %s, got %s", "1", odoc.ID)
 	}
 
 	if odoc.Version != 1 {
 		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
+	}
+
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if !pool.borrowed || !pool.returned {
@@ -309,6 +341,10 @@ func TestDBGetDocumentRevisionByIDandVersion(t *testing.T) {
 		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
 	}
 
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if !pool.borrowed || !pool.returned {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
@@ -336,6 +372,10 @@ func TestDBGetDocumentByID(t *testing.T) {
 
 	if odoc.Version != 1 {
 		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
+	}
+
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if !pool.borrowed || !pool.returned {
@@ -367,6 +407,10 @@ func TestDBGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
 	}
 
+	if !reader.begin || !reader.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if !pool.borrowed || !pool.returned {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
@@ -376,32 +420,7 @@ func TestDBGetDocumentByIDandVersion(t *testing.T) {
 	}
 }
 
-func TestDBDeleteDocument(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	db.Open()
-
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
-	odoc, err := db.DeleteDocument(doc)
-	if err != nil {
-		t.Errorf("unable delete document")
-	}
-
-	if odoc.ID == "" || odoc.Version != 2 || !odoc.Deleted {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentNewDocNoID(t *testing.T) {
+func TestDBPutDocumentNewDocID(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	writer := new(FakeDatabaseWriter)
@@ -414,15 +433,19 @@ func TestDBPutDocumentNewDocNoID(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
-		t.Errorf("unable put document %s", err)
+		t.Errorf("unable put document")
+	}
+
+	if !writer.begin || !writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if odoc.ID == "" || odoc.Version != 1 {
-		t.Errorf("expected to have doc_id and version, failed.")
+		t.Errorf("expected to have id and version, failed.")
 	}
 
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new update seq, failed.")
+		t.Errorf("expected to have new seq id, failed.")
 	}
 }
 
@@ -442,16 +465,20 @@ func TestDBPutDocumentNewDocWithID(t *testing.T) {
 		t.Errorf("unable put document")
 	}
 
+	if !writer.begin || !writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if odoc.ID == "" || odoc.Version != 1 {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new update seq, failed.")
+		t.Errorf("expected to have new seq id, failed.")
 	}
 }
 
-func TestDBPutDocumentConflictDocID(t *testing.T) {
+func TestDBPutDocumentConflict(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	writer := new(FakeDatabaseWriter)
@@ -464,11 +491,15 @@ func TestDBPutDocumentConflictDocID(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
-		t.Errorf("expected to fail put document. ")
+		t.Errorf("expected fail put document. ")
 	}
 
 	if err != nil && err != ErrDocConflict {
-		t.Errorf("expected to fail put document with %s ", ErrDocConflict)
+		t.Errorf("expected fail put document with %s ", ErrDocConflict)
+	}
+
+	if !writer.begin || !writer.rollback || writer.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if odoc != nil {
@@ -480,7 +511,7 @@ func TestDBPutDocumentConflictDocID(t *testing.T) {
 	}
 }
 
-func TestDBPutDocumentConflictDocIDandVersion(t *testing.T) {
+func TestDBPutDocumentConflict1(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	writer := new(FakeDatabaseWriter)
@@ -498,6 +529,10 @@ func TestDBPutDocumentConflictDocIDandVersion(t *testing.T) {
 
 	if err != nil && err != ErrDocConflict {
 		t.Errorf("expected fail put document with %s ", ErrDocConflict)
+	}
+
+	if !writer.begin || !writer.rollback || writer.commit {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if odoc != nil {
@@ -522,15 +557,19 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
-		t.Errorf("unable put document %s", err)
+		t.Errorf("unable put document")
+	}
+
+	if !writer.begin || !writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if odoc.ID == "" || odoc.Version != 2 {
-		t.Errorf("expected to have doc_id and version, failed.")
+		t.Errorf("expected to have id and version, failed.")
 	}
 
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new update seq, failed.")
+		t.Errorf("expected to have new seq id, failed.")
 	}
 }
 
@@ -547,11 +586,102 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
 	_, err := db.PutDocument(doc)
 	if err == nil {
-		t.Errorf("expected err %s", ErrDocConflict)
+		t.Errorf("expected to fail with %s", ErrDocConflict)
+	}
+
+	if !writer.begin || writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and rollback, failed.")
 	}
 
 	if db.UpdateSeq != db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
+	}
+}
+
+func TestDBPutDocumentBeginError(t *testing.T) {
+	db := &Database{}
+	reader := new(FakeDatabaseReader)
+	writer := new(FakeDatabaseWriter)
+	db.idSeq = NewSequenceUUIDGenarator()
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	db.readers = pool
+	db.writer = writer
+	writer.beginerr = true
+	db.Open()
+
+	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
+	odoc, err := db.PutDocument(doc)
+	if err == nil {
+		t.Errorf("unable put document")
+	}
+
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected to fail with %s, failed", ErrInternalError)
+	}
+
+	if writer.begin || writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
+	if odoc != nil {
+		t.Errorf("unexpected to have return doc, failed.")
+	}
+
+	if db.UpdateSeq != db.GetLastUpdateSequence() {
+		t.Errorf("unexpected to have new seq id, failed.")
+	}
+}
+
+func TestDBPutDocumentCommitError(t *testing.T) {
+	db := &Database{}
+	reader := new(FakeDatabaseReader)
+	writer := new(FakeDatabaseWriter)
+	db.idSeq = NewSequenceUUIDGenarator()
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	db.readers = pool
+	db.writer = writer
+	writer.commiterr = true
+	db.Open()
+
+	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
+	odoc, err := db.PutDocument(doc)
+	if err == nil {
+		t.Errorf("unable put document")
+	}
+
+	if err != nil && err != ErrInternalError {
+		t.Errorf("expected to fail with %s, failed", ErrInternalError)
+	}
+
+	if !writer.begin || writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
+	if odoc != nil {
+		t.Errorf("unexpected to have return doc, failed.")
+	}
+
+	if db.UpdateSeq != db.GetLastUpdateSequence() {
+		t.Errorf("unexpected to have new seq id, failed.")
+	}
+}
+
+func TestDBPutDocumentRollbackError(t *testing.T) {
+	db := &Database{}
+	reader := new(FakeDatabaseReader)
+	writer := new(FakeDatabaseWriter)
+	db.idSeq = NewSequenceUUIDGenarator()
+	pool := NewTestFakeDatabaseReaderPool(reader)
+	db.readers = pool
+	db.writer = writer
+	writer.roolbackerr = true
+	db.Open()
+
+	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
+	_, _ = db.PutDocument(doc)
+
+	if !writer.begin || !writer.commit || writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 }
 
@@ -574,6 +704,10 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 
 	if err != nil && err != ErrInternalError {
 		t.Errorf("expected to fail with %s, failed", ErrInternalError)
+	}
+
+	if !writer.begin || writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
 	}
 
 	if odoc != nil {
@@ -606,6 +740,10 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 		t.Errorf("expected fail put document with %s, got %s", ErrInternalError, err.Error())
 	}
 
+	if !writer.begin || !writer.rollback || writer.commit {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if odoc != nil {
 		t.Errorf("expected to have nil, failed.")
 	}
@@ -631,6 +769,10 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 		t.Errorf("unable put document")
 	}
 
+	if !writer.begin || !writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
 	if odoc.ID == "" || odoc.Version != 3 {
 		t.Errorf("expected to have id and version, failed.")
 	}
@@ -646,12 +788,31 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	}
 }
 
-func TestDBNewDatabase(t *testing.T) {
-	fileHandler := new(FakeFileControl)
+func TestDBDeleteDocument(t *testing.T) {
+	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	writer := new(FakeDatabaseWriter)
+	db.idSeq = NewSequenceUUIDGenarator()
 	pool := NewTestFakeDatabaseReaderPool(reader)
-	viewManager := new(FakeViewManager)
-	db, _ := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, fileHandler, writer, pool, viewManager)
-	_ = db
+	db.readers = pool
+	db.writer = writer
+	db.Open()
+
+	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
+	odoc, err := db.DeleteDocument(doc)
+	if err != nil {
+		t.Errorf("unable delete document")
+	}
+
+	if !writer.begin || !writer.commit || !writer.rollback {
+		t.Errorf("expected to call begin and commit, failed.")
+	}
+
+	if odoc.ID == "" || odoc.Version != 2 || !odoc.Deleted {
+		t.Errorf("expected to have id and version, failed.")
+	}
+
+	if db.UpdateSeq == db.GetLastUpdateSequence() {
+		t.Errorf("expected to have new seq id, failed.")
+	}
 }
