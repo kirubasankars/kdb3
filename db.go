@@ -129,6 +129,9 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 			if newDoc.Version > 0 {
 				return nil, ErrDocConflict
 			}
+			if newDoc.Kind != currentDoc.Kind {
+				return nil, fmt.Errorf("%s: %w", "kind mismatch", ErrDocInvalidID)
+			}
 			newDoc.Version = currentDoc.Version
 		}
 	}
@@ -148,13 +151,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.UpdateSeq = updateSeq
 
-	doc := Document{
-		ID:      newDoc.ID,
-		Version: newDoc.Version,
-		Deleted: newDoc.Deleted,
-	}
-
-	return &doc, nil
+	return newDoc, nil
 }
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {

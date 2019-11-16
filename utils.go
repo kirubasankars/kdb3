@@ -3,19 +3,19 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 )
 
 func formatDocString(id string, version int, deleted bool) string {
+	var item []string
+	item = append(item, fmt.Sprintf(`"_id":"%s"`, id))
 	if version != 0 {
-		if deleted {
-			return fmt.Sprintf(`{"_id":"%s","_version":%d,"_deleted":true}`, id, version)
-		}
-		return fmt.Sprintf(`{"_id":"%s","_version":%d}`, id, version)
+		item = append(item, fmt.Sprintf(`"_version":%d`, version))
 	}
 	if deleted {
-		return fmt.Sprintf(`{"_id":"%s","_deleted":true}`, id)
+		item = append(item, fmt.Sprintf(`"_deleted":true`))
 	}
-	return fmt.Sprintf(`{"_id":"%s"}`, id)
+	return fmt.Sprintf(`{%s}`, strings.Join(item, ","))
 }
 
 func OK(ok bool, json string) string {

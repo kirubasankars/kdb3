@@ -157,6 +157,7 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
+		newDoc.Kind = "design"
 		err := db.ValidateDesignDocument(newDoc)
 		if err != nil {
 			return nil, err
