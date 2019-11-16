@@ -585,16 +585,16 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 
 	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
 	_, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("expected to fail with %s", ErrDocConflict)
+	if err != nil {
+		t.Errorf("unexpected err %s", ErrDocConflict)
 	}
 
-	if !writer.begin || writer.commit || !writer.rollback {
+	if !writer.begin || !writer.commit || !writer.rollback {
 		t.Errorf("expected to call begin and rollback, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
+	if db.UpdateSeq == db.GetLastUpdateSequence() {
+		t.Errorf("expected to have same seq id, failed.")
 	}
 }
 

@@ -131,10 +131,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 			}
 			newDoc.Version = currentDoc.Version
 		}
-	} else {
-		if newDoc.Version > 0 {
-			return nil, ErrDocConflict
-		}
 	}
 
 	newDoc.CalculateNextVersion()
