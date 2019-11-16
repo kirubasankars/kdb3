@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/crc32"
 	"io/ioutil"
@@ -140,9 +139,9 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
-
-	if _, ok := mgr.views[ddoc.ID+"$"+viewName]; ok {
-		return errors.New("view_exists")
+	qualifiedViewName := ddoc.ID + "$" + viewName
+	if _, ok := mgr.views[qualifiedViewName]; ok {
+		return nil
 	}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
@@ -157,14 +156,24 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return err
 	}
 
-	mgr.views[ddoc.ID+"$"+viewName] = view
+	mgr.views[qualifiedViewName] = view
 
 	return nil
 }
 
+func (mgr *DefaultViewManager) BuildView(qualifiedViewName string, nextSeqID string) error {
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+	view, ok := mgr.views[qualifiedViewName]
+	if !ok {
+		return ErrViewNotFound
+	}
+	return view.Build(nextSeqID)
+}
+
 func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	ddocID := doc.ID
-	name := ddocID + "$" + viewName
+	qualifiedViewName := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()
 	unlocked := false
@@ -179,25 +188,24 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 	}
 	defer RUnlock()
 
-	view, ok := mgr.views[name]
+	view, ok := mgr.views[qualifiedViewName]
+
 	if !ok {
-
-		RUnlock()
-		ResetRUnlock()
 		ddoc := &DesignDocument{}
-
 		err := json.Unmarshal(doc.Data, ddoc)
 		if err != nil {
 			panic("invalid_design_document " + ddocID)
 		}
 
+		RUnlock()
+		ResetRUnlock()
 		err = mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
 		mgr.rwmux.RLock()
 
-		view = mgr.views[name]
+		view = mgr.views[qualifiedViewName]
 	}
 
 	if view == nil {
@@ -214,33 +222,24 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 			if err != nil {
 				return nil, err
 			}
-			mgr.rwmux.RLock()
 
-			ddoc, ok := mgr.ddocs[ddocID]
-			if !ok {
-				return nil, ErrDocNotFound
-			}
-			_, ok = ddoc.Views[viewName]
-			if !ok {
-				return nil, ErrViewNotFound
-			}
-
-			RUnlock()
 			err = mgr.OpenView(viewName, ddoc)
 			if err != nil {
 				return nil, err
 			}
-			ResetRUnlock()
 			mgr.rwmux.RLock()
-
-			view = mgr.views[name]
 		}
 
-		err := view.Build(updateSeqID)
+		RUnlock()
+		ResetRUnlock()
+		err := mgr.BuildView(qualifiedViewName, updateSeqID)
 		if err != nil {
 			return nil, err
 		}
+		mgr.rwmux.RLock()
 	}
+
+	view = mgr.views[qualifiedViewName]
 
 	return view.Select(selectName, values)
 }
@@ -574,7 +573,7 @@ func (view *View) Build(nextSeqID string) error {
 	tx, err := db.Begin()
 	defer tx.Rollback()
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
@@ -614,7 +613,10 @@ func (view *View) Build(nextSeqID string) error {
 
 	view.currentSeqID = nextSeqID
 
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		panic(err)
+	}
 
 	return nil
 }
