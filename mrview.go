@@ -45,6 +45,7 @@ type DefaultViewManager struct {
 func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc := &DesignDocument{}
 	ddoc.ID = "_design/_views"
+	ddoc.Kind = "design"
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
@@ -60,6 +61,9 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
 	err := encoder.Encode(ddoc)
+	if err != nil {
+		panic(err)
+	}
 
 	designDoc, err := ParseDocument(buffer.Bytes())
 	if err != nil {

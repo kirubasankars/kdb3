@@ -13,18 +13,20 @@ var parserPool fastjson.ParserPool
 type Document struct {
 	ID      string
 	Version int
+	Kind    string
 	Deleted bool
 	Data    []byte
 }
 
 func (doc *Document) CalculateNextVersion() {
-
 	doc.Version = doc.Version + 1
 	var meta string
-	if len(doc.Data) == 2 {
-		meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
-	} else {
-		meta = fmt.Sprintf(`{"_id":"%s","_version":%d,`, doc.ID, doc.Version)
+	meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+	if doc.Kind != "" {
+		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
+	}
+	if len(doc.Data) != 2 {
+		meta = meta + ","
 	}
 	data := make([]byte, len(meta))
 	copy(data, meta)
@@ -49,6 +51,7 @@ func ParseDocument(value []byte) (*Document, error) {
 		id      string
 		version int = 0
 		deleted bool
+		kind    string
 	)
 
 	if v.Exists("_id") {
@@ -57,6 +60,10 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	if v.Exists("_version") {
 		version, _ = strconv.Atoi(v.Get("_version").String())
+	}
+
+	if v.Exists("_kind") {
+		kind = strings.ReplaceAll(v.Get("_kind").String(), "\"", "")
 	}
 
 	if v.Exists("_deleted") {
@@ -75,6 +82,12 @@ func ParseDocument(value []byte) (*Document, error) {
 	if v.Exists("_version") {
 		v.Del("_version")
 	}
+	if v.Exists("_kind") {
+		v.Del("_kind")
+	}
+	if v.Exists("_deleted") {
+		v.Del("_deleted")
+	}
 
 	var b []byte
 	value = v.MarshalTo(b)
@@ -82,6 +95,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
+	doc.Kind = kind
 	doc.Deleted = deleted
 	doc.Data = value
 
