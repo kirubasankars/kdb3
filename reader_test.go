@@ -21,22 +21,22 @@ func setupTestDatabaseWithWriter() error {
 		return err
 	}
 
-	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id":1, "_rev":"1-6c62272e07bb014262b821756295c58d"}`))
 	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"1-6c62272e07bb014262b821756295c58d"}`))
 	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"2-6c62272e07bb014262b821756295c58d", "_deleted":true}`))
 	if err := writer.PutDocument("seqID3", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_rev":"1-6c62272e07bb014262b821756295c58d", "test":"test"}`))
 	if err := writer.PutDocument("seqID4", doc, nil); err != nil {
 		return err
 	}

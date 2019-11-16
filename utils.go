@@ -3,19 +3,31 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
-func formatDocString(id string, version int, deleted bool) string {
+func formatDocString(id string, version int, signature string, deleted bool) string {
 	if version != 0 {
 		if deleted {
-			return fmt.Sprintf(`{"_id":"%s","_version":%d,"_deleted":true}`, id, version)
+			return fmt.Sprintf(`{"_id":"%s","_rev":"%s","_deleted":true}`, id, formatRev(version, signature))
 		}
-		return fmt.Sprintf(`{"_id":"%s","_version":%d}`, id, version)
+		return fmt.Sprintf(`{"_id":"%s","_rev":"%s"}`, id, formatRev(version, signature))
 	}
 	if deleted {
 		return fmt.Sprintf(`{"_id":"%s","_deleted":true}`, id)
 	}
 	return fmt.Sprintf(`{"_id":"%s"}`, id)
+}
+
+func formatRev(version int, hash string) string {
+	return fmt.Sprintf("%d-%s", version, hash)
+}
+
+func getRev(rev string) (int, string) {
+	fields := strings.Split(strings.ReplaceAll(rev, `"`, ""), "-")
+	version, _ := strconv.Atoi(fields[0])
+	return version, fields[1]
 }
 
 func OK(ok bool, json string) string {

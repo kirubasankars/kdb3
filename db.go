@@ -131,10 +131,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 			}
 			newDoc.Version = currentDoc.Version
 		}
-	} else {
-		if newDoc.Version > 0 {
-			return nil, ErrDocConflict
-		}
 	}
 
 	newDoc.CalculateNextVersion()
@@ -152,13 +148,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.UpdateSeq = updateSeq
 
-	doc := Document{
-		ID:      newDoc.ID,
-		Version: newDoc.Version,
-		Deleted: newDoc.Deleted,
-	}
-
-	return &doc, nil
+	return newDoc, nil
 }
 
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
@@ -252,4 +242,8 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	}
 
 	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
+}
+
+func (db *Database) ViewManager() ViewManager {
+	return db.viewManager
 }

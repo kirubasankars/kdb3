@@ -15,7 +15,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	router := NewRouter()
 
 	srv := &http.Server{

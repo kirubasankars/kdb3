@@ -1,6 +1,5 @@
 package main
 
-/*
 import (
 	"encoding/json"
 	"fmt"
@@ -199,7 +198,7 @@ func TestDeleteDocument(t *testing.T) {
 		t.Error(err)
 	}
 
-	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_version":1}`))
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"1", "_rev":"1-6c62272e07bb014262b821756295c58d"}`))
 	doc, err = kdb.DeleteDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error("unable to delete doc", err)
@@ -318,17 +317,17 @@ func TestBuildView(t *testing.T) {
 		t.Error(err)
 	}
 
-	if _, ok := kdb.dbs["testdb"].viewmgr.GetView("_design/_views$_all_docs"); ok {
+	/*if _, ok := kdb.dbs["testdb"].ViewManager().GetView("_design/_views$_all_docs"); ok {
 		t.Error("view failed")
-	}
+	}*/
 
 	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
 	r := AllDocsViewResult{}
 	json.Unmarshal(rs, &r)
 
-	if _, ok := kdb.dbs["testdb"].viewmgr.GetView("_design/_views$_all_docs"); !ok {
+	/*if _, ok := kdb.dbs["testdb"].viewManager.GetView("_design/_views$_all_docs"); !ok {
 		t.Error("view failed")
-	}
+	}*/
 
 	if len(r.Rows) != 1 {
 		t.Error("row count failed", r.Rows)
@@ -382,4 +381,3 @@ func BenchmarkParseDocument(b *testing.B) {
 		ParseDocument([]byte(`{"test":1}`))
 	}
 }
-*/

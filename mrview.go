@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/crc32"
 	"io/ioutil"
@@ -50,7 +49,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
 	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes)")
-	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version',JSON_EXTRACT(data, '$._version')), doc_id FROM latest_documents")
+	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('rev',JSON_EXTRACT(data, '$._rev')), doc_id FROM latest_documents")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM docsdb.documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
@@ -140,9 +139,9 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
-
-	if _, ok := mgr.views[ddoc.ID+"$"+viewName]; ok {
-		return errors.New("view_exists")
+	qualifiedViewName := ddoc.ID + "$" + viewName
+	if _, ok := mgr.views[qualifiedViewName]; ok {
+		return nil
 	}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
@@ -157,14 +156,24 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return err
 	}
 
-	mgr.views[ddoc.ID+"$"+viewName] = view
+	mgr.views[qualifiedViewName] = view
 
 	return nil
 }
 
+func (mgr *DefaultViewManager) BuildView(qualifiedViewName string, nextSeqID string) error {
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+	view, ok := mgr.views[qualifiedViewName]
+	if !ok {
+		return ErrViewNotFound
+	}
+	return view.Build(nextSeqID)
+}
+
 func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	ddocID := doc.ID
-	name := ddocID + "$" + viewName
+	qualifiedViewName := ddocID + "$" + viewName
 
 	mgr.rwmux.RLock()
 	unlocked := false
@@ -179,25 +188,24 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 	}
 	defer RUnlock()
 
-	view, ok := mgr.views[name]
+	view, ok := mgr.views[qualifiedViewName]
+
 	if !ok {
-
-		RUnlock()
-		ResetRUnlock()
 		ddoc := &DesignDocument{}
-
 		err := json.Unmarshal(doc.Data, ddoc)
 		if err != nil {
 			panic("invalid_design_document " + ddocID)
 		}
 
+		RUnlock()
+		ResetRUnlock()
 		err = mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
 		mgr.rwmux.RLock()
 
-		view = mgr.views[name]
+		view = mgr.views[qualifiedViewName]
 	}
 
 	if view == nil {
@@ -214,33 +222,24 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 			if err != nil {
 				return nil, err
 			}
-			mgr.rwmux.RLock()
 
-			ddoc, ok := mgr.ddocs[ddocID]
-			if !ok {
-				return nil, ErrDocNotFound
-			}
-			_, ok = ddoc.Views[viewName]
-			if !ok {
-				return nil, ErrViewNotFound
-			}
-
-			RUnlock()
 			err = mgr.OpenView(viewName, ddoc)
 			if err != nil {
 				return nil, err
 			}
-			ResetRUnlock()
 			mgr.rwmux.RLock()
-
-			view = mgr.views[name]
 		}
 
-		err := view.Build(updateSeqID)
+		RUnlock()
+		ResetRUnlock()
+		err := mgr.BuildView(qualifiedViewName, updateSeqID)
 		if err != nil {
 			return nil, err
 		}
+		mgr.rwmux.RLock()
 	}
+
+	view = mgr.views[qualifiedViewName]
 
 	return view.Select(selectName, values)
 }
@@ -574,7 +573,7 @@ func (view *View) Build(nextSeqID string) error {
 	tx, err := db.Begin()
 	defer tx.Rollback()
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
@@ -614,7 +613,10 @@ func (view *View) Build(nextSeqID string) error {
 
 	view.currentSeqID = nextSeqID
 
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		panic(err)
+	}
 
 	return nil
 }

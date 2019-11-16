@@ -127,7 +127,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)
+	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Signature, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -135,14 +135,14 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 }
 
 func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
-	ver := r.FormValue("version")
+	rev := r.FormValue("rev")
 
 	var jsondoc string
-	if ver != "" {
-		version, _ := strconv.Atoi(ver)
-		jsondoc = formatDocString(docid, version, false)
+	if rev != "" {
+		version, signature := getRev(rev)
+		jsondoc = formatDocString(docid, version, signature, false)
 	} else {
-		jsondoc = formatDocString(docid, 0, false)
+		jsondoc = formatDocString(docid, 0, "", false)
 	}
 
 	inputDoc, err := ParseDocument([]byte(jsondoc))
@@ -163,17 +163,17 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
-	ver := r.FormValue("version")
+	rev := r.FormValue("rev")
 
-	if ver == "" {
-		ver = r.Header.Get("If-Match")
+	if rev == "" {
+		rev = r.Header.Get("If-Match")
 	}
-	if ver == "" {
-		NotOK(errors.New("version_missing"), w)
+	if rev == "" {
+		NotOK(errors.New("rev_missing"), w)
 		return
 	}
-	version, _ := strconv.Atoi(ver)
-	jsondoc := formatDocString(docid, version, true)
+	version, signature := getRev(rev)
+	jsondoc := formatDocString(docid, version, signature, true)
 	inputDoc, err := ParseDocument([]byte(jsondoc))
 	if err != nil {
 		NotOK(err, w)
@@ -188,7 +188,7 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Signature, outputDoc.Deleted))
 }
 
 func GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +235,7 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
-			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Signature, outputDoc.Deleted))
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,21 +12,24 @@ import (
 var parserPool fastjson.ParserPool
 
 type Document struct {
-	ID      string
-	Version int
-	Deleted bool
-	Data    []byte
+	ID        string
+	Version   int
+	Signature string
+	Deleted   bool
+	Data      []byte
 }
 
 func (doc *Document) CalculateNextVersion() {
-
 	doc.Version = doc.Version + 1
+	doc.Signature = fmt.Sprintf("%x", md5.Sum(doc.Data))
+
 	var meta string
 	if len(doc.Data) == 2 {
-		meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.ID, formatRev(doc.Version, doc.Signature))
 	} else {
-		meta = fmt.Sprintf(`{"_id":"%s","_version":%d,`, doc.ID, doc.Version)
+		meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s",`, doc.ID, formatRev(doc.Version, doc.Signature))
 	}
+
 	data := make([]byte, len(meta))
 	copy(data, meta)
 	data = append(data, doc.Data[1:]...)
@@ -46,17 +50,24 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	var (
-		id      string
-		version int = 0
-		deleted bool
+		id        string
+		version   int = 0
+		signature string
+		deleted   bool
 	)
 
 	if v.Exists("_id") {
 		id = strings.ReplaceAll(v.Get("_id").String(), "\"", "")
 	}
 
-	if v.Exists("_version") {
-		version, _ = strconv.Atoi(v.Get("_version").String())
+	if v.Exists("_rev") {
+		rev := v.Get("_rev").String()
+		fields := strings.Split(strings.ReplaceAll(rev, "\"", ""), "-")
+		version, err = strconv.Atoi(fields[0])
+		if err != nil {
+			return nil, ErrDocInvalidInput
+		}
+		signature = fields[1]
 	}
 
 	if v.Exists("_deleted") {
@@ -66,22 +77,25 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	if id == "" && version != 0 {
-		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "document can't have _rev without _id", ErrDocInvalidInput)
 	}
 
 	if v.Exists("_id") {
 		v.Del("_id")
 	}
-	if v.Exists("_version") {
-		v.Del("_version")
+	if v.Exists("_rev") {
+		v.Del("_rev")
+	}
+	if v.Exists("_deleted") {
+		v.Del("_deleted")
 	}
 
 	var b []byte
 	value = v.MarshalTo(b)
-
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
+	doc.Signature = signature
 	doc.Deleted = deleted
 	doc.Data = value
 
