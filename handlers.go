@@ -136,19 +136,13 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 
 func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	ver := r.FormValue("version")
-
-	var jsondoc string
+	var inputDoc = &Document{}
 	if ver != "" {
 		version, _ := strconv.Atoi(ver)
-		jsondoc = formatDocString(docid, version, false)
+		inputDoc.ID = docid
+		inputDoc.Version = version
 	} else {
-		jsondoc = formatDocString(docid, 0, false)
-	}
-
-	inputDoc, err := ParseDocument([]byte(jsondoc))
-	if err != nil {
-		NotOK(err, w)
-		return
+		inputDoc.ID = docid
 	}
 
 	outputDoc, err := kdb.GetDocument(db, inputDoc, true)
@@ -173,13 +167,7 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version, _ := strconv.Atoi(ver)
-	jsondoc := formatDocString(docid, version, true)
-	inputDoc, err := ParseDocument([]byte(jsondoc))
-	if err != nil {
-		NotOK(err, w)
-		return
-	}
-
+	inputDoc := &Document{ID: docid, Version: version, Deleted: true}
 	outputDoc, err := kdb.DeleteDocument(db, inputDoc)
 	if err != nil {
 		NotOK(err, w)

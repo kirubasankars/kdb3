@@ -234,11 +234,7 @@ func (db *Database) Vacuum() error {
 }
 
 func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	inputDoc, err := ParseDocument([]byte(fmt.Sprintf(`{"_id":"%s"}`, ddocID)))
-	if err != nil {
-		return nil, err
-	}
-
+	inputDoc := &Document{ID: ddocID}
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err

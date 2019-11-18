@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net/url"
 	"testing"
 )
 
@@ -815,4 +816,96 @@ func TestDBDeleteDocument(t *testing.T) {
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
+}
+
+type FakeViewManager struct {
+}
+
+func (sl *FakeViewManager) SetupViews(db *Database) error {
+	return nil
+}
+
+func (sl *FakeViewManager) Initialize(db *Database) error {
+	return nil
+}
+
+func (sl *FakeViewManager) ListViewFiles() ([]string, error) {
+	return nil, nil
+}
+
+func (sl *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+	return nil
+}
+
+func (sl *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	return nil, nil
+}
+
+func (sl *FakeViewManager) Close() error {
+	return nil
+}
+
+func (sl *FakeViewManager) Vacuum() error {
+	return nil
+}
+
+func (sl *FakeViewManager) UpdateDesignDocument(doc *Document) error {
+	return nil
+}
+
+func (sl *FakeViewManager) ValidateDesignDocument(doc *Document) error {
+	return nil
+}
+
+func (sl *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+	return ""
+}
+
+func (sl *FakeViewManager) ParseQueryParams(query string) (string, []string) {
+	return "", nil
+}
+
+type FakeFileHandler struct {
+}
+
+func (sl *FakeFileHandler) IsFileExists(path string) bool {
+	return false
+}
+
+func (sl *FakeFileHandler) MkdirAll(path string) error {
+	return nil
+}
+
+type FakeServiceLocator struct {
+}
+
+func (sl *FakeServiceLocator) GetFileHandler() FileHandler {
+	return &FakeFileHandler{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseWriter(connectionString string) DatabaseWriter {
+	return &FakeDatabaseWriter{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
+	return &FakeDatabaseReader{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseReaderPool(connectionString string, limit int) DatabaseReaderPool {
+	reader := &FakeDatabaseReader{}
+	return NewTestFakeDatabaseReaderPool(reader)
+}
+
+func (sl *FakeServiceLocator) GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager {
+	return &FakeViewManager{}
+}
+
+func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
+	return nil
+}
+
+func TestNewDatabase(t *testing.T) {
+	db, _ := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+
+	_ = db
 }
