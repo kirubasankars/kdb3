@@ -181,16 +181,17 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 
 	mgr.rwmux.RLock()
 	unlocked := false
-	RUnlock := func() {
+	ReadUnlock := func() {
 		if !unlocked {
 			mgr.rwmux.RUnlock()
 		}
 		unlocked = true
 	}
-	ResetRUnlock := func() {
+	ResetReadUnlock := func() {
 		unlocked = false
+		mgr.rwmux.RLock()
 	}
-	defer RUnlock()
+	defer ReadUnlock()
 
 	view, ok := mgr.views[qualifiedViewName]
 
@@ -201,14 +202,12 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 			panic("invalid_design_document " + ddocID)
 		}
 
-		RUnlock()
-		ResetRUnlock()
+		ReadUnlock()
 		err = mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
 		}
-		mgr.rwmux.RLock()
-
+		ResetReadUnlock()
 		view = mgr.views[qualifiedViewName]
 	}
 
@@ -220,27 +219,26 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 		ddoc, ok := mgr.ddocs[ddocID]
 
 		if !ok || doc.Version != ddoc.Version {
-			RUnlock()
-			ResetRUnlock()
+			ReadUnlock()
 			err := mgr.UpdateDesignDocument(doc)
 			if err != nil {
 				return nil, err
 			}
 
+			ddoc, ok = mgr.ddocs[ddocID]
 			err = mgr.OpenView(viewName, ddoc)
 			if err != nil {
 				return nil, err
 			}
-			mgr.rwmux.RLock()
+			ResetReadUnlock()
 		}
 
-		RUnlock()
-		ResetRUnlock()
+		ReadUnlock()
 		err := mgr.BuildView(qualifiedViewName, updateSeqID)
 		if err != nil {
 			return nil, err
 		}
-		mgr.rwmux.RLock()
+		ResetReadUnlock()
 	}
 
 	view = mgr.views[qualifiedViewName]
@@ -325,13 +323,14 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 	currentDDoc, ok := mgr.ddocs[ddocID]
 	if ok {
 		//to takecare of missing ones
+
 		for vname, cddv := range currentDDoc.Views {
 			qualifiedViewName := ddocID + "$" + vname
 			currentViewFile := mgr.dbName + "$" + mgr.CalculateSignature(cddv)
 			if newViewFile, ok := updatedViews[qualifiedViewName]; !ok || newViewFile != currentViewFile {
 				delete(mgr.viewFiles[currentViewFile], qualifiedViewName)
-
 				if len(mgr.viewFiles[currentViewFile]) <= 0 {
+
 					delete(mgr.viewFiles, currentViewFile)
 					os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
 				}
