@@ -197,7 +197,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID4","version":1,"kind":"","id":"_design/_views"},{"seq":"seqID3","version":2,"kind":"","id":"2","deleted":1},{"seq":"seqID2","version":1,"kind":"","id":"2"},{"seq":"seqID1","version":1,"kind":"","id":"1"}]}`
+	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":1},{"seq":"seqID2","version":1,"id":"2"},{"seq":"seqID1","version":1,"id":"1"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
