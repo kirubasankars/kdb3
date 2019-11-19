@@ -101,7 +101,11 @@ func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Doc
 
 func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
 	tx := writer.tx
-	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, kind, deleted) VALUES(?, ?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Kind, newDoc.Deleted); err != nil {
+	var kind []byte
+	if newDoc.Kind != "" {
+		kind = []byte(newDoc.Kind)
+	}
+	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, kind, deleted) VALUES(?, ?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, kind, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
 			return ErrDocConflict
 		}
@@ -116,7 +120,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 			return err
 		}
 	} else {
-		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, data) VALUES(?, ?, ?, ?)", newDoc.ID, newDoc.Version, newDoc.Kind, newDoc.Data); err != nil {
+		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, data) VALUES(?, ?, ?, ?)", newDoc.ID, newDoc.Version, kind, newDoc.Data); err != nil {
 			return err
 		}
 	}
