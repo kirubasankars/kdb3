@@ -162,6 +162,9 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 		if err != nil {
 			return nil, err
 		}
+		if newDoc.Deleted {
+			db.viewManager.UpdateDesignDocument(newDoc)
+		}
 	}
 
 	return db.PutDocument(newDoc)

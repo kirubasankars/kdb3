@@ -126,12 +126,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 				return nil, ErrDocConflict
 			}
 		} else {
-			if newDoc.Version > 0 {
-				return nil, ErrDocConflict
-			}
-			if newDoc.Kind != currentDoc.Kind {
-				return nil, fmt.Errorf("%s: %w", "kind mismatch", ErrDocInvalidID)
-			}
 			newDoc.Version = currentDoc.Version
 		}
 	}
