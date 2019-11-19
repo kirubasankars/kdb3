@@ -20,7 +20,7 @@ type Database struct {
 	viewManager ViewManager
 }
 
-func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
 	fileHandler := serviceLocator.GetFileHandler()
 	path := filepath.Join(dbPath, name+dbExt)
 	if !fileHandler.IsFileExists(path) {
@@ -63,7 +63,7 @@ func NewDatabase(name, dbPath, viewPath string, createIfNotExists bool, serviceL
 		panic(err)
 	}
 
-	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, viewPath)
+	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, defaultViewPath)
 
 	if createIfNotExists {
 		err := db.viewManager.SetupViews(db)
@@ -229,7 +229,6 @@ func (db *Database) Stat() *DBStat {
 }
 
 func (db *Database) Vacuum() error {
-	db.viewManager.Vacuum()
 	return db.writer.Vacuum()
 }
 

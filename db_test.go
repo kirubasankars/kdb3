@@ -869,6 +869,12 @@ type FakeFileHandler struct {
 }
 
 func (sl *FakeFileHandler) IsFileExists(path string) bool {
+	if path == "data/dbs/testdb.db" {
+		return false
+	}
+	if path == "data/dbs/testdb1.db" {
+		return true
+	}
 	return false
 }
 
@@ -904,8 +910,75 @@ func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDataba
 	return nil
 }
 
-func TestNewDatabase(t *testing.T) {
-	db, _ := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+func TestNewDatabaseNew(t *testing.T) {
+	db, err := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+	if err != nil {
+		t.Errorf("unexpected err %s", err)
+	}
+	if db.DBPath != "data/dbs/testdb.db" {
+		t.Errorf("expected to dbpath %s, got %s", "data/dbs/testdb.db", db.DBPath)
+	}
+	if db.Name != "testdb" {
+		t.Errorf("expected name property value %s, got %s", "testdb", db.Name)
+	}
+	if db.idSeq == nil || db.writer == nil || db.readers == nil || db.viewManager == nil {
+		t.Errorf("db instance is not properly created.")
+	}
 
-	_ = db
+	err = db.Close()
+	if err != nil {
+		t.Errorf("unexpected err %s", err)
+	}
+}
+
+func TestNewDatabaseOpenNoDatabase(t *testing.T) {
+	_, err := NewDatabase("testdb", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	if err == nil {
+		t.Errorf("expected err %s, got %s", ErrDBNotFound, err)
+	}
+}
+
+func TestNewDatabaseExists(t *testing.T) {
+	_, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+	if err == nil {
+		t.Errorf("expected err %s, failed", err)
+	}
+}
+
+func TestNewDatabaseReopen(t *testing.T) {
+	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	if err != nil {
+		t.Errorf("expected err %s, failed", err)
+	}
+
+	if db.DBPath != "data/dbs/testdb1.db" {
+		t.Errorf("expected to dbpath %s, got %s", "data/dbs/testdb.db", db.DBPath)
+	}
+	if db.Name != "testdb1" {
+		t.Errorf("expected name property value %s, got %s", "testdb", db.Name)
+	}
+	if db.idSeq == nil || db.writer == nil || db.readers == nil || db.viewManager == nil {
+		t.Errorf("db instance is not properly created.")
+	}
+}
+
+func TestDatabaseValidateDesignDocument(t *testing.T) {
+	designDoc, err := ParseDocument([]byte("{}"))
+	if err != nil {
+		panic(err)
+	}
+	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	if err != nil {
+		t.Errorf("unexpected err %s, failed", err)
+	}
+
+	err = db.ValidateDesignDocument(designDoc)
+}
+
+func TestDatabaseVacuum(t *testing.T) {
+	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	if err != nil {
+		t.Errorf("unexpected err %s, failed", err)
+	}
+	err = db.Vacuum()
 }
