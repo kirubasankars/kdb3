@@ -1,8 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/valyala/fastjson"
@@ -11,17 +11,20 @@ import (
 var parserPool fastjson.ParserPool
 
 type Document struct {
-	ID      string
-	Version int
-	Kind    string
-	Deleted bool
-	Data    []byte
+	ID        string
+	Version   int
+	Signature string
+	Kind      string
+	Deleted   bool
+	Data      []byte
 }
 
 func (doc *Document) CalculateNextVersion() {
 	doc.Version = doc.Version + 1
+	doc.Signature = fmt.Sprintf("%x", md5.Sum(doc.Data))
+
 	var meta string
-	meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+	meta = fmt.Sprintf(`{"_id":"%s","_rev":"%s"`, doc.ID, formatRev(doc.Version, doc.Signature))
 	if doc.Kind != "" {
 		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
 	}
@@ -48,26 +51,31 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	var (
-		id      string
-		version int = 0
-		deleted bool
-		kind    string
+		id        string
+		version   int = 0
+		signature string
+		deleted   bool
+		kind      string
 	)
 
 	if v.Exists("_id") {
 		id = strings.ReplaceAll(v.Get("_id").String(), "\"", "")
+		v.Del("_id")
 	}
 
-	if v.Exists("_version") {
-		version, _ = strconv.Atoi(v.Get("_version").String())
+	if v.Exists("_rev") {
+		version, signature = getVersionAndSignature(v.Get("_rev").String())
+		v.Del("_rev")
 	}
 
 	if v.Exists("_kind") {
 		kind = strings.ReplaceAll(v.Get("_kind").String(), "\"", "")
+		v.Del("_kind")
 	}
 
 	if v.Exists("_deleted") {
 		deleted = v.Get("_deleted").GetBool()
+		v.Del("_deleted")
 	} else {
 		deleted = false
 	}
@@ -76,25 +84,13 @@ func ParseDocument(value []byte) (*Document, error) {
 		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocInvalidInput)
 	}
 
-	if v.Exists("_id") {
-		v.Del("_id")
-	}
-	if v.Exists("_version") {
-		v.Del("_version")
-	}
-	if v.Exists("_kind") {
-		v.Del("_kind")
-	}
-	if v.Exists("_deleted") {
-		v.Del("_deleted")
-	}
-
 	var b []byte
 	value = v.MarshalTo(b)
 
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
+	doc.Signature = signature
 	doc.Kind = kind
 	doc.Deleted = deleted
 	doc.Data = value
