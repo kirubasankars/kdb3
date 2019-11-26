@@ -124,10 +124,10 @@ func (writer *FakeDatabaseWriter) GetDocumentRevisionByID(docID string) (*Docume
 		return nil, ErrInternalError
 	}
 	if docID == "1" {
-		return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
+		return ParseDocument([]byte(`{"_id":1,"_rev":"1-hash"}`))
 	}
 	if docID == "2" {
-		return ParseDocument([]byte(`{"_id":1, "_version" :2, "_deleted":true}`))
+		return ParseDocument([]byte(`{"_id":2,"_rev":"2-hash","_deleted":true}`))
 	}
 	if docID == "3" {
 		return nil, ErrInternalError
@@ -143,19 +143,19 @@ func (writer *FakeDatabaseWriter) PutDocument(updateSeqID string, newDoc *Docume
 }
 
 func (reader *FakeDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":2, "_version" :1}`))
+	return ParseDocument([]byte(`{"_id":2, "_rev":"1-hash"}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
+	return ParseDocument([]byte(`{"_id":1, "_rev":"1-hash"}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":3, "_version" :1, "test": "test"}`))
+	return ParseDocument([]byte(`{"_id":3, "_rev":"1-hash", "test": "test"}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":4, "_version" :1, "test": "test"}`))
+	return ParseDocument([]byte(`{"_id":4, "_rev":"1-hash", "test": "test"}`))
 }
 
 func (reader *FakeDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
@@ -178,6 +178,98 @@ func (reader *FakeDatabaseReader) Close() error {
 	return nil
 }
 
+type FakeViewManager struct {
+}
+
+func (sl *FakeViewManager) SetupViews(db *Database) error {
+	return nil
+}
+
+func (sl *FakeViewManager) Initialize(db *Database) error {
+	return nil
+}
+
+func (sl *FakeViewManager) ListViewFiles() ([]string, error) {
+	return nil, nil
+}
+
+func (sl *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
+	return nil
+}
+
+func (sl *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	return nil, nil
+}
+
+func (sl *FakeViewManager) Close() error {
+	return nil
+}
+
+func (sl *FakeViewManager) Vacuum() error {
+	return nil
+}
+
+func (sl *FakeViewManager) UpdateDesignDocument(doc *Document) error {
+	return nil
+}
+
+func (sl *FakeViewManager) ValidateDesignDocument(doc *Document) error {
+	return nil
+}
+
+func (sl *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+	return ""
+}
+
+func (sl *FakeViewManager) ParseQueryParams(query string) (string, []string) {
+	return "", nil
+}
+
+type FakeFileHandler struct {
+}
+
+func (sl *FakeFileHandler) IsFileExists(path string) bool {
+	if path == "data/dbs/testdb.db" {
+		return false
+	}
+	if path == "data/dbs/testdb1.db" {
+		return true
+	}
+	return false
+}
+
+func (sl *FakeFileHandler) MkdirAll(path string) error {
+	return nil
+}
+
+type FakeServiceLocator struct {
+}
+
+func (sl *FakeServiceLocator) GetFileHandler() FileHandler {
+	return &FakeFileHandler{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseWriter(connectionString string) DatabaseWriter {
+	return &FakeDatabaseWriter{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
+	return &FakeDatabaseReader{}
+}
+
+func (sl *FakeServiceLocator) GetDatabaseReaderPool(connectionString string, limit int) DatabaseReaderPool {
+	reader := &FakeDatabaseReader{}
+	return NewTestFakeDatabaseReaderPool(reader)
+}
+
+func (sl *FakeServiceLocator) GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager {
+	return &FakeViewManager{}
+}
+
+func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
+	return nil
+}
+
 func TestDBLoadUpdateSeqID(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
@@ -185,7 +277,7 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 	db.readers = pool
 	db.Open()
 
-	l := reader.GetLastUpdateSequence()
+	l := db.GetLastUpdateSequence()
 
 	if db.UpdateSeq != l {
 		t.Errorf("failed to load last update seq id.")
@@ -328,12 +420,11 @@ func TestDBGetDocumentRevisionByIDandVersion(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 
-	doc, _ := ParseDocument([]byte(`{"_id":2, "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id":2, "_rev":"1-hash"}`))
 	odoc, err := db.GetDocument(doc, false)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
-
 	if odoc.ID != "2" {
 		t.Errorf("expected doc id %s, got %s", "2", odoc.ID)
 	}
@@ -394,7 +485,7 @@ func TestDBGetDocumentByIDandVersion(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 
-	doc, _ := ParseDocument([]byte(`{"_id":4, "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id":4, "_rev":"1-hash"}`))
 	odoc, err := db.GetDocument(doc, true)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
@@ -492,7 +583,7 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
-		t.Errorf("expected fail put document. ")
+		t.Errorf("expected to fail put document. ")
 	}
 
 	if err != nil && err != ErrDocConflict {
@@ -555,7 +646,7 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "1", "_rev":"1-hash"}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
 		t.Errorf("unable put document")
@@ -764,10 +855,10 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "2"}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "2", "_rev":"2-hash"}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
-		t.Errorf("unable put document")
+		t.Errorf("unable put document %s", err)
 	}
 
 	if !writer.begin || !writer.commit || !writer.rollback {
@@ -781,8 +872,7 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
-
-	doc, _ = ParseDocument([]byte(`{"_id": "2", "_version": 1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"2","_rev":"1-hash"}`))
 	odoc, err = db.PutDocument(doc)
 	if err == nil {
 		t.Errorf("expected to fail, when you update deleted doc with old verison")
@@ -799,7 +889,7 @@ func TestDBDeleteDocument(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "1", "_rev":"1-hash"}`))
 	odoc, err := db.DeleteDocument(doc)
 	if err != nil {
 		t.Errorf("unable delete document")
@@ -816,98 +906,6 @@ func TestDBDeleteDocument(t *testing.T) {
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
-}
-
-type FakeViewManager struct {
-}
-
-func (sl *FakeViewManager) SetupViews(db *Database) error {
-	return nil
-}
-
-func (sl *FakeViewManager) Initialize(db *Database) error {
-	return nil
-}
-
-func (sl *FakeViewManager) ListViewFiles() ([]string, error) {
-	return nil, nil
-}
-
-func (sl *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
-	return nil
-}
-
-func (sl *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return nil, nil
-}
-
-func (sl *FakeViewManager) Close() error {
-	return nil
-}
-
-func (sl *FakeViewManager) Vacuum() error {
-	return nil
-}
-
-func (sl *FakeViewManager) UpdateDesignDocument(doc *Document) error {
-	return nil
-}
-
-func (sl *FakeViewManager) ValidateDesignDocument(doc *Document) error {
-	return nil
-}
-
-func (sl *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
-	return ""
-}
-
-func (sl *FakeViewManager) ParseQueryParams(query string) (string, []string) {
-	return "", nil
-}
-
-type FakeFileHandler struct {
-}
-
-func (sl *FakeFileHandler) IsFileExists(path string) bool {
-	if path == "data/dbs/testdb.db" {
-		return false
-	}
-	if path == "data/dbs/testdb1.db" {
-		return true
-	}
-	return false
-}
-
-func (sl *FakeFileHandler) MkdirAll(path string) error {
-	return nil
-}
-
-type FakeServiceLocator struct {
-}
-
-func (sl *FakeServiceLocator) GetFileHandler() FileHandler {
-	return &FakeFileHandler{}
-}
-
-func (sl *FakeServiceLocator) GetDatabaseWriter(connectionString string) DatabaseWriter {
-	return &FakeDatabaseWriter{}
-}
-
-func (sl *FakeServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
-	return &FakeDatabaseReader{}
-}
-
-func (sl *FakeServiceLocator) GetDatabaseReaderPool(connectionString string, limit int) DatabaseReaderPool {
-	reader := &FakeDatabaseReader{}
-	return NewTestFakeDatabaseReaderPool(reader)
-}
-
-func (sl *FakeServiceLocator) GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager {
-	return &FakeViewManager{}
-}
-
-func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
-	return nil
 }
 
 func TestNewDatabaseNew(t *testing.T) {
