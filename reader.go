@@ -159,7 +159,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 func (db *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
 	sqlGetChanges := `WITH all_changes(seq, doc_id, rev, deleted) as
 	(
-		SELECT * FROM (SELECT seq_id as seq, doc_id, printf('%d-%s', version, signature) as rev, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) LIMIT ?)
+		SELECT * FROM (SELECT max(seq_id) as seq, doc_id, printf('%d-%s', version, signature) as rev, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) GROUP BY doc_id LIMIT ?) ORDER BY seq DESC
 	),
 	changes_object (obj) as
 	(
