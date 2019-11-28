@@ -213,7 +213,8 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	w.Write(outputs)
 }
 
@@ -231,7 +232,8 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	w.Write(outputs)
 }
 
