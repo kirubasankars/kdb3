@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/valyala/fastjson"
-
 	"github.com/gorilla/mux"
 )
 
@@ -209,27 +207,14 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	fValues, err := fastjson.ParseBytes(body)
+
+	outputs, err := kdb.BulkDocuments(db, body)
 	if err != nil {
-		NotOK(fmt.Errorf("%s:%w", err, ErrBadJSON), w)
+		NotOK(err, w)
 		return
 	}
-	outputs, _ := fastjson.ParseBytes([]byte("[]"))
-	for idx, item := range fValues.GetArray("_docs") {
-		inputDoc, _ := ParseDocument([]byte(item.String()))
-		var jsonb []byte
-		outputDoc, err := kdb.PutDocument(db, inputDoc)
-		if err != nil {
-			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
-		} else {
-			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
-		}
-		v := fastjson.MustParse(string(jsonb))
-		outputs.SetArrayItem(idx, v)
-	}
-	w.Write([]byte(outputs.String()))
 
+	w.Write(outputs)
 }
 
 func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
@@ -240,26 +225,14 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	fValues, err := fastjson.ParseBytes(body)
+
+	outputs, err := kdb.BulkGetDocuments(db, body)
 	if err != nil {
-		NotOK(errors.New("bad_json"), w)
+		NotOK(err, w)
 		return
 	}
-	outputs, _ := fastjson.ParseBytes([]byte("[]"))
-	for idx, item := range fValues.GetArray("_docs") {
-		inputDoc, _ := ParseDocument([]byte(item.String()))
-		var jsonb []byte
-		outputDoc, err := kdb.GetDocument(db, inputDoc, true)
-		if err != nil {
-			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
-		} else {
-			jsonb = outputDoc.Data
-		}
-		v := fastjson.MustParse(string(jsonb))
-		outputs.SetArrayItem(idx, v)
-	}
-	w.Write([]byte(`{"results":` + outputs.String() + `}`))
+
+	w.Write(outputs)
 }
 
 func GetDDocument(w http.ResponseWriter, r *http.Request) {
