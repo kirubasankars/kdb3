@@ -185,7 +185,7 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 	db.readers = pool
 	db.Open()
 
-	l := reader.GetLastUpdateSequence()
+	l := db.GetLastUpdateSequence()
 
 	if db.UpdateSeq != l {
 		t.Errorf("failed to load last update seq id.")
@@ -764,7 +764,7 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "2"}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "2", "_version":2}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
 		t.Errorf("unable put document")

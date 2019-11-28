@@ -56,37 +56,28 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	if v.Exists("_id") {
 		id = strings.ReplaceAll(v.Get("_id").String(), "\"", "")
+		v.Del("_id")
 	}
 
 	if v.Exists("_version") {
 		version, _ = strconv.Atoi(v.Get("_version").String())
+		v.Del("_version")
 	}
 
 	if v.Exists("_kind") {
 		kind = strings.ReplaceAll(v.Get("_kind").String(), "\"", "")
+		v.Del("_kind")
 	}
 
 	if v.Exists("_deleted") {
 		deleted = v.Get("_deleted").GetBool()
+		v.Del("_deleted")
 	} else {
 		deleted = false
 	}
 
 	if id == "" && version != 0 {
 		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocInvalidInput)
-	}
-
-	if v.Exists("_id") {
-		v.Del("_id")
-	}
-	if v.Exists("_version") {
-		v.Del("_version")
-	}
-	if v.Exists("_kind") {
-		v.Del("_kind")
-	}
-	if v.Exists("_deleted") {
-		v.Del("_deleted")
 	}
 
 	var b []byte
