@@ -20,18 +20,6 @@ type Document struct {
 
 func (doc *Document) CalculateNextVersion() {
 	doc.Version = doc.Version + 1
-	var meta string
-	meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
-	if doc.Kind != "" {
-		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
-	}
-	if len(doc.Data) != 2 {
-		meta = meta + ","
-	}
-	data := make([]byte, len(meta))
-	copy(data, meta)
-	data = append(data, doc.Data[1:]...)
-	doc.Data = data
 }
 
 func ParseDocument(value []byte) (*Document, error) {

@@ -62,8 +62,6 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS documents (
 			doc_id 		TEXT,
-			version     INTEGER, 
-			kind	    TEXT,
 			data 		TEXT,
 			PRIMARY KEY (doc_id)
 		) WITHOUT ROWID;
@@ -79,9 +77,7 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		
 		CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
 			(doc_id, version, kind, deleted);
-			
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_version ON changes 
-			(doc_id, version);`
+		`
 
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
@@ -120,7 +116,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 			return err
 		}
 	} else {
-		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, data) VALUES(?, ?, ?, ?)", newDoc.ID, newDoc.Version, kind, newDoc.Data); err != nil {
+		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, data) VALUES(?, ?)", newDoc.ID, newDoc.Data); err != nil {
 			return err
 		}
 	}

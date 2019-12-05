@@ -60,7 +60,7 @@ func TestParseDocumentKind(t *testing.T) {
 
 	doc.CalculateNextVersion()
 
-	if doc.Version != 2 || string(doc.Data) != `{"_id":"1","_version":2,"_kind":"1","test":1}` {
+	if doc.Version != 2 || string(doc.Data) != `{"test":1}` {
 		t.Errorf("failed to parse doc")
 	}
 }
