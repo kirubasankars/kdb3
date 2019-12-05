@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/valyala/fastjson"
 )
 
 var dbExt = ".db"
@@ -184,6 +185,50 @@ func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (
 	}
 
 	return db.GetDocument(doc, includeDoc)
+}
+
+func (kdb *KDBEngine) BulkDocuments(name string, body []byte) ([]byte, error) {
+	fValues, err := fastjson.ParseBytes(body)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
+	}
+	outputs, _ := fastjson.ParseBytes([]byte("[]"))
+	for idx, item := range fValues.GetArray("_docs") {
+		inputDoc, _ := ParseDocument([]byte(item.String()))
+		var jsonb []byte
+		outputDoc, err := kdb.PutDocument(name, inputDoc)
+		if err != nil {
+			code, reason := errorString(err)
+			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
+		} else {
+			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+		}
+		v := fastjson.MustParse(string(jsonb))
+		outputs.SetArrayItem(idx, v)
+	}
+	return []byte(outputs.String()), nil
+}
+
+func (kdb *KDBEngine) BulkGetDocuments(name string, body []byte) ([]byte, error) {
+	fValues, err := fastjson.ParseBytes(body)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
+	}
+	outputs, _ := fastjson.ParseBytes([]byte("[]"))
+	for idx, item := range fValues.GetArray("_docs") {
+		inputDoc, _ := ParseDocument([]byte(item.String()))
+		var jsonb []byte
+		outputDoc, err := kdb.GetDocument(name, inputDoc, true)
+		if err != nil {
+			code, reason := errorString(err)
+			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
+		} else {
+			jsonb = outputDoc.Data
+		}
+		v := fastjson.MustParse(string(jsonb))
+		outputs.SetArrayItem(idx, v)
+	}
+	return []byte(outputs.String()), nil
 }
 
 func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {

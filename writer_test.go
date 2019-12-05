@@ -152,7 +152,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 
 	writer.Begin()
 
-	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev":"1-hash", "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_version":1, "_deleted":true}`))
 	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
 		t.Errorf("unable to delete document, error %s", err.Error())
 	}

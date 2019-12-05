@@ -21,22 +21,22 @@ func setupTestDatabaseWithWriter() error {
 		return err
 	}
 
-	doc, _ := ParseDocument([]byte(`{"_id":1, "_rev":"1-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
 	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"1-hash"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
 	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"2-hash", "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
 	if err := writer.PutDocument("seqID3", doc, nil); err != nil {
 		return err
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_rev":"1-hash", "test":"test"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
 	if err := writer.PutDocument("seqID4", doc, nil); err != nil {
 		return err
 	}
@@ -72,7 +72,6 @@ func TestReaderGetDocumentByID(t *testing.T) {
 	reader.Close()
 
 	deleteTestDatabaseWithWriter()
-
 }
 
 func TestReaderGetDocumentRevisionByID(t *testing.T) {
@@ -198,7 +197,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID1","id":"1","changes":[{"rev":"1-hash"}]},{"seq":"seqID3","id":"2","changes":[{"rev":"2-hash"}],"deleted":1},{"seq":"seqID4","id":"_design/_views","changes":[{"rev":"1-hash"}]}]}`
+	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":1},{"seq":"seqID2","version":1,"id":"2"},{"seq":"seqID1","version":1,"id":"1"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))

@@ -20,6 +20,66 @@ type Database struct {
 	viewManager ViewManager
 }
 
+func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+	fileHandler := serviceLocator.GetFileHandler()
+	path := filepath.Join(dbPath, name+dbExt)
+	if !fileHandler.IsFileExists(path) {
+		if !createIfNotExists {
+			return nil, ErrDBNotFound
+		}
+	} else {
+		if createIfNotExists {
+			return nil, ErrDBExists
+		}
+	}
+
+	db := &Database{Name: name, DBPath: path}
+	db.idSeq = NewSequenceUUIDGenarator()
+
+	connectionString := db.DBPath + "?_journal=WAL"
+	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
+	err := db.writer.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
+
+	if createIfNotExists {
+		db.writer.Begin()
+		if err := db.writer.ExecBuildScript(); err != nil {
+			return nil, err
+		}
+		db.writer.Commit()
+	}
+
+	err = db.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	absoluteDBPath, err := filepath.Abs(path)
+	if err != nil {
+		panic(err)
+	}
+
+	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, defaultViewPath)
+
+	if createIfNotExists {
+		err := db.viewManager.SetupViews(db)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = db.viewManager.Initialize(db)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
 func (db *Database) ValidateDesignDocument(doc *Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
 }
@@ -55,19 +115,16 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
+
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
 
 	if currentDoc != nil {
-		if !currentDoc.Deleted {
-			if currentDoc.Version != newDoc.Version {
-				return nil, ErrDocConflict
-			}
-		} else {
-			if currentDoc.Version != newDoc.Version {
-				return nil, ErrDocConflict
-			}
+		if currentDoc.Version > 0 && currentDoc.Version != newDoc.Version {
+			return nil, ErrDocConflict
+		}
+		if currentDoc.Deleted {
 			newDoc.Version = currentDoc.Version
 		}
 	}
@@ -176,64 +233,4 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	}
 
 	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
-}
-
-func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
-	fileHandler := serviceLocator.GetFileHandler()
-	path := filepath.Join(dbPath, name+dbExt)
-	if !fileHandler.IsFileExists(path) {
-		if !createIfNotExists {
-			return nil, ErrDBNotFound
-		}
-	} else {
-		if createIfNotExists {
-			return nil, ErrDBExists
-		}
-	}
-
-	db := &Database{Name: name, DBPath: path}
-	db.idSeq = NewSequenceUUIDGenarator()
-
-	connectionString := db.DBPath + "?_journal=WAL"
-	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
-	err := db.writer.Open()
-	if err != nil {
-		panic(err)
-	}
-
-	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
-
-	if createIfNotExists {
-		db.writer.Begin()
-		if err := db.writer.ExecBuildScript(); err != nil {
-			return nil, err
-		}
-		db.writer.Commit()
-	}
-
-	err = db.Open()
-	if err != nil {
-		panic(err)
-	}
-
-	absoluteDBPath, err := filepath.Abs(path)
-	if err != nil {
-		panic(err)
-	}
-
-	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, defaultViewPath)
-
-	if createIfNotExists {
-		err := db.viewManager.SetupViews(db)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	err = db.viewManager.Initialize(db)
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
 }

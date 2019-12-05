@@ -16,7 +16,7 @@ func TestParseDocumentBadJSON(t *testing.T) {
 }
 
 func TestParseDocumentWithVerisonandNoID(t *testing.T) {
-	_, err := ParseDocument([]byte(`{"_rev":"1-hash"}`))
+	_, err := ParseDocument([]byte(`{"_version":1}`))
 	if err == nil {
 		t.Errorf("expected to fail with %s", ErrDocInvalidID)
 	}
@@ -27,7 +27,7 @@ func TestParseDocumentWithVerisonandNoID(t *testing.T) {
 }
 
 func TestParseDocumentGoodDoc(t *testing.T) {
-	doc, err := ParseDocument([]byte(`{"_rev":"1-hash", "_id":1, "test":"1"}`))
+	doc, err := ParseDocument([]byte(`{"_version":1, "_id":1, "test":"1"}`))
 	if err != nil {
 		t.Errorf("unexpected to fail with %s", err.Error())
 	}
@@ -38,7 +38,7 @@ func TestParseDocumentGoodDoc(t *testing.T) {
 }
 
 func TestParseDocumentGoodDocDeleted(t *testing.T) {
-	doc, err := ParseDocument([]byte(`{"_rev":"1-hash", "_id":1, "_deleted":true}`))
+	doc, err := ParseDocument([]byte(`{"_version":1, "_id":1, "_deleted":true}`))
 	if err != nil {
 		t.Errorf("unexpected to fail with %s", err.Error())
 	}
@@ -49,7 +49,7 @@ func TestParseDocumentGoodDocDeleted(t *testing.T) {
 }
 
 func TestParseDocumentKind(t *testing.T) {
-	doc, err := ParseDocument([]byte(`{"_rev":"1-hash", "_id":1, "_kind":1 ,"test":1, "_deleted":true}`))
+	doc, err := ParseDocument([]byte(`{"_version":1, "_id":1, "_kind":1 ,"test":1, "_deleted":true}`))
 	if err != nil {
 		t.Errorf("unexpected to fail with %s", err.Error())
 	}
@@ -59,7 +59,8 @@ func TestParseDocumentKind(t *testing.T) {
 	}
 
 	doc.CalculateNextVersion()
-	if doc.Version != 2 || string(doc.Data) != `{"_id":"1","_rev":"2-44e7a186db2c24f55e9bf22e427df2ad","_kind":"1","test":1}` {
+
+	if doc.Version != 2 || string(doc.Data) != `{"test":1}` {
 		t.Errorf("failed to parse doc")
 	}
 }

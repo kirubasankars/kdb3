@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 )
 
 type DatabaseReader interface {
@@ -51,8 +52,8 @@ func (reader *DefaultDatabaseReader) Commit() error {
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.tx.QueryRow("SELECT doc_id, version, signature, deleted FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, Version)
-	err := row.Scan(&doc.ID, &doc.Version, &doc.Signature, &doc.Deleted)
+	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, Version)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -71,8 +72,8 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.tx.QueryRow("SELECT doc_id, version, signature, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID)
-	err := row.Scan(&doc.ID, &doc.Version, &doc.Signature, &doc.Deleted)
+	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
@@ -91,11 +92,23 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.tx.QueryRow("SELECT doc_id, version, signature, deleted, (SELECT data FROM documents WHERE doc_id = ?) FROM changes WHERE doc_id = ? ORDER BY version DESC LIMIT 1", ID, ID)
-	err := row.Scan(&doc.ID, &doc.Version, &doc.Signature, &doc.Deleted, &doc.Data)
+	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? LIMIT 1", ID, ID)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
+
+	var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+	if doc.Kind != "" {
+		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
+	}
+	if len(doc.Data) != 2 {
+		meta = meta + ","
+	}
+	data := make([]byte, len(meta))
+	copy(data, meta)
+	data = append(data, doc.Data[1:]...)
+	doc.Data = data
 
 	if doc.ID == "" {
 		return nil, ErrDocNotFound
@@ -111,11 +124,23 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.tx.QueryRow("SELECT doc_id, version, signature, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, ID, Version)
-	err := row.Scan(&doc.ID, &doc.Version, &doc.Signature, &doc.Deleted, &doc.Data)
+	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, (SELECT data FROM documents WHERE doc_id = ?) as data FROM changes WHERE doc_id = ? AND version = ? LIMIT 1", ID, ID, Version)
+	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
+
+	var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+	if doc.Kind != "" {
+		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
+	}
+	if len(doc.Data) != 2 {
+		meta = meta + ","
+	}
+	data := make([]byte, len(meta))
+	copy(data, meta)
+	data = append(data, doc.Data[1:]...)
+	doc.Data = data
 
 	if doc.ID == "" {
 		return nil, ErrDocNotFound
@@ -157,13 +182,13 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 }
 
 func (db *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
-	sqlGetChanges := `WITH all_changes(seq, doc_id, rev, deleted) as
+	sqlGetChanges := `WITH all_changes(seq, version, doc_id, deleted) as
 	(
-		SELECT * FROM (SELECT max(seq_id) as seq, doc_id, printf('%d-%s', version, signature) as rev, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) GROUP BY doc_id LIMIT ?) ORDER BY seq DESC
+		SELECT * FROM (SELECT seq_id as seq, version, doc_id, deleted FROM changes c WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id ASC LIMIT ?)  ORDER BY seq DESC
 	),
 	changes_object (obj) as
 	(
-		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'id', doc_id, 'changes', JSON_GROUP_ARRAY(JSON_OBJECT('rev', rev))) ELSE JSON_OBJECT('seq', seq, 'id', doc_id, 'changes', JSON_GROUP_ARRAY(JSON_OBJECT('rev', rev)), 'deleted', true)  END) as obj FROM all_changes GROUP BY doc_id
+		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', true)  END) as obj FROM all_changes
 	)
 	SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object`
 	row := db.tx.QueryRow(sqlGetChanges, since, since, limit)
