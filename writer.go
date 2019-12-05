@@ -62,9 +62,6 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS documents (
 			doc_id 		TEXT,
-			version     INTEGER, 
-			signature	TEXT,
-			kind	    TEXT,
 			data 		TEXT,
 			PRIMARY KEY (doc_id)
 		) WITHOUT ROWID;
@@ -73,17 +70,14 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 			seq_id 		TEXT, 
 			doc_id 		TEXT, 
 			version     INTEGER, 
-			signature	TEXT,
 			kind	    TEXT,
 			deleted     BOOL,
 			PRIMARY KEY (seq_id)
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
-			(doc_id, version, signature, kind, deleted);
-			
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_version ON changes 
-			(doc_id, version);`
+			(doc_id, version, kind, deleted);
+		`
 
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
@@ -107,7 +101,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, signature, kind, deleted) VALUES(?, ?, ?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, newDoc.Signature, kind, newDoc.Deleted); err != nil {
+	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, kind, deleted) VALUES(?, ?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, kind, newDoc.Deleted); err != nil {
 		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
 			return ErrDocConflict
 		}
@@ -122,7 +116,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 			return err
 		}
 	} else {
-		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, signature, kind, data) VALUES(?, ?, ?, ?, ?)", newDoc.ID, newDoc.Version, newDoc.Signature, kind, newDoc.Data); err != nil {
+		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, data) VALUES(?, ?)", newDoc.ID, newDoc.Data); err != nil {
 			return err
 		}
 	}

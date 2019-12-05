@@ -124,10 +124,10 @@ func (writer *FakeDatabaseWriter) GetDocumentRevisionByID(docID string) (*Docume
 		return nil, ErrInternalError
 	}
 	if docID == "1" {
-		return ParseDocument([]byte(`{"_id":1,"_rev":"1-hash"}`))
+		return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
 	}
 	if docID == "2" {
-		return ParseDocument([]byte(`{"_id":2,"_rev":"2-hash","_deleted":true}`))
+		return ParseDocument([]byte(`{"_id":1, "_version" :2, "_deleted":true}`))
 	}
 	if docID == "3" {
 		return nil, ErrInternalError
@@ -143,19 +143,19 @@ func (writer *FakeDatabaseWriter) PutDocument(updateSeqID string, newDoc *Docume
 }
 
 func (reader *FakeDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":2, "_rev":"1-hash"}`))
+	return ParseDocument([]byte(`{"_id":2, "_version" :1}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":1, "_rev":"1-hash"}`))
+	return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":3, "_rev":"1-hash", "test": "test"}`))
+	return ParseDocument([]byte(`{"_id":3, "_version" :1, "test": "test"}`))
 }
 
 func (reader *FakeDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":4, "_rev":"1-hash", "test": "test"}`))
+	return ParseDocument([]byte(`{"_id":4, "_version" :1, "test": "test"}`))
 }
 
 func (reader *FakeDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
@@ -420,11 +420,12 @@ func TestDBGetDocumentRevisionByIDandVersion(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 
-	doc, _ := ParseDocument([]byte(`{"_id":2, "_rev":"1-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id":2, "_version":1}`))
 	odoc, err := db.GetDocument(doc, false)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
+
 	if odoc.ID != "2" {
 		t.Errorf("expected doc id %s, got %s", "2", odoc.ID)
 	}
@@ -485,7 +486,7 @@ func TestDBGetDocumentByIDandVersion(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 
-	doc, _ := ParseDocument([]byte(`{"_id":4, "_rev":"1-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id":4, "_version":1}`))
 	odoc, err := db.GetDocument(doc, true)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
@@ -583,7 +584,7 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
-		t.Errorf("expected to fail put document. ")
+		t.Errorf("expected fail put document. ")
 	}
 
 	if err != nil && err != ErrDocConflict {
@@ -646,7 +647,7 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_rev":"1-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
 		t.Errorf("unable put document")
@@ -855,10 +856,10 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "2", "_rev":"2-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "2", "_version":2}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
-		t.Errorf("unable put document %s", err)
+		t.Errorf("unable put document")
 	}
 
 	if !writer.begin || !writer.commit || !writer.rollback {
@@ -872,7 +873,8 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	if db.UpdateSeq == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
-	doc, _ = ParseDocument([]byte(`{"_id":"2","_rev":"1-hash"}`))
+
+	doc, _ = ParseDocument([]byte(`{"_id": "2", "_version": 1}`))
 	odoc, err = db.PutDocument(doc)
 	if err == nil {
 		t.Errorf("expected to fail, when you update deleted doc with old verison")
@@ -889,7 +891,7 @@ func TestDBDeleteDocument(t *testing.T) {
 	db.writer = writer
 	db.Open()
 
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_rev":"1-hash"}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.DeleteDocument(doc)
 	if err != nil {
 		t.Errorf("unable delete document")
