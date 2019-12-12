@@ -20,3 +20,5 @@ How to Build?
 go build -tags "json1"
 
 [![asciicast](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX.svg)](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX)
+
+<script id="asciicast-GwSJcYRffxpTph59CLeTKYkmX" src="https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX.js" async></script>
