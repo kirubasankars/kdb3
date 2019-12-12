@@ -18,3 +18,5 @@ How to Build?
 #cgo support required.
 
 go build -tags "json1"
+
+[![asciicast](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX.svg)](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX)
