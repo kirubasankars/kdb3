@@ -36,7 +36,7 @@ func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, s
 	db := &Database{Name: name, DBPath: path}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	connectionString := db.DBPath + "?_journal=WAL"
+	connectionString := db.DBPath + "?_journal=WAL&cache=shared"
 	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
 	err := db.writer.Open()
 	if err != nil {
