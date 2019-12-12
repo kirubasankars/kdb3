@@ -11,3 +11,10 @@ Features
   7. External Views
   8. Cluster
   9. High Availability with replica
+
+
+How to Build?
+
+#cgo support required.
+
+go build -tags "json1"
