@@ -546,9 +546,9 @@ func (view *View) Open() error {
 	}
 
 	_, err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT DISTINCT doc_id, version, kind, deleted FROM docsdb.changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT c.doc_id, c.version, c.kind, c.deleted, JSON(d.data) as data FROM docsdb.documents d JOIN latest_changes c USING(doc_id);
-		CREATE TEMP VIEW documents AS SELECT c.doc_id, c.version, c.kind, c.deleted, JSON(d.data) as data FROM docsdb.changes c LEFT JOIN docsdb.documents d USING(doc_id);
+		CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
 	`)
 	if err != nil {
 		return err
