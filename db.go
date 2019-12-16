@@ -34,26 +34,13 @@ func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, s
 	}
 
 	db := &Database{Name: name, DBPath: path}
+
 	db.idSeq = NewSequenceUUIDGenarator()
-
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared"
-	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
-	err := db.writer.Open()
-	if err != nil {
-		panic(err)
-	}
-
 	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString, 4)
+	db.writer = serviceLocator.GetDatabaseWriter(connectionString)
 
-	if createIfNotExists {
-		db.writer.Begin()
-		if err := db.writer.ExecBuildScript(); err != nil {
-			return nil, err
-		}
-		db.writer.Commit()
-	}
-
-	err = db.Open()
+	err := db.Open(createIfNotExists)
 	if err != nil {
 		panic(err)
 	}
@@ -84,9 +71,29 @@ func (db *Database) ValidateDesignDocument(doc *Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
 }
 
-func (db *Database) Open() error {
+func (db *Database) Open(createIfNotExists bool) error {
+
+	err := db.writer.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	err = db.readers.Open()
+	if err != nil {
+		panic(err)
+	}
+
+	if createIfNotExists {
+		db.writer.Begin()
+		if err := db.writer.ExecBuildScript(); err != nil {
+			return err
+		}
+		db.writer.Commit()
+	}
+
 	db.UpdateSeq = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
+
 	return nil
 }
 
@@ -115,7 +122,6 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-
 	if err != nil && err != ErrDocNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
