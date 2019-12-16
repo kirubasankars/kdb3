@@ -126,24 +126,25 @@ func (kdb *KDBEngine) Delete(name string) error {
 	delete(kdb.dbs, name)
 	db.Close()
 
-	list, err := ioutil.ReadDir(kdb.viewPath)
-	if err != nil {
-		return err
-	}
+	kdb.deleteDBFiles(kdb.dbPath, kdb.viewPath, name)
 
+	return nil
+}
+
+func (kdb *KDBEngine) deleteDBFiles(dbPath, viewPath, dbname string) {
+	list, _ := ioutil.ReadDir(viewPath)
 	for idx := range list {
 		name := list[idx].Name()
-		if strings.HasPrefix(name, db.Name+"$") && strings.HasSuffix(name, dbExt) {
-			os.Remove(filepath.Join(kdb.viewPath, name))
+		if strings.HasPrefix(name, dbname+"$") && strings.HasSuffix(name, dbExt) {
+			os.Remove(filepath.Join(viewPath, name))
 		}
 	}
 
-	fileName := name + dbExt
-	os.Remove(filepath.Join(kdb.dbPath, fileName+"-shm"))
-	os.Remove(filepath.Join(kdb.dbPath, fileName+"-wal"))
-	os.Remove(filepath.Join(kdb.dbPath, name+dbExt))
+	fileName := dbname + dbExt
+	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
+	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
+	os.Remove(filepath.Join(dbPath, fileName))
 
-	return nil
 }
 
 func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
