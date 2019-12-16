@@ -7,8 +7,8 @@ Features
   3. Restful API - Done
   3. Change tracking - Done
   4. Incrementally updated Materialistic View (with sqlite3) - Done
-  5. Incremental Backup - InProgress
-  6. External Replication - InProgress
+  5. Incremental Backup
+  6. External Replication
   7. External Views
   8. Cluster
   9. High Availability with replica
