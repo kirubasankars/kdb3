@@ -61,24 +61,22 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS documents (
-			doc_id 		TEXT,
-			data 		TEXT,
-			PRIMARY KEY (doc_id)
-		) WITHOUT ROWID;
-
-		CREATE TABLE IF NOT EXISTS changes (
-			seq_id 		TEXT, 
 			doc_id 		TEXT, 
 			version     INTEGER, 
 			kind	    TEXT,
 			deleted     BOOL,
-			PRIMARY KEY (seq_id)
+			data        TEXT,
+			seq_id 		TEXT,
+			PRIMARY KEY (doc_id)
 		) WITHOUT ROWID;
 		
-		CREATE INDEX IF NOT EXISTS idx_revisions ON changes 
+		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
 			(doc_id, version, kind, deleted);
 
-		CREATE INDEX IF NOT EXISTS idx_kind ON changes 
+		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
+			(seq_id);
+
+		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
 			(kind) WHERE kind IS NOT NULL;
 		`
 	if _, err := tx.Exec(buildSQL); err != nil {
@@ -103,31 +101,8 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-	if _, err := tx.Exec("INSERT INTO changes (seq_id, doc_id, version, kind, deleted) VALUES(?, ?, ?, ?, ?)", updateSeqID, newDoc.ID, newDoc.Version, kind, newDoc.Deleted); err != nil {
-		if err.Error() == "UNIQUE constraint failed: changes.doc_id, changes.version" {
-			return ErrDocConflict
-		}
-		if err.Error() == "UNIQUE constraint failed: changes.seq_id" {
-			return ErrInternalError
-		}
+	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, ?, ?, ?, ?)", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
 		return err
 	}
-
-	if newDoc.Deleted {
-		if _, err := tx.Exec("DELETE FROM documents WHERE doc_id = ?", newDoc.ID); err != nil {
-			return err
-		}
-	} else {
-		if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, data) VALUES(?, ?)", newDoc.ID, newDoc.Data); err != nil {
-			return err
-		}
-	}
-
-	if currentDoc != nil {
-		if _, err := tx.Exec("DELETE FROM changes WHERE doc_id = ? AND version = ?", currentDoc.ID, currentDoc.Version); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }

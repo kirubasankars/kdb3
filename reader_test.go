@@ -159,8 +159,8 @@ func TestReaderGetDocumentCount(t *testing.T) {
 	reader.Begin()
 
 	count := reader.GetDocumentCount()
-	if count != 2 {
-		t.Errorf("expected %d rows, got %d", 2, count)
+	if count != 3 {
+		t.Errorf("expected %d rows, got %d", 3, count)
 	}
 
 	reader.Commit()
@@ -203,7 +203,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":1},{"seq":"seqID2","version":1,"id":"2"},{"seq":"seqID1","version":1,"id":"1"}]}`
+	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":1},{"seq":"seqID1","version":1,"id":"1"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
