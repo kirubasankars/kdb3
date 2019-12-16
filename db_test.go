@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"testing"
 )
@@ -1005,4 +1006,24 @@ func TestDatabaseReOpen(t *testing.T) {
 	doc, err = ParseDocument([]byte(`{"_id":1}`))
 	doc, err = db.GetDocument(doc, false)
 	db.Close()
+}
+
+func TestDatabaseSelectView(t *testing.T) {
+	kdb.deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
+	sl := NewServiceLocator()
+	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", true, sl)
+	if err != nil {
+		t.Errorf("unexpected err %s, failed", err)
+	}
+	data, err := db.SelectView("_design/_views", "_all_docs", "default", nil, false)
+	output := `{"offset":0,"rows":[{"key":"_design/_views","value":{"version":1},"id":"_design/_views"}],"total_rows":1}`
+
+	if string(data) != output {
+		fmt.Println(output)
+		t.Errorf("expected %s, got %s", output, data)
+	}
+
+	db.Close()
+
+	kdb.deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
 }
