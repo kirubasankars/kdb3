@@ -81,7 +81,6 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		CREATE INDEX IF NOT EXISTS idx_kind ON changes 
 			(kind) WHERE kind IS NOT NULL;
 		`
-
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
 	}

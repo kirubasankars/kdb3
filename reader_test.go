@@ -13,9 +13,15 @@ func setupTestDatabaseWithWriter() error {
 
 	serviceLocator := new(DefaultServiceLocator)
 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
-	writer.Open()
+	err := writer.Open()
+	if err != nil {
+		return err
+	}
 
-	writer.Begin()
+	err = writer.Begin()
+	if err != nil {
+		return err
+	}
 
 	if err := writer.ExecBuildScript(); err != nil {
 		return err
@@ -242,6 +248,7 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 func TestReaderPool(t *testing.T) {
 	serviceLocator := new(DefaultServiceLocator)
 	readers := serviceLocator.GetDatabaseReaderPool(testConnectionString, 1)
+	readers.Open()
 	r1 := readers.Borrow()
 
 	var wg sync.WaitGroup

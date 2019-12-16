@@ -227,33 +227,39 @@ func (reader *DefaultDatabaseReader) Close() error {
 }
 
 type DatabaseReaderPool interface {
+	Open() error
 	Borrow() DatabaseReader
 	Return(r DatabaseReader)
 	Close() error
 }
 
 type DefaultDatabaseReaderPool struct {
-	path string
-	pool chan DatabaseReader
+	path           string
+	pool           chan DatabaseReader
+	limit          int
+	serviceLocator ServiceLocator
 }
 
 func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
-
 	readers := DefaultDatabaseReaderPool{
-		path: connectionString,
-		pool: make(chan DatabaseReader, limit),
+		path:           connectionString,
+		pool:           make(chan DatabaseReader, limit),
+		limit:          limit,
+		serviceLocator: serviceLocator,
 	}
+	return &readers
+}
 
-	for x := 0; x < limit; x++ {
-		r := serviceLocator.GetDatabaseReader(connectionString)
+func (p *DefaultDatabaseReaderPool) Open() error {
+	for x := 0; x < p.limit; x++ {
+		r := p.serviceLocator.GetDatabaseReader(p.path)
 		err := r.Open()
 		if err != nil {
 			panic(err)
 		}
-		readers.pool <- r
+		p.pool <- r
 	}
-
-	return &readers
+	return nil
 }
 
 func (p *DefaultDatabaseReaderPool) Borrow() DatabaseReader {

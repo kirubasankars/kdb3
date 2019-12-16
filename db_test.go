@@ -27,9 +27,10 @@ func (p *FakeDatabaseReaderPool) Return(r DatabaseReader) {
 	p.returned = true
 }
 
-func (p *FakeDatabaseReaderPool) Reset() {
+func (p *FakeDatabaseReaderPool) Open() error {
 	p.borrowed = false
 	p.returned = false
+	return nil
 }
 
 func (p *FakeDatabaseReaderPool) Close() error {
@@ -41,12 +42,9 @@ type FakeDatabaseReader struct {
 	commit bool
 }
 
-func (reader *FakeDatabaseReader) Reset() {
+func (reader *FakeDatabaseReader) Open() error {
 	reader.begin = false
 	reader.commit = false
-}
-
-func (reader *FakeDatabaseReader) Open() error {
 	return nil
 }
 
@@ -73,6 +71,9 @@ type FakeDatabaseWriter struct {
 }
 
 func (writer *FakeDatabaseWriter) Open() error {
+	writer.rollback = false
+	writer.begin = false
+	writer.commit = false
 	return nil
 }
 
@@ -272,10 +273,12 @@ func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDataba
 
 func TestDBLoadUpdateSeqID(t *testing.T) {
 	db := &Database{}
+	writer := new(FakeDatabaseWriter)
 	reader := new(FakeDatabaseReader)
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
-	db.Open()
+	db.writer = writer
+	db.Open(false)
 
 	l := db.GetLastUpdateSequence()
 
@@ -290,8 +293,8 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
 
-	pool.Reset()
-	reader.Reset()
+	pool.Open()
+	reader.Open()
 
 	if db.GetLastUpdateSequence() != l {
 		t.Errorf("failed to load last update seq id.")
@@ -356,11 +359,12 @@ func TestDBGetDesignDocuments(t *testing.T) {
 
 func TestDBStat(t *testing.T) {
 	db := &Database{}
+	writer := new(FakeDatabaseWriter)
 	reader := new(FakeDatabaseReader)
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
-
-	db.Open()
+	db.writer = writer
+	db.Open(false)
 
 	stat := db.Stat()
 
@@ -521,7 +525,7 @@ func TestDBPutDocumentNewDocID(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{}`))
 	odoc, err := db.PutDocument(doc)
@@ -550,7 +554,7 @@ func TestDBPutDocumentNewDocWithID(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "4"}`))
 	odoc, err := db.PutDocument(doc)
@@ -579,7 +583,8 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
+	writer.Reset()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
 	odoc, err := db.PutDocument(doc)
@@ -592,7 +597,7 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	}
 
 	if !writer.begin || !writer.rollback || writer.commit {
-		t.Errorf("expected to call begin and commit, failed.")
+		t.Errorf("expected to call begin and rollback, failed.")
 	}
 
 	if odoc != nil {
@@ -601,10 +606,11 @@ func TestDBPutDocumentConflict(t *testing.T) {
 
 	if db.UpdateSeq != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
+		return
 	}
 }
 
-func TestDBPutDocumentConflict1(t *testing.T) {
+func Test1DBPutDocumentConflict(t *testing.T) {
 	db := &Database{}
 	reader := new(FakeDatabaseReader)
 	writer := new(FakeDatabaseWriter)
@@ -612,7 +618,8 @@ func TestDBPutDocumentConflict1(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
+	writer.Reset()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":2}`))
 	odoc, err := db.PutDocument(doc)
@@ -645,7 +652,7 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.PutDocument(doc)
@@ -674,7 +681,7 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
 	_, err := db.PutDocument(doc)
@@ -700,8 +707,8 @@ func TestDBPutDocumentBeginError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.beginerr = true
-	db.Open()
-
+	db.Open(false)
+	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
@@ -734,7 +741,7 @@ func TestDBPutDocumentCommitError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.commiterr = true
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
@@ -768,7 +775,7 @@ func TestDBPutDocumentRollbackError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.roolbackerr = true
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	_, _ = db.PutDocument(doc)
@@ -787,8 +794,8 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.putdocerror = true
-	db.Open()
-
+	db.Open(false)
+	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
@@ -821,8 +828,8 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.getdocerror = true
-	db.Open()
-
+	db.Open(false)
+	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
@@ -854,7 +861,7 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "2", "_version":2}`))
 	odoc, err := db.PutDocument(doc)
@@ -889,7 +896,7 @@ func TestDBDeleteDocument(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
-	db.Open()
+	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.DeleteDocument(doc)
@@ -981,4 +988,21 @@ func TestDatabaseVacuum(t *testing.T) {
 		t.Errorf("unexpected err %s, failed", err)
 	}
 	err = db.Vacuum()
+}
+
+func TestDatabaseReOpen(t *testing.T) {
+	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	if err != nil {
+		t.Errorf("unexpected err %s, failed", err)
+	}
+
+	db.Open(false)
+	doc, err := ParseDocument([]byte(`{"_id":1}`))
+	doc, err = db.GetDocument(doc, false)
+	db.Close()
+
+	db.Open(false)
+	doc, err = ParseDocument([]byte(`{"_id":1}`))
+	doc, err = db.GetDocument(doc, false)
+	db.Close()
 }
