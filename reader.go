@@ -107,7 +107,9 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	}
 	data := make([]byte, len(meta))
 	copy(data, meta)
-	data = append(data, doc.Data[1:]...)
+	if len(doc.Data) > 0 {
+		data = append(data, doc.Data[1:]...)
+	}
 	doc.Data = data
 
 	if doc.ID == "" {
@@ -139,7 +141,9 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 	}
 	data := make([]byte, len(meta))
 	copy(data, meta)
-	data = append(data, doc.Data[1:]...)
+	if len(doc.Data) > 0 {
+		data = append(data, doc.Data[1:]...)
+	}
 	doc.Data = data
 
 	if doc.ID == "" {
@@ -244,16 +248,6 @@ type DefaultDatabaseReaderPool struct {
 	serviceLocator ServiceLocator
 }
 
-func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
-	readers := DefaultDatabaseReaderPool{
-		path:           connectionString,
-		pool:           make(chan DatabaseReader, limit),
-		limit:          limit,
-		serviceLocator: serviceLocator,
-	}
-	return &readers
-}
-
 func (p *DefaultDatabaseReaderPool) Open() error {
 	for x := 0; x < p.limit; x++ {
 		r := p.serviceLocator.GetDatabaseReader(p.path)
@@ -289,4 +283,14 @@ func (p *DefaultDatabaseReaderPool) Close() error {
 	}
 
 	return err
+}
+
+func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
+	readers := DefaultDatabaseReaderPool{
+		path:           connectionString,
+		pool:           make(chan DatabaseReader, limit),
+		limit:          limit,
+		serviceLocator: serviceLocator,
+	}
+	return &readers
 }

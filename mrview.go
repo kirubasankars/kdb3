@@ -153,7 +153,7 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	}
 
 	viewPath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
-	viewConnectionString := viewPath + "?_journal=MEMORY"
+	viewConnectionString := viewPath + "?_journal=MEMORY&cache=shared"
 
 	view := mgr.serviceLocator.GetView(viewName, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
 	if err := view.Open(); err != nil {
@@ -166,8 +166,6 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 }
 
 func (mgr *DefaultViewManager) BuildView(qualifiedViewName string, nextSeqID string) error {
-	mgr.rwmux.Lock()
-	defer mgr.rwmux.Unlock()
 	view, ok := mgr.views[qualifiedViewName]
 	if !ok {
 		return ErrViewNotFound
@@ -233,12 +231,10 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 			ResetReadUnlock()
 		}
 
-		ReadUnlock()
 		err := mgr.BuildView(qualifiedViewName, updateSeqID)
 		if err != nil {
 			return nil, err
 		}
-		ResetReadUnlock()
 	}
 
 	view = mgr.views[qualifiedViewName]
@@ -464,20 +460,60 @@ func NewViewManager(dbName, absoluteDatabasePath, viewPath string, serviceLocato
 	return mgr
 }
 
+var viewResultValidation = regexp.MustCompile("sql: expected (\\d+) destination arguments in Scan, not 1")
+
 type View struct {
-	name   string
-	ddocID string
+	name                 string
+	ddocID               string
+	absoluteDatabasePath string
 
 	currentSeqID string
 
-	connectionString     string
-	absoluteDatabasePath string
-	con                  *sql.DB
+	viewReader ViewReader
+	viewWriter ViewWriter
 
-	setupScripts  []Query
-	deleteScripts []Query
-	updateScripts []Query
-	selectScripts map[string]Query
+	mux sync.Mutex
+}
+
+func (view *View) Open() error {
+	view.viewWriter.Open()
+	view.viewReader.Open()
+
+	return nil
+}
+
+func (view *View) Close() error {
+	view.viewReader.Close()
+	view.viewWriter.Close()
+	return nil
+}
+
+func (view *View) Build(nextSeqID string) error {
+	if view.currentSeqID >= nextSeqID {
+		return nil
+	}
+
+	view.mux.Lock()
+	defer view.mux.Unlock()
+
+	if view.currentSeqID >= nextSeqID {
+		return nil
+	}
+
+	err := view.viewWriter.Build(nextSeqID)
+	if err == nil {
+		view.currentSeqID = nextSeqID
+	}
+
+	return nil
+}
+
+func (view *View) Select(name string, values url.Values) ([]byte, error) {
+	return view.viewReader.Select(name, values)
+}
+
+func (view *View) Vacuum() error {
+	return nil
 }
 
 func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
@@ -487,156 +523,93 @@ func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *Desi
 		return nil
 	}
 
-	view.connectionString = connectionString
-	view.absoluteDatabasePath = absoluteDatabasePath
-
 	view.name = viewName
 	view.ddocID = ddoc.ID
+	view.absoluteDatabasePath = absoluteDatabasePath
 
-	view.setupScripts = *new([]Query)
-	view.deleteScripts = *new([]Query)
-	view.updateScripts = *new([]Query)
-	view.selectScripts = make(map[string]Query)
+	setupScripts := *new([]Query)
+	deleteScripts := *new([]Query)
+	updateScripts := *new([]Query)
+	selectScripts := make(map[string]Query)
 	designDocView := ddoc.Views[viewName]
 
-	for _, x := range designDocView.Setup {
-		text, params := viewManager.ParseQueryParams(x)
-		view.setupScripts = append(view.setupScripts, Query{text: text, params: params})
+	for _, text := range designDocView.Setup {
+		setupScripts = append(setupScripts, Query{text: text})
 	}
-	for _, x := range designDocView.Delete {
-		text, params := viewManager.ParseQueryParams(x)
-		view.deleteScripts = append(view.deleteScripts, Query{text: text, params: params})
+	for _, text := range designDocView.Delete {
+		deleteScripts = append(deleteScripts, Query{text: text})
 	}
-	for _, x := range designDocView.Update {
-		text, params := viewManager.ParseQueryParams(x)
-		view.updateScripts = append(view.updateScripts, Query{text: text, params: params})
+	for _, text := range designDocView.Update {
+		updateScripts = append(updateScripts, Query{text: text})
 	}
 
 	for k, v := range designDocView.Select {
 		text, params := viewManager.ParseQueryParams(v)
-		view.selectScripts[k] = Query{text: text, params: params}
+		selectScripts[k] = Query{text: text, params: params}
 	}
+
+	setupDatabase := func(db *sql.DB) error {
+		_, err := db.Exec("ATTACH DATABASE '" + view.absoluteDatabasePath + "' as docsdb;")
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
+			CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+			CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+			CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
+		`)
+
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	viewWriter, _ := NewViewWriter(connectionString, setupScripts, deleteScripts, updateScripts)
+	viewWriter.setupDatabase = setupDatabase
+	view.viewWriter = viewWriter
+
+	viewReader, _ := NewViewReader(connectionString, selectScripts)
+	viewReader.setupDatabase = setupDatabase
+	view.viewReader = viewReader
 
 	return view
 }
 
-func (view *View) Open() error {
-	db, err := sql.Open("sqlite3", view.connectionString)
-	if err != nil {
-		return err
-	}
-
-	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
-		Id						INTEGER PRIMARY KEY,
-		current_seq_id		  	TEXT,
-		next_seq_id		  		TEXT
-	) WITHOUT ROWID;
-
-	INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
-		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
-	`
-
-	if _, err = db.Exec(buildSQL); err != nil {
-		return err
-	}
-
-	_, err = db.Exec("ATTACH DATABASE '" + view.absoluteDatabasePath + "' as docsdb;")
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
-	`)
-	if err != nil {
-		return err
-	}
-
-	for _, x := range view.setupScripts {
-		if _, err = db.Exec(x.text); err != nil {
-			return err
-		}
-	}
-
-	sqlGetViewLastSeq := "SELECT current_seq_id FROM view_meta WHERE id = 1"
-	row := db.QueryRow(sqlGetViewLastSeq)
-	row.Scan(&view.currentSeqID)
-
-	view.con = db
-
-	return err
+type ViewReader interface {
+	Open() error
+	Close() error
+	Select(name string, values url.Values) ([]byte, error)
 }
 
-func (view *View) Close() error {
-	return view.con.Close()
+type DefaultViewReader struct {
+	connectionString string
+	selectScripts    map[string]Query
+	setupDatabase    func(db *sql.DB) error
+
+	con *sql.DB
 }
 
-func (view *View) Build(nextSeqID string) error {
-
-	if view.currentSeqID == nextSeqID {
-		return nil
-	}
-
-	db := view.con
-	tx, err := db.Begin()
-	defer tx.Rollback()
+func (vr *DefaultViewReader) Open() error {
+	db, err := sql.Open("sqlite3", vr.connectionString)
 	if err != nil {
-		panic(err)
+		return err
 	}
+	vr.con = db
 
-	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
-	if _, err := tx.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
-		panic(err)
-	}
-
-	for _, x := range view.deleteScripts {
-		values := make([]interface{}, len(x.params))
-		for i, p := range x.params {
-			if p == "begin_seq_id" {
-				values[i] = view.currentSeqID
-			}
-			if p == "end_seq_id" {
-				values[i] = nextSeqID
-			}
-		}
-		if _, err = tx.Exec(x.text, values...); err != nil {
-			return err
-		}
-	}
-
-	for _, x := range view.updateScripts {
-		values := make([]interface{}, len(x.params))
-		for i, p := range x.params {
-			if p == "begin_seq_id" {
-				values[i] = view.currentSeqID
-			}
-			if p == "end_seq_id" {
-				values[i] = nextSeqID
-			}
-		}
-		if _, err = tx.Exec(x.text, values...); err != nil {
-			return err
-		}
-	}
-
-	view.currentSeqID = nextSeqID
-
-	err = tx.Commit()
-	if err != nil {
-		panic(err)
-	}
+	vr.setupDatabase(db)
 
 	return nil
 }
 
-var viewResultValidation = regexp.MustCompile("sql: expected (\\d+) destination arguments in Scan, not 1")
+func (vr *DefaultViewReader) Close() error {
+	return vr.con.Close()
+}
 
-func (view *View) Select(name string, values url.Values) ([]byte, error) {
-
+func (vr *DefaultViewReader) Select(name string, values url.Values) ([]byte, error) {
 	var rs string
-	selectStmt := view.selectScripts[name]
+	selectStmt := vr.selectScripts[name]
 	pValues := make([]interface{}, len(selectStmt.params))
 	for i, p := range selectStmt.params {
 		pv := values.Get(p)
@@ -645,7 +618,7 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 		}
 	}
 
-	row := view.con.QueryRow(selectStmt.text, pValues...)
+	row := vr.con.QueryRow(selectStmt.text, pValues...)
 	err := row.Scan(&rs)
 	if err != nil {
 		o := viewResultValidation.FindAllStringSubmatch(err.Error(), -1)
@@ -657,9 +630,107 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 	return []byte(rs), nil
 }
 
-func (view *View) Vacuum() error {
-	if _, err := view.con.Exec("VACUUM"); err != nil {
+func NewViewReader(connectionString string, selectScripts map[string]Query) (*DefaultViewReader, error) {
+	viewReader := new(DefaultViewReader)
+	viewReader.connectionString = connectionString
+	viewReader.selectScripts = selectScripts
+	return viewReader, nil
+}
+
+type ViewWriter interface {
+	Open() error
+	Close() error
+	Build(nextSeqID string) error
+}
+
+type DefaultViewWriter struct {
+	connectionString string
+	setupScripts     []Query
+	deleteScripts    []Query
+	updateScripts    []Query
+
+	setupDatabase func(db *sql.DB) error
+	con           *sql.DB
+}
+
+func (vw *DefaultViewWriter) Open() error {
+	db, err := sql.Open("sqlite3", vw.connectionString)
+	if err != nil {
 		return err
 	}
+
+	tx, _ := db.Begin()
+
+	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
+		Id						INTEGER PRIMARY KEY,
+		current_seq_id		  	TEXT,
+		next_seq_id		  		TEXT
+	) WITHOUT ROWID;
+
+	INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
+		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+	`
+
+	if _, err = tx.Exec(buildSQL); err != nil {
+		return err
+	}
+
+	tx.Commit()
+
+	vw.setupDatabase(db)
+
+	tx, _ = db.Begin()
+
+	for _, x := range vw.setupScripts {
+		if _, err = tx.Exec(x.text); err != nil {
+			return err
+		}
+	}
+
+	tx.Commit()
+
+	vw.con = db
+
 	return nil
+}
+
+func (vw *DefaultViewWriter) Close() error {
+	return vw.con.Close()
+}
+
+func (vw *DefaultViewWriter) Build(nextSeqID string) error {
+	db := vw.con
+	tx, err := db.Begin()
+	defer tx.Rollback()
+	if err != nil {
+		panic(err)
+	}
+
+	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
+	if _, err := tx.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
+		panic(err)
+	}
+
+	for _, x := range vw.deleteScripts {
+		if _, err = tx.Exec(x.text); err != nil {
+			return err
+		}
+	}
+
+	for _, x := range vw.updateScripts {
+		if _, err = tx.Exec(x.text); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func NewViewWriter(connectionString string, setupScripts, deleteScripts, updateScripts []Query) (*DefaultViewWriter, error) {
+	viewWriter := new(DefaultViewWriter)
+	viewWriter.connectionString = connectionString
+	viewWriter.setupScripts = setupScripts
+	viewWriter.deleteScripts = deleteScripts
+	viewWriter.updateScripts = updateScripts
+	return viewWriter, nil
 }
