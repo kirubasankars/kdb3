@@ -153,7 +153,7 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	}
 
 	viewPath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
-	viewConnectionString := viewPath + "?_journal=MEMORY&cache=shared"
+	viewConnectionString := viewPath + "?_journal=MEMORY&cache=shared&_mutex=no"
 
 	view := mgr.serviceLocator.GetView(viewName, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
 	if err := view.Open(); err != nil {
@@ -501,7 +501,9 @@ func (view *View) Build(nextSeqID string) error {
 	}
 
 	err := view.viewWriter.Build(nextSeqID)
-	if err == nil {
+	if err != nil {
+		return err
+	} else {
 		view.currentSeqID = nextSeqID
 	}
 
@@ -566,11 +568,17 @@ func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *Desi
 		return nil
 	}
 
-	viewWriter, _ := NewViewWriter(connectionString, setupScripts, deleteScripts, updateScripts)
+	viewWriter, err := NewViewWriter(connectionString + "&mode=rwc", setupScripts, deleteScripts, updateScripts)
+	if err != nil {
+		return nil
+	}
 	viewWriter.setupDatabase = setupDatabase
 	view.viewWriter = viewWriter
 
-	viewReader, _ := NewViewReader(connectionString, selectScripts)
+	viewReader, err := NewViewReader(connectionString + "&mode=ro", selectScripts)
+	if err != nil {
+		return nil
+	}
 	viewReader.setupDatabase = setupDatabase
 	view.viewReader = viewReader
 
@@ -598,9 +606,7 @@ func (vr *DefaultViewReader) Open() error {
 	}
 	vr.con = db
 
-	vr.setupDatabase(db)
-
-	return nil
+	return vr.setupDatabase(db)
 }
 
 func (vr *DefaultViewReader) Close() error {
@@ -659,8 +665,10 @@ func (vw *DefaultViewWriter) Open() error {
 		return err
 	}
 
-	tx, _ := db.Begin()
-
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
 	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
 		Id						INTEGER PRIMARY KEY,
 		current_seq_id		  	TEXT,
@@ -675,11 +683,19 @@ func (vw *DefaultViewWriter) Open() error {
 		return err
 	}
 
-	tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	err = vw.setupDatabase(db)
+	if err != nil {
+		return err
+	}
 
-	vw.setupDatabase(db)
-
-	tx, _ = db.Begin()
+	tx, err = db.Begin()
+	if err != nil {
+		return err
+	}
 
 	for _, x := range vw.setupScripts {
 		if _, err = tx.Exec(x.text); err != nil {
@@ -687,8 +703,10 @@ func (vw *DefaultViewWriter) Open() error {
 		}
 	}
 
-	tx.Commit()
-
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
 	vw.con = db
 
 	return nil
