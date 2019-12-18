@@ -196,7 +196,7 @@ func (db *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, er
 	),
 	changes_object (obj) as
 	(
-		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', true)  END) as obj FROM all_changes_metadata
+		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
 	)
 	SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object`
 	row := db.tx.QueryRow(sqlGetChanges, since, since, limit)
