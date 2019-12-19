@@ -1,9 +1,9 @@
 package main
 
 import (
-	"net/url"
 	"database/sql"
 	"fmt"
+	"net/url"
 )
 
 type ViewReader interface {
@@ -13,9 +13,9 @@ type ViewReader interface {
 }
 
 type DefaultViewReader struct {
-	connectionString string
-	selectScripts    map[string]Query
-	setupDatabase    func(db *sql.DB) error
+	connectionString     string
+	absoluteDatabasePath string
+	selectScripts        map[string]Query
 
 	con *sql.DB
 }
@@ -27,7 +27,7 @@ func (vr *DefaultViewReader) Open() error {
 	}
 	vr.con = db
 
-	return vr.setupDatabase(db)
+	return setupDatabase(db, vr.absoluteDatabasePath)
 }
 
 func (vr *DefaultViewReader) Close() error {
@@ -57,10 +57,76 @@ func (vr *DefaultViewReader) Select(name string, values url.Values) ([]byte, err
 	return []byte(rs), nil
 }
 
-func NewViewReader(connectionString string, selectScripts map[string]Query) (*DefaultViewReader, error) {
+func NewViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) *DefaultViewReader {
 	viewReader := new(DefaultViewReader)
 	viewReader.connectionString = connectionString
+	viewReader.absoluteDatabasePath = absoluteDatabasePath
 	viewReader.selectScripts = selectScripts
-	return viewReader, nil
+	return viewReader
 }
 
+type ViewReaderPool interface {
+	Open() error
+	Borrow() ViewReader
+	Return(r ViewReader)
+	Close() error
+}
+
+type DefaultViewReaderPool struct {
+	connectionString     string
+	absoluteDatabasePath string
+	selectScripts        map[string]Query
+
+	serviceLocator ServiceLocator
+	pool           chan ViewReader
+	limit          int
+}
+
+func (p *DefaultViewReaderPool) Open() error {
+	for x := 0; x < p.limit; x++ {
+		r := p.serviceLocator.GetViewReader(p.connectionString, p.absoluteDatabasePath, p.selectScripts)
+		err := r.Open()
+		if err != nil {
+			panic(err)
+		}
+		p.pool <- r
+	}
+	return nil
+}
+
+func (p *DefaultViewReaderPool) Borrow() ViewReader {
+	return <-p.pool
+}
+
+func (p *DefaultViewReaderPool) Return(r ViewReader) {
+	p.pool <- r
+}
+
+func (p *DefaultViewReaderPool) Close() error {
+	var err error
+	for {
+		var r ViewReader
+		select {
+		case r = <-p.pool:
+			err = r.Close()
+		default:
+		}
+		if r == nil {
+			break
+		}
+	}
+
+	return err
+}
+
+func NewViewReaderPool(connectionString, absoluteDatabasePath string, limit int, serviceLocator ServiceLocator, selectScripts map[string]Query) ViewReaderPool {
+	readers := DefaultViewReaderPool{
+		connectionString:     connectionString,
+		absoluteDatabasePath: absoluteDatabasePath,
+		pool:                 make(chan ViewReader, limit),
+		limit:                limit,
+		selectScripts:        selectScripts,
+		serviceLocator:       serviceLocator,
+	}
+	return &readers
+}

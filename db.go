@@ -211,7 +211,7 @@ func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, s
 
 	db.idSeq = NewSequenceUUIDGenarator()
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
-	db.readers = serviceLocator.GetDatabaseReaderPool(connectionString + "&mode=ro", 4)
+	db.readers = NewDatabaseReaderPool(connectionString+"&mode=ro", 4, serviceLocator)
 	db.writer = serviceLocator.GetDatabaseWriter(connectionString + "&mode=rwc")
 
 	err := db.Open(createIfNotExists)

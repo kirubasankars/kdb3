@@ -11,13 +11,13 @@ type ViewWriter interface {
 }
 
 type DefaultViewWriter struct {
-	connectionString string
-	setupScripts     []Query
-	deleteScripts    []Query
-	updateScripts    []Query
+	connectionString     string
+	absoluteDatabasePath string
+	setupScripts         []Query
+	deleteScripts        []Query
+	updateScripts        []Query
 
-	setupDatabase func(db *sql.DB) error
-	con           *sql.DB
+	con *sql.DB
 }
 
 func (vw *DefaultViewWriter) Open() error {
@@ -48,7 +48,7 @@ func (vw *DefaultViewWriter) Open() error {
 	if err != nil {
 		return err
 	}
-	err = vw.setupDatabase(db)
+	err = setupDatabase(db, vw.absoluteDatabasePath)
 	if err != nil {
 		return err
 	}
@@ -105,11 +105,12 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 	return tx.Commit()
 }
 
-func NewViewWriter(connectionString string, setupScripts, deleteScripts, updateScripts []Query) (*DefaultViewWriter, error) {
+func NewViewWriter(connectionString, absoluteDatabasePath string, setupScripts, deleteScripts, updateScripts []Query) *DefaultViewWriter {
 	viewWriter := new(DefaultViewWriter)
 	viewWriter.connectionString = connectionString
+	viewWriter.absoluteDatabasePath = absoluteDatabasePath
 	viewWriter.setupScripts = setupScripts
 	viewWriter.deleteScripts = deleteScripts
 	viewWriter.updateScripts = updateScripts
-	return viewWriter, nil
+	return viewWriter
 }
