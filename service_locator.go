@@ -4,12 +4,12 @@ type ServiceLocator interface {
 	GetFileHandler() FileHandler
 
 	GetDatabaseWriter(connectionString string) DatabaseWriter
-
 	GetDatabaseReader(connectionString string) DatabaseReader
-	GetDatabaseReaderPool(connectionString string, limit int) DatabaseReaderPool
 
 	GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager
 	GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View
+
+	GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader
 }
 
 type DefaultServiceLocator struct {
@@ -27,11 +27,6 @@ func (sl *DefaultServiceLocator) GetDatabaseWriter(connectionString string) Data
 	return databaseWriter
 }
 
-func (sl *DefaultServiceLocator) GetDatabaseReaderPool(connectionString string, limit int) DatabaseReaderPool {
-	databaseReaders := NewDatabaseReaderPool(connectionString, limit, sl)
-	return databaseReaders
-}
-
 func (sl *DefaultServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
 	databaseReader := new(DefaultDatabaseReader)
 	databaseReader.connectionString = connectionString
@@ -43,7 +38,11 @@ func (sl *DefaultServiceLocator) GetViewManager(dbName, absoluteDatabasePath, vi
 }
 
 func (sl *DefaultServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
-	return NewView(viewName, connectionString, absoluteDatabasePath, ddoc, viewManager)
+	return NewView(viewName, connectionString, absoluteDatabasePath, ddoc, viewManager, sl)
+}
+
+func (sl *DefaultServiceLocator) GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader {
+	return NewViewReader(connectionString, absoluteDatabasePath, selectScripts)
 }
 
 func NewServiceLocator() ServiceLocator {

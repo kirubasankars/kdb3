@@ -247,7 +247,7 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 
 func TestReaderPool(t *testing.T) {
 	serviceLocator := new(DefaultServiceLocator)
-	readers := serviceLocator.GetDatabaseReaderPool(testConnectionString, 1)
+	readers := NewDatabaseReaderPool(testConnectionString, 1, serviceLocator)
 	readers.Open()
 	r1 := readers.Borrow()
 

@@ -469,21 +469,20 @@ type View struct {
 
 	currentSeqID string
 
-	viewReader ViewReader
-	viewWriter ViewWriter
+	viewReaderPool ViewReaderPool
+	viewWriter     ViewWriter
 
 	mux sync.Mutex
 }
 
 func (view *View) Open() error {
 	view.viewWriter.Open()
-	view.viewReader.Open()
-
+	view.viewReaderPool.Open()
 	return nil
 }
 
 func (view *View) Close() error {
-	view.viewReader.Close()
+	view.viewReaderPool.Close()
 	view.viewWriter.Close()
 	return nil
 }
@@ -503,22 +502,42 @@ func (view *View) Build(nextSeqID string) error {
 	err := view.viewWriter.Build(nextSeqID)
 	if err != nil {
 		return err
-	} else {
-		view.currentSeqID = nextSeqID
 	}
+
+	view.currentSeqID = nextSeqID
 
 	return nil
 }
 
 func (view *View) Select(name string, values url.Values) ([]byte, error) {
-	return view.viewReader.Select(name, values)
+	viewReader := view.viewReaderPool.Borrow()
+	defer view.viewReaderPool.Return(viewReader)
+	return viewReader.Select(name, values)
 }
 
 func (view *View) Vacuum() error {
 	return nil
 }
 
-func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
+func setupDatabase(db *sql.DB, absoluteDatabasePath string) error {
+	_, err := db.Exec("ATTACH DATABASE '" + absoluteDatabasePath + "' as docsdb;")
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
+	`)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager, serviceLocator ServiceLocator) *View {
 	view := &View{}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
@@ -550,39 +569,8 @@ func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *Desi
 		selectScripts[k] = Query{text: text, params: params}
 	}
 
-	setupDatabase := func(db *sql.DB) error {
-		_, err := db.Exec("ATTACH DATABASE '" + view.absoluteDatabasePath + "' as docsdb;")
-		if err != nil {
-			return err
-		}
-
-		_, err = db.Exec(`
-			CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-			CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-			CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
-		`)
-
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	viewWriter, err := NewViewWriter(connectionString + "&mode=rwc", setupScripts, deleteScripts, updateScripts)
-	if err != nil {
-		return nil
-	}
-	viewWriter.setupDatabase = setupDatabase
-	view.viewWriter = viewWriter
-
-	viewReader, err := NewViewReader(connectionString + "&mode=ro", selectScripts)
-	if err != nil {
-		return nil
-	}
-	viewReader.setupDatabase = setupDatabase
-	view.viewReader = viewReader
+	view.viewWriter = NewViewWriter(connectionString+"&mode=rwc", absoluteDatabasePath, setupScripts, deleteScripts, updateScripts)
+	view.viewReaderPool = NewViewReaderPool(connectionString+"&mode=ro", absoluteDatabasePath, 4, serviceLocator, selectScripts)
 
 	return view
 }
-
-
