@@ -78,12 +78,21 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 }
 
 func (mgr *DefaultViewManager) Initialize(db *Database) error {
+	mgr.dbName = db.Name
+	mgr.viewPath = db.ViewPath
+
+	absoluteDBPath, err := filepath.Abs(db.DBPath)
+	if err != nil {
+		panic(err)
+	}
+	mgr.absoluteDatabasePath = absoluteDBPath
 
 	mgr.rwmux = sync.RWMutex{}
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
 
+	//load all design docs into memory
 	docs, _ := db.GetAllDesignDocuments()
 	for _, x := range docs {
 		ddoc := &DesignDocument{}
@@ -94,7 +103,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 		mgr.ddocs[x.ID] = ddoc
 	}
 
-	//load current view files
+	//load all view files names for this database into memory
 	viewFiles, _ := mgr.ListViewFiles()
 	for _, x := range viewFiles {
 		if _, ok := mgr.viewFiles[x]; !ok {
@@ -102,7 +111,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 		}
 	}
 
-	// view file ref counter
+	// calculate view file with views reference counter
 	for _, ddoc := range mgr.ddocs {
 		for vname, ddocv := range ddoc.Views {
 			viewFile := mgr.dbName + "$" + mgr.CalculateSignature(ddocv)
@@ -114,6 +123,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 		}
 	}
 
+	// delete unused view files, if reference counter is zero
 	for fileName, x := range mgr.viewFiles {
 		if len(x) <= 0 {
 			delete(mgr.viewFiles, fileName)
@@ -140,9 +150,9 @@ func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
 }
 
 func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
-
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
+
 	qualifiedViewName := ddoc.ID + "$" + viewName
 	if _, ok := mgr.views[qualifiedViewName]; ok {
 		return nil
@@ -165,19 +175,10 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 	return nil
 }
 
-func (mgr *DefaultViewManager) BuildView(qualifiedViewName string, nextSeqID string) error {
-	view, ok := mgr.views[qualifiedViewName]
-	if !ok {
-		return ErrViewNotFound
-	}
-	return view.Build(nextSeqID)
-}
-
 func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	ddocID := doc.ID
 	qualifiedViewName := ddocID + "$" + viewName
 
-	mgr.rwmux.RLock()
 	unlocked := false
 	ReadUnlock := func() {
 		if !unlocked {
@@ -189,6 +190,8 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 		unlocked = false
 		mgr.rwmux.RLock()
 	}
+
+	ResetReadUnlock()
 	defer ReadUnlock()
 
 	view, ok := mgr.views[qualifiedViewName]
@@ -228,33 +231,36 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 			if err != nil {
 				return nil, err
 			}
+
+			view = mgr.views[qualifiedViewName]
+
 			ResetReadUnlock()
 		}
 
-		err := mgr.BuildView(qualifiedViewName, updateSeqID)
+		err := view.Build(updateSeqID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	view = mgr.views[qualifiedViewName]
-
 	return view.Select(selectName, values)
 }
 
 func (mgr *DefaultViewManager) Close() error {
-	mgr.rwmux.RLock()
-	defer mgr.rwmux.RUnlock()
-	for _, v := range mgr.views {
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
+
+	for k, v := range mgr.views {
 		v.Close()
+		delete(mgr.views, k)
 	}
 
 	return nil
 }
 
 func (mgr *DefaultViewManager) Vacuum() error {
-	mgr.rwmux.RLock()
-	defer mgr.rwmux.RUnlock()
+	mgr.rwmux.Lock()
+	defer mgr.rwmux.Unlock()
 	for _, v := range mgr.views {
 		v.Vacuum()
 	}
@@ -290,6 +296,16 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 				qualifiedViewName string = ddocID + "$" + vname
 			)
 			newViewFile = mgr.dbName + "$" + mgr.CalculateSignature(nddv)
+
+			if currentDDoc, ok := mgr.ddocs[ddocID]; ok {
+				if cddv, _ := currentDDoc.Views[vname]; cddv != nil {
+					currentViewFile = mgr.dbName + "$" + mgr.CalculateSignature(cddv)
+				}
+			}
+			if newViewFile == currentViewFile {
+				continue
+			}
+
 			if _, ok := mgr.viewFiles[newViewFile]; !ok {
 				mgr.viewFiles[newViewFile] = make(map[string]bool)
 			}
@@ -298,12 +314,6 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 			if _, ok := mgr.views[qualifiedViewName]; ok {
 				mgr.views[qualifiedViewName].Close()
 				delete(mgr.views, qualifiedViewName)
-			}
-
-			if currentDDoc, ok := mgr.ddocs[ddocID]; ok {
-				if cddv, _ := currentDDoc.Views[vname]; cddv != nil {
-					currentViewFile = mgr.dbName + "$" + mgr.CalculateSignature(cddv)
-				}
 			}
 
 			//To takecare old one
@@ -341,6 +351,42 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 	}
 
 	return nil
+}
+
+func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+	content := ""
+	if ddocv != nil {
+		crc32q := crc32.MakeTable(0xD5828281)
+		if ddocv.Select != nil {
+			for _, x := range ddocv.Setup {
+				content += x
+			}
+		}
+		if ddocv.Update != nil {
+			for _, x := range ddocv.Update {
+				content += x
+			}
+		}
+		if ddocv.Delete != nil {
+			for _, x := range ddocv.Delete {
+				content += x
+			}
+		}
+		v := crc32.Checksum([]byte(content), crc32q)
+		return strconv.Itoa(int(v))
+	}
+	return ""
+}
+
+func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string) {
+	re := regexp.MustCompile(`\$\{(.*?)\}`)
+	o := re.FindAllStringSubmatch(query, -1)
+	var params []string
+	for _, x := range o {
+		params = append(params, x[1])
+	}
+	text := re.ReplaceAllString(query, "?")
+	return text, params
 }
 
 func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
@@ -411,48 +457,8 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
-	content := ""
-	if ddocv != nil {
-		crc32q := crc32.MakeTable(0xD5828281)
-		if ddocv.Select != nil {
-			for _, x := range ddocv.Setup {
-				content += x
-			}
-		}
-		if ddocv.Update != nil {
-			for _, x := range ddocv.Update {
-				content += x
-			}
-		}
-		if ddocv.Delete != nil {
-			for _, x := range ddocv.Delete {
-				content += x
-			}
-		}
-		v := crc32.Checksum([]byte(content), crc32q)
-		return strconv.Itoa(int(v))
-	}
-	return ""
-}
-
-func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string) {
-	re := regexp.MustCompile(`\$\{(.*?)\}`)
-	o := re.FindAllStringSubmatch(query, -1)
-	var params []string
-	for _, x := range o {
-		params = append(params, x[1])
-	}
-	text := re.ReplaceAllString(query, "?")
-	return text, params
-}
-
-func NewViewManager(dbName, absoluteDatabasePath, viewPath string, serviceLocator ServiceLocator) *DefaultViewManager {
-	mgr := &DefaultViewManager{
-		absoluteDatabasePath: absoluteDatabasePath,
-		viewPath:             viewPath,
-		dbName:               dbName,
-	}
+func NewViewManager(serviceLocator ServiceLocator) *DefaultViewManager {
+	mgr := &DefaultViewManager{}
 	mgr.views = make(map[string]*View)
 	mgr.ddocs = make(map[string]*DesignDocument)
 	mgr.viewFiles = make(map[string]map[string]bool)

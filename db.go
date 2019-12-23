@@ -11,6 +11,7 @@ type Database struct {
 	Name      string
 	UpdateSeq string
 	DBPath    string
+	ViewPath  string
 
 	mux         sync.Mutex
 	readers     DatabaseReaderPool
@@ -46,6 +47,18 @@ func (db *Database) Open(createIfNotExists bool) error {
 
 	db.UpdateSeq = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
+
+	if createIfNotExists {
+		err := db.viewManager.SetupViews(db)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = db.viewManager.Initialize(db)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -207,35 +220,16 @@ func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, s
 		}
 	}
 
-	db := &Database{Name: name, DBPath: path}
-
+	db := &Database{Name: name, DBPath: path, ViewPath: defaultViewPath}
 	db.idSeq = NewSequenceUUIDGenarator()
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
 	db.readers = NewDatabaseReaderPool(connectionString+"&mode=ro", 4, serviceLocator)
 	db.writer = serviceLocator.GetDatabaseWriter(connectionString + "&mode=rwc")
+	db.viewManager = serviceLocator.GetViewManager()
 
 	err := db.Open(createIfNotExists)
 	if err != nil {
 		panic(err)
-	}
-
-	absoluteDBPath, err := filepath.Abs(path)
-	if err != nil {
-		panic(err)
-	}
-
-	db.viewManager = serviceLocator.GetViewManager(name, absoluteDBPath, defaultViewPath)
-
-	if createIfNotExists {
-		err := db.viewManager.SetupViews(db)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	err = db.viewManager.Initialize(db)
-	if err != nil {
-		return nil, err
 	}
 
 	return db, nil

@@ -259,7 +259,7 @@ func (sl *FakeServiceLocator) GetDatabaseReader(connectionString string) Databas
 	return &FakeDatabaseReader{}
 }
 
-func (sl *FakeServiceLocator) GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager {
+func (sl *FakeServiceLocator) GetViewManager() ViewManager {
 	return &FakeViewManager{}
 }
 
@@ -278,6 +278,9 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	l := db.GetLastUpdateSequence()
@@ -364,6 +367,9 @@ func TestDBStat(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	stat := db.Stat()
@@ -525,6 +531,9 @@ func TestDBPutDocumentNewDocID(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{}`))
@@ -554,6 +563,9 @@ func TestDBPutDocumentNewDocWithID(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "4"}`))
@@ -583,6 +595,9 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 	writer.Reset()
 
@@ -618,6 +633,9 @@ func Test1DBPutDocumentConflict(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 	writer.Reset()
 
@@ -652,6 +670,9 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
@@ -681,6 +702,9 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
@@ -707,6 +731,9 @@ func TestDBPutDocumentBeginError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.beginerr = true
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
@@ -741,6 +768,9 @@ func TestDBPutDocumentCommitError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.commiterr = true
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
@@ -775,6 +805,9 @@ func TestDBPutDocumentRollbackError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.roolbackerr = true
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
@@ -794,6 +827,9 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.putdocerror = true
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
@@ -828,6 +864,9 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 	db.readers = pool
 	db.writer = writer
 	writer.getdocerror = true
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
@@ -861,6 +900,9 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "2", "_version":2}`))
@@ -896,6 +938,9 @@ func TestDBDeleteDocument(t *testing.T) {
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
 	db.writer = writer
+	sl := &FakeServiceLocator{}
+	db.viewManager = sl.GetViewManager()
+
 	db.Open(false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
