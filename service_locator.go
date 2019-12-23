@@ -6,7 +6,7 @@ type ServiceLocator interface {
 	GetDatabaseWriter(connectionString string) DatabaseWriter
 	GetDatabaseReader(connectionString string) DatabaseReader
 
-	GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager
+	GetViewManager() ViewManager
 	GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View
 
 	GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader
@@ -33,8 +33,8 @@ func (sl *DefaultServiceLocator) GetDatabaseReader(connectionString string) Data
 	return databaseReader
 }
 
-func (sl *DefaultServiceLocator) GetViewManager(dbName, absoluteDatabasePath, viewPath string) ViewManager {
-	return NewViewManager(dbName, absoluteDatabasePath, viewPath, sl)
+func (sl *DefaultServiceLocator) GetViewManager() ViewManager {
+	return NewViewManager(sl)
 }
 
 func (sl *DefaultServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
