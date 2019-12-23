@@ -1035,14 +1035,13 @@ func TestDatabaseVacuum(t *testing.T) {
 	err = db.Vacuum()
 }
 
-/*
 func TestDatabaseReOpen(t *testing.T) {
 	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("unexpected err %s, failed", err)
 	}
 
-	db.Open(false)
+	//db.Open(false)
 	doc, err := ParseDocument([]byte(`{"_id":1}`))
 	doc, err = db.GetDocument(doc, false)
 	db.Close()
@@ -1051,8 +1050,8 @@ func TestDatabaseReOpen(t *testing.T) {
 	doc, err = ParseDocument([]byte(`{"_id":1}`))
 	doc, err = db.GetDocument(doc, false)
 	db.Close()
+
 }
-*/
 
 func TestDatabaseSelectView(t *testing.T) {
 	kdb.deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
