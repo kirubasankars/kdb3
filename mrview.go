@@ -49,8 +49,8 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddoc.Views = make(map[string]*DesignDocumentView)
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
-	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes)")
-	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents WHERE deleted = 0")
+	ddv.Scripts = append(ddv.Scripts, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)")
+	ddv.Scripts = append(ddv.Scripts, "INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents WHERE deleted = 0")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
@@ -362,13 +362,8 @@ func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) str
 				content += x
 			}
 		}
-		if ddocv.Update != nil {
-			for _, x := range ddocv.Update {
-				content += x
-			}
-		}
-		if ddocv.Delete != nil {
-			for _, x := range ddocv.Delete {
+		if ddocv.Scripts != nil {
+			for _, x := range ddocv.Scripts {
 				content += x
 			}
 		}
@@ -405,11 +400,11 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	defer tx.Rollback()
 	defer db.Close()
 
-	_, err = tx.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '' as doc_id;")
+	_, err = tx.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '', 0 as doc_id;")
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, '{}' as data ;")
+	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, 0, '{}' as data ;")
 	if err != nil {
 		return err
 	}
@@ -427,18 +422,7 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 			break
 		}
 
-		for _, x := range v.Delete {
-			_, err := tx.Exec(x)
-			if err != nil {
-				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
-			}
-		}
-
-		if sqlErr != "" {
-			break
-		}
-
-		for _, x := range v.Update {
+		for _, x := range v.Scripts {
 			_, err := tx.Exec(x)
 			if err != nil {
 				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
@@ -555,27 +539,22 @@ func NewView(viewName, connectionString, absoluteDatabasePath string, ddoc *Desi
 	view.absoluteDatabasePath = absoluteDatabasePath
 
 	setupScripts := *new([]Query)
-	deleteScripts := *new([]Query)
-	updateScripts := *new([]Query)
+	scripts := *new([]Query)
 	selectScripts := make(map[string]Query)
 	designDocView := ddoc.Views[viewName]
 
 	for _, text := range designDocView.Setup {
 		setupScripts = append(setupScripts, Query{text: text})
 	}
-	for _, text := range designDocView.Delete {
-		deleteScripts = append(deleteScripts, Query{text: text})
+	for _, text := range designDocView.Scripts {
+		scripts = append(scripts, Query{text: text})
 	}
-	for _, text := range designDocView.Update {
-		updateScripts = append(updateScripts, Query{text: text})
-	}
-
 	for k, v := range designDocView.Select {
 		text, params := viewManager.ParseQueryParams(v)
 		selectScripts[k] = Query{text: text, params: params}
 	}
 
-	view.viewWriter = NewViewWriter(connectionString+"&mode=rwc", absoluteDatabasePath, setupScripts, deleteScripts, updateScripts)
+	view.viewWriter = NewViewWriter(connectionString+"&mode=rwc", absoluteDatabasePath, setupScripts, scripts)
 	view.viewReaderPool = NewViewReaderPool(connectionString+"&mode=ro", absoluteDatabasePath, 4, serviceLocator, selectScripts)
 
 	return view

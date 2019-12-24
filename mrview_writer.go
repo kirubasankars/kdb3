@@ -14,8 +14,7 @@ type DefaultViewWriter struct {
 	connectionString     string
 	absoluteDatabasePath string
 	setupScripts         []Query
-	deleteScripts        []Query
-	updateScripts        []Query
+	scripts              []Query
 
 	con *sql.DB
 }
@@ -90,13 +89,7 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 		panic(err)
 	}
 
-	for _, x := range vw.deleteScripts {
-		if _, err = tx.Exec(x.text); err != nil {
-			return err
-		}
-	}
-
-	for _, x := range vw.updateScripts {
+	for _, x := range vw.scripts {
 		if _, err = tx.Exec(x.text); err != nil {
 			return err
 		}
@@ -105,12 +98,11 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 	return tx.Commit()
 }
 
-func NewViewWriter(connectionString, absoluteDatabasePath string, setupScripts, deleteScripts, updateScripts []Query) *DefaultViewWriter {
+func NewViewWriter(connectionString, absoluteDatabasePath string, setupScripts, scripts []Query) *DefaultViewWriter {
 	viewWriter := new(DefaultViewWriter)
 	viewWriter.connectionString = connectionString
 	viewWriter.absoluteDatabasePath = absoluteDatabasePath
 	viewWriter.setupScripts = setupScripts
-	viewWriter.deleteScripts = deleteScripts
-	viewWriter.updateScripts = updateScripts
+	viewWriter.scripts = scripts
 	return viewWriter
 }
