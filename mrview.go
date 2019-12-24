@@ -50,7 +50,7 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 	ddv := &DesignDocumentView{}
 	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
 	ddv.Delete = append(ddv.Delete, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes)")
-	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents")
+	ddv.Update = append(ddv.Update, "INSERT INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents WHERE deleted = 0")
 	ddv.Select = make(map[string]string)
 	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
 	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
@@ -405,11 +405,11 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	defer tx.Rollback()
 	defer db.Close()
 
-	_, err = tx.Exec("CREATE VIEW latest_changes (doc_id) AS select '' as doc_id;")
+	_, err = tx.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '' as doc_id;")
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, data) AS select '' as doc_id, 1 as version, '{}' as data ;")
+	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, '{}' as data ;")
 	if err != nil {
 		return err
 	}
@@ -532,7 +532,7 @@ func setupDatabase(db *sql.DB, absoluteDatabasePath string) error {
 	}
 
 	_, err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT doc_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
 		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
 		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
 	`)

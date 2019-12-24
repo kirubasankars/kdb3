@@ -5,7 +5,7 @@ import (
 )
 
 type DatabaseWriter interface {
-	Open() error
+	Open(connectionString string) error
 	Close() error
 
 	Begin() error
@@ -26,8 +26,9 @@ type DefaultDatabaseWriter struct {
 	tx               *sql.Tx
 }
 
-func (writer *DefaultDatabaseWriter) Open() error {
-	con, err := sql.Open("sqlite3", writer.connectionString)
+func (writer *DefaultDatabaseWriter) Open(connectionString string) error {
+	writer.connectionString = connectionString
+	con, err := sql.Open("sqlite3", connectionString)
 	if err != nil {
 		return err
 	}
@@ -71,10 +72,10 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(doc_id, version, kind, deleted);
+			(version, kind, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
-			(seq_id);
+			(seq_id, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
 			(kind) WHERE kind IS NOT NULL;

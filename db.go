@@ -25,14 +25,14 @@ func (db *Database) ValidateDesignDocument(doc *Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
 }
 
-func (db *Database) Open(createIfNotExists bool) error {
+func (db *Database) Open(connectionString string, createIfNotExists bool) error {
 
-	err := db.writer.Open()
+	err := db.writer.Open(connectionString + "&mode=rwc")
 	if err != nil {
 		panic(err)
 	}
 
-	err = db.readers.Open()
+	err = db.readers.Open(connectionString + "&mode=ro")
 	if err != nil {
 		panic(err)
 	}
@@ -64,6 +64,9 @@ func (db *Database) Open(createIfNotExists bool) error {
 }
 
 func (db *Database) Close() error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
 	db.viewManager.Close()
 	db.writer.Close()
 	db.readers.Close()
@@ -72,10 +75,10 @@ func (db *Database) Close() error {
 
 func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
-	writer := db.writer
-
 	db.mux.Lock()
 	defer db.mux.Unlock()
+
+	writer := db.writer
 
 	err := writer.Begin()
 	defer writer.Rollback()
@@ -119,6 +122,11 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	return newDoc, nil
 }
 
+func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
+	doc.Deleted = true
+	return db.PutDocument(doc)
+}
+
 func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.readers.Borrow()
@@ -148,11 +156,6 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	defer reader.Commit()
 
 	return reader.GetAllDesignDocuments()
-}
-
-func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
-	doc.Deleted = true
-	return db.PutDocument(doc)
 }
 
 func (db *Database) GetLastUpdateSequence() string {
@@ -223,11 +226,11 @@ func NewDatabase(name, dbPath, defaultViewPath string, createIfNotExists bool, s
 	db := &Database{Name: name, DBPath: path, ViewPath: defaultViewPath}
 	db.idSeq = NewSequenceUUIDGenarator()
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
-	db.readers = NewDatabaseReaderPool(connectionString+"&mode=ro", 4, serviceLocator)
-	db.writer = serviceLocator.GetDatabaseWriter(connectionString + "&mode=rwc")
+	db.readers = NewDatabaseReaderPool(4, serviceLocator)
+	db.writer = serviceLocator.GetDatabaseWriter()
 	db.viewManager = serviceLocator.GetViewManager()
 
-	err := db.Open(createIfNotExists)
+	err := db.Open(connectionString, createIfNotExists)
 	if err != nil {
 		panic(err)
 	}

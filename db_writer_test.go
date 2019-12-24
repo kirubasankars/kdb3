@@ -11,8 +11,8 @@ func TestWriterPutDocument(t *testing.T) {
 	os.Remove(testConnectionString)
 
 	serviceLocator := new(DefaultServiceLocator)
-	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
-	writer.Open()
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
+	writer.Open(testConnectionString)
 
 	writer.Begin()
 
@@ -136,8 +136,8 @@ func TestWriterDeleteDocument(t *testing.T) {
 	os.Remove(testConnectionString)
 
 	serviceLocator := new(DefaultServiceLocator)
-	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
-	writer.Open()
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
+	writer.Open(testConnectionString)
 
 	writer.Begin()
 
@@ -178,8 +178,8 @@ func TestWriterDocNotFound(t *testing.T) {
 	os.Remove(testConnectionString)
 
 	serviceLocator := new(DefaultServiceLocator)
-	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
-	writer.Open()
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
+	writer.Open(testConnectionString)
 
 	writer.Begin()
 

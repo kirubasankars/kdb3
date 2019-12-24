@@ -3,8 +3,8 @@ package main
 type ServiceLocator interface {
 	GetFileHandler() FileHandler
 
-	GetDatabaseWriter(connectionString string) DatabaseWriter
-	GetDatabaseReader(connectionString string) DatabaseReader
+	GetDatabaseWriter() DatabaseWriter
+	GetDatabaseReader() DatabaseReader
 
 	GetViewManager() ViewManager
 	GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View
@@ -20,16 +20,14 @@ func (sl *DefaultServiceLocator) GetFileHandler() FileHandler {
 	return sl.fileHandler
 }
 
-func (sl *DefaultServiceLocator) GetDatabaseWriter(connectionString string) DatabaseWriter {
+func (sl *DefaultServiceLocator) GetDatabaseWriter() DatabaseWriter {
 	databaseWriter := new(DefaultDatabaseWriter)
-	databaseWriter.connectionString = connectionString
 	databaseWriter.reader = new(DefaultDatabaseReader)
 	return databaseWriter
 }
 
-func (sl *DefaultServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
+func (sl *DefaultServiceLocator) GetDatabaseReader() DatabaseReader {
 	databaseReader := new(DefaultDatabaseReader)
-	databaseReader.connectionString = connectionString
 	return databaseReader
 }
 
