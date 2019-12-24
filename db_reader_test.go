@@ -12,8 +12,8 @@ func setupTestDatabaseWithWriter() error {
 	os.Remove(testConnectionString)
 
 	serviceLocator := new(DefaultServiceLocator)
-	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter(testConnectionString)
-	err := writer.Open()
+	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
+	err := writer.Open(testConnectionString)
 	if err != nil {
 		return err
 	}
@@ -65,8 +65,8 @@ func TestReaderGetDocumentByID(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -87,8 +87,8 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -109,8 +109,8 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -131,8 +131,8 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -153,8 +153,8 @@ func TestReaderGetDocumentCount(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -176,8 +176,8 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -199,8 +199,8 @@ func TestReaderGetChanges(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":true},{"seq":"seqID1","version":1,"id":"1"}]}`
@@ -221,8 +221,8 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 	}
 
 	serviceLocator := new(DefaultServiceLocator)
-	var reader DatabaseReader = serviceLocator.GetDatabaseReader(testConnectionString)
-	reader.Open()
+	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
+	reader.Open(testConnectionString)
 
 	reader.Begin()
 
@@ -247,8 +247,8 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 
 func TestReaderPool(t *testing.T) {
 	serviceLocator := new(DefaultServiceLocator)
-	readers := NewDatabaseReaderPool(testConnectionString, 1, serviceLocator)
-	readers.Open()
+	readers := NewDatabaseReaderPool(1, serviceLocator)
+	readers.Open(testConnectionString)
 	r1 := readers.Borrow()
 
 	var wg sync.WaitGroup

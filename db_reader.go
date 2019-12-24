@@ -6,7 +6,7 @@ import (
 )
 
 type DatabaseReader interface {
-	Open() error
+	Open(connectionString string) error
 	Close() error
 	Begin() error
 	Commit() error
@@ -25,13 +25,12 @@ type DatabaseReader interface {
 }
 
 type DefaultDatabaseReader struct {
-	connectionString string
-	conn             *sql.DB
-	tx               *sql.Tx
+	conn *sql.DB
+	tx   *sql.Tx
 }
 
-func (reader *DefaultDatabaseReader) Open() error {
-	con, err := sql.Open("sqlite3", reader.connectionString)
+func (reader *DefaultDatabaseReader) Open(connectionString string) error {
+	con, err := sql.Open("sqlite3", connectionString)
 	if err != nil {
 		return err
 	}
@@ -235,23 +234,22 @@ func (reader *DefaultDatabaseReader) Close() error {
 }
 
 type DatabaseReaderPool interface {
-	Open() error
+	Open(connectionString string) error
 	Borrow() DatabaseReader
 	Return(r DatabaseReader)
 	Close() error
 }
 
 type DefaultDatabaseReaderPool struct {
-	path           string
 	pool           chan DatabaseReader
 	limit          int
 	serviceLocator ServiceLocator
 }
 
-func (p *DefaultDatabaseReaderPool) Open() error {
+func (p *DefaultDatabaseReaderPool) Open(connectionString string) error {
 	for x := 0; x < p.limit; x++ {
-		r := p.serviceLocator.GetDatabaseReader(p.path)
-		err := r.Open()
+		r := p.serviceLocator.GetDatabaseReader()
+		err := r.Open(connectionString)
 		if err != nil {
 			panic(err)
 		}
@@ -268,6 +266,7 @@ func (p *DefaultDatabaseReaderPool) Return(r DatabaseReader) {
 	p.pool <- r
 }
 
+// TODO: close all connections (may be wait) by limit
 func (p *DefaultDatabaseReaderPool) Close() error {
 	var err error
 	for {
@@ -285,9 +284,8 @@ func (p *DefaultDatabaseReaderPool) Close() error {
 	return err
 }
 
-func NewDatabaseReaderPool(connectionString string, limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
+func NewDatabaseReaderPool(limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
 	readers := DefaultDatabaseReaderPool{
-		path:           connectionString,
 		pool:           make(chan DatabaseReader, limit),
 		limit:          limit,
 		serviceLocator: serviceLocator,
