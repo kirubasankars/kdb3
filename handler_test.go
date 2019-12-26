@@ -270,6 +270,34 @@ func TestHandlerGetChanges(t *testing.T) {
 		t.Errorf(`failed`)
 	}
 }
+
+func TestHandlerGetDocument(t *testing.T) {
+	handler := NewRouter()
+
+	req, _ := http.NewRequest("GET", "/testdb/1", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+	doc, _ := ParseDocument(rr.Body.Bytes())
+	if doc.Version != 4 || doc.ID != "1" {
+		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
+	}
+	//fmt.Println(doc)
+	req, _ = http.NewRequest("GET", "/testdb/1?version=4", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+	doc, _ = ParseDocument(rr.Body.Bytes())
+	if doc.Version != 4 || doc.ID != "1" {
+		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
+	}
+
+}
+
 func TestDeleteDatabase(t *testing.T) {
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
