@@ -96,11 +96,15 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	if currentDoc != nil {
-		if currentDoc.Version > 0 && currentDoc.Version != newDoc.Version {
-			return nil, ErrDocConflict
-		}
 		if currentDoc.Deleted {
+			if newDoc.Version > 0 && currentDoc.Version > newDoc.Version {
+				return nil, ErrDocConflict
+			}
 			newDoc.Version = currentDoc.Version
+		} else {
+			if currentDoc.Version != newDoc.Version {
+				return nil, ErrDocConflict
+			}
 		}
 	}
 
