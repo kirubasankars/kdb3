@@ -21,6 +21,7 @@ type ViewManager interface {
 	Initialize(db *Database) error
 	ListViewFiles() ([]string, error)
 	OpenView(viewName string, ddoc *DesignDocument) error
+	GetView(viewName string) (*View, bool)
 	SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
@@ -439,6 +440,13 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	}
 
 	return nil
+}
+
+func (mgr *DefaultViewManager) GetView(viewName string) (*View, bool) {
+	if view, ok := mgr.views[viewName]; ok {
+		return view, true
+	}
+	return nil, false
 }
 
 func NewViewManager(serviceLocator ServiceLocator) *DefaultViewManager {

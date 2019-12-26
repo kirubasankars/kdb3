@@ -28,7 +28,7 @@ func (p *FakeDatabaseReaderPool) Return(r DatabaseReader) {
 	p.returned = true
 }
 
-func (p *FakeDatabaseReaderPool) Open() error {
+func (p *FakeDatabaseReaderPool) Open(connectionString string) error {
 	p.borrowed = false
 	p.returned = false
 	return nil
@@ -43,7 +43,7 @@ type FakeDatabaseReader struct {
 	commit bool
 }
 
-func (reader *FakeDatabaseReader) Open() error {
+func (reader *FakeDatabaseReader) Open(connectionString string) error {
 	reader.begin = false
 	reader.commit = false
 	return nil
@@ -71,7 +71,7 @@ type FakeDatabaseWriter struct {
 	getdocerror bool
 }
 
-func (writer *FakeDatabaseWriter) Open() error {
+func (writer *FakeDatabaseWriter) Open(connectionString string) error {
 	writer.rollback = false
 	writer.begin = false
 	writer.commit = false
@@ -199,6 +199,10 @@ func (sl *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error
 	return nil
 }
 
+func (sl *FakeViewManager) GetView(viewName string) (*View, bool) {
+	return nil, false
+}
+
 func (sl *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	return nil, nil
 }
@@ -251,11 +255,11 @@ func (sl *FakeServiceLocator) GetFileHandler() FileHandler {
 	return &FakeFileHandler{}
 }
 
-func (sl *FakeServiceLocator) GetDatabaseWriter(connectionString string) DatabaseWriter {
+func (sl *FakeServiceLocator) GetDatabaseWriter() DatabaseWriter {
 	return &FakeDatabaseWriter{}
 }
 
-func (sl *FakeServiceLocator) GetDatabaseReader(connectionString string) DatabaseReader {
+func (sl *FakeServiceLocator) GetDatabaseReader() DatabaseReader {
 	return &FakeDatabaseReader{}
 }
 
@@ -281,7 +285,7 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	l := db.GetLastUpdateSequence()
 
@@ -296,8 +300,8 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
 
-	pool.Open()
-	reader.Open()
+	pool.Open(testConnectionString)
+	reader.Open(testConnectionString)
 
 	if db.GetLastUpdateSequence() != l {
 		t.Errorf("failed to load last update seq id.")
@@ -370,7 +374,7 @@ func TestDBStat(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	stat := db.Stat()
 
@@ -534,7 +538,7 @@ func TestDBPutDocumentNewDocID(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{}`))
 	odoc, err := db.PutDocument(doc)
@@ -566,7 +570,7 @@ func TestDBPutDocumentNewDocWithID(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "4"}`))
 	odoc, err := db.PutDocument(doc)
@@ -598,13 +602,13 @@ func TestDBPutDocumentConflict(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	writer.Reset()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
 	odoc, err := db.PutDocument(doc)
 	if err == nil {
-		t.Errorf("expected fail put document. ")
+		t.Errorf("expected fail put document. %w", err)
 	}
 
 	if err != nil && err != ErrDocConflict {
@@ -636,7 +640,7 @@ func Test1DBPutDocumentConflict(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	writer.Reset()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":2}`))
@@ -673,7 +677,7 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.PutDocument(doc)
@@ -705,7 +709,7 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
 	_, err := db.PutDocument(doc)
@@ -734,7 +738,7 @@ func TestDBPutDocumentBeginError(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
@@ -771,7 +775,7 @@ func TestDBPutDocumentCommitError(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
@@ -808,7 +812,7 @@ func TestDBPutDocumentRollbackError(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	_, _ = db.PutDocument(doc)
@@ -830,7 +834,7 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
@@ -867,7 +871,7 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	writer.Reset()
 	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
 	odoc, err := db.PutDocument(doc)
@@ -903,9 +907,9 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
-	doc, _ := ParseDocument([]byte(`{"_id": "2", "_version":2}`))
+	doc, _ := ParseDocument([]byte(`{"_id": "2","_version":2}`))
 	odoc, err := db.PutDocument(doc)
 	if err != nil {
 		t.Errorf("unable put document")
@@ -941,7 +945,7 @@ func TestDBDeleteDocument(t *testing.T) {
 	sl := &FakeServiceLocator{}
 	db.viewManager = sl.GetViewManager()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 
 	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
 	odoc, err := db.DeleteDocument(doc)
@@ -1046,7 +1050,7 @@ func TestDatabaseReOpen(t *testing.T) {
 	doc, err = db.GetDocument(doc, false)
 	db.Close()
 
-	db.Open(false)
+	db.Open(testConnectionString, false)
 	doc, err = ParseDocument([]byte(`{"_id":1}`))
 	doc, err = db.GetDocument(doc, false)
 	db.Close()

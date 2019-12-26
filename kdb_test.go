@@ -1,6 +1,5 @@
 package main
 
-/*
 import (
 	"encoding/json"
 	"fmt"
@@ -318,7 +317,7 @@ func TestBuildView(t *testing.T) {
 		t.Error(err)
 	}
 
-	if _, ok := kdb.dbs["testdb"].viewmgr.GetView("_design/_views$_all_docs"); ok {
+	if _, ok := kdb.dbs["testdb"].viewManager.GetView("_design/_views$_all_docs"); ok {
 		t.Error("view failed")
 	}
 
@@ -326,7 +325,7 @@ func TestBuildView(t *testing.T) {
 	r := AllDocsViewResult{}
 	json.Unmarshal(rs, &r)
 
-	if _, ok := kdb.dbs["testdb"].viewmgr.GetView("_design/_views$_all_docs"); !ok {
+	if _, ok := kdb.dbs["testdb"].viewManager.GetView("_design/_views$_all_docs"); !ok {
 		t.Error("view failed")
 	}
 
@@ -382,4 +381,3 @@ func BenchmarkParseDocument(b *testing.B) {
 		ParseDocument([]byte(`{"test":1}`))
 	}
 }
-*/
