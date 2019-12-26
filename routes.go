@@ -119,6 +119,12 @@ var routes = Routes{
 		GetDocument,
 	},
 	Route{
+		"HeadDocument",
+		"HEAD",
+		"/{db}/{docid}",
+		HeadDocument,
+	},
+	Route{
 		"PutDocument",
 		"PUT",
 		"/{db}/{docid}",

@@ -125,12 +125,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
 	doc := &Document{}
 
-	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, data FROM documents WHERE doc_id = ? AND version = ?", ID, ID, Version)
+	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, data FROM documents WHERE doc_id = ? AND version = ?", ID, Version)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		return nil, err
 	}
-
 	var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
 	if doc.Kind != "" {
 		meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)

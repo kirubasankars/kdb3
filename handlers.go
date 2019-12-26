@@ -12,6 +12,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func HeadDocument(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	db := vars["db"]
+	docid := vars["docid"]
+	getDocument(db, docid, false, w, r)
+}
+
 func GetDatabase(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
@@ -132,7 +139,7 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(output))
 }
 
-func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+func getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *http.Request) {
 	ver := r.FormValue("version")
 	var inputDoc = &Document{}
 	if ver != "" {
@@ -143,15 +150,17 @@ func getDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		inputDoc.ID = docid
 	}
 
-	outputDoc, err := kdb.GetDocument(db, inputDoc, true)
+	outputDoc, err := kdb.GetDocument(db, inputDoc, includeDocs)
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
-
+	w.Header().Set("E-Tag", strconv.Itoa(outputDoc.Version))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(outputDoc.Data)
+	if includeDocs {
+		w.Write(outputDoc.Data)
+	}
 }
 
 func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -182,7 +191,7 @@ func GetDocument(w http.ResponseWriter, r *http.Request) {
 	db := vars["db"]
 	docid := vars["docid"]
 
-	getDocument(db, docid, w, r)
+	getDocument(db, docid, true, w, r)
 }
 
 func DeleteDocument(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +250,7 @@ func GetDDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := "_design/" + vars["docid"]
-	getDocument(db, docid, w, r)
+	getDocument(db, docid, true, w, r)
 }
 
 func DeleteDDocument(w http.ResponseWriter, r *http.Request) {
