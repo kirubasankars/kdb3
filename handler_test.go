@@ -83,7 +83,7 @@ func TestGetInfo(t *testing.T) {
 	testExpectJSONContentType(t, rr)
 }
 
-func TestPutDatabase(t *testing.T) {
+func TestHandlerPutDatabase(t *testing.T) {
 	kdb, _ = NewKDB()
 	req, _ := http.NewRequest("PUT", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -91,13 +91,12 @@ func TestPutDatabase(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
 
 	expected := `{"ok":true}`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have ok %s`, rr.Body.String())
 	}
-
-	testExpectJSONContentType(t, rr)
 }
 
 func TestHandlerPutDocument(t *testing.T) {
@@ -295,7 +294,23 @@ func TestHandlerGetDocument(t *testing.T) {
 	if doc.Version != 4 || doc.ID != "1" {
 		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
 	}
+}
 
+func TestHandlerGetDatabase(t *testing.T) {
+	kdb, _ = NewKDB()
+	req, _ := http.NewRequest("GET", "/testdb", nil)
+	rr := httptest.NewRecorder()
+	handler := NewRouter()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+	stat := &DBStat{}
+	json.Unmarshal(rr.Body.Bytes(), stat)
+
+	if stat.DBName != "testdb" || stat.DocCount != 5 {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
 }
 
 func TestDeleteDatabase(t *testing.T) {
