@@ -16,7 +16,7 @@ Features
 
 ## How to Build?
 
-    go build -tags "json1" # cgo support required.
+    go build -tags "json1 fts5" # cgo support required.
     ./kdb3 & # its running at port 8001
 
 ## create database
