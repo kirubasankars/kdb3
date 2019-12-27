@@ -313,6 +313,102 @@ func TestHandlerGetDatabase(t *testing.T) {
 	}
 }
 
+func TestHandlerGetDDatabase(t *testing.T) {
+	kdb, _ = NewKDB()
+	req, _ := http.NewRequest("GET", "/testdb/_design/_views", nil)
+	rr := httptest.NewRecorder()
+	handler := NewRouter()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	doc, _ := ParseDocument(rr.Body.Bytes())
+
+	if doc.ID != "_design/_views" {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
+}
+
+type testAllDocsRows struct {
+	Rows []testEmpty
+}
+type testEmpty struct {
+	ID string `json:"id"`
+}
+
+func TestHandlerPutDDatabase(t *testing.T) {
+	kdb, _ = NewKDB()
+	req, _ := http.NewRequest("GET", "/testdb/_design/_views", nil)
+	rr := httptest.NewRecorder()
+	handler := NewRouter()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	viewDoc := rr.Body.Bytes()
+
+	req, _ = http.NewRequest("PUT", "/testdb/_design/_views", rr.Body)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	doc, _ := ParseDocument(rr.Body.Bytes())
+	if doc.ID != "_design/_views" || doc.Version != 2 {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
+
+	doc, _ = ParseDocument(viewDoc)
+	req, _ = http.NewRequest("PUT", "/testdb/_design/_views1", bytes.NewBuffer(doc.Data))
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	doc, _ = ParseDocument(rr.Body.Bytes())
+	if doc.ID != "_design/_views1" || doc.Version != 1 {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
+
+	req, _ = http.NewRequest("GET", "/testdb/_all_docs", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	req, _ = http.NewRequest("GET", "/testdb/_design/_views1/_all_docs", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	rows := testAllDocsRows{}
+	json.Unmarshal(rr.Body.Bytes(), &rows)
+
+	if len(rows.Rows) != 6 {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
+
+	req, _ = http.NewRequest("GET", "/testdb/_all_docs?key=1", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	json.Unmarshal(rr.Body.Bytes(), &rows)
+
+	if rows.Rows[0].ID != "1" {
+		t.Errorf(`failed, got %s`, rr.Body.String())
+	}
+}
+
 func TestDeleteDatabase(t *testing.T) {
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()

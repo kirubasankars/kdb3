@@ -123,7 +123,15 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-	if docid != "" && docid != inputDoc.ID {
+
+	if inputDoc.ID == "" {
+		inputDoc.ID = docid
+	}
+	if docid == "" {
+		docid = inputDoc.ID
+	}
+
+	if docid != inputDoc.ID {
 		NotOK(errors.New("mismatch_id"), w)
 		return
 	}
