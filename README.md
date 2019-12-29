@@ -13,6 +13,46 @@ Features
   8. Cluster
   9. High Availability with replica
  10. UI - InProgress
+ 
+# How does it works?
+  whole concept of kdb3 build on top change tracking system. 
+  
+  POST /(database) takes objects as json documents and store it in sqlite database table with (incremental) change tracking sequence number in time. With this change tracking sequence, one can ask database what changed from last change sequence.
+ 
+ Ex: GET /(database)/_changes?since=(seq)
+ 
+ Let's discuss about Incrementally updated Materialistic View
+ 
+ Views in KDB3, is just another sqlite database. 
+ 
+ You properbly knows about materialistic view from popular RDBMS databases.  
+ 
+ KDB3 has incrementally updated materialistic view. With kdb3, one can build a view just as post speical kind of document called view document as follows.
+ 
+ Ex: 
+ 
+     {
+      "_id": "_design/_views",
+      "_version": 1,
+      "_kind": "design",
+      "views": {
+        "_all_docs": {
+          "setup": [
+            "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID"
+          ],
+          "exec": [
+            "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
+            "INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents WHERE deleted = 0"
+          ],
+          "select": {
+            "default": "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
+          }
+        }
+      }
+    }
+    
+
+Above example view document has instructions to create tables, sync up the data and named select stmt. data is inserted/updated, when one trying to accessing a view. when view defination changes, view will be rebuild.
 
 ## How to Build?
 
