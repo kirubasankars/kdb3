@@ -52,7 +52,7 @@ Features
     }
     
 
-Above example view document has instructions to create tables, sync up the data and named select stmt. data is inserted/updated, when one trying to accessing a view. when view defination changes, view will be rebuild.
+Above example view document has instructions to create tables, sync up the data and named select stmts. data is inserted/updated, when one trying to accessing that view. when view defination changes, view will be rebuild next view request.
 
 ## How to Build?
 
