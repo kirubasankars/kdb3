@@ -5,22 +5,6 @@ Features
   1. Document Database - Done
   2. Optimistic Concurrency - Done
   3. Restful API - Done
-      1. Database
-          GET, PUT
-         _changes API 
-          GET
-         _all_docs
-          GET
-         _bulk_docs
-          GET, POST
-      2. Documents and View Document
-         GET, PUT, POST, DELETE
-      3. Info
-         GET
-      4. _all_dbs
-         GET
-      5. View
-         GET
   3. Change tracking - Done
   4. Incrementally updated Materialistic View (with sqlite3) - Done
   5. Incremental Backup
