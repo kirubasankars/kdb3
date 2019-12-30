@@ -15,7 +15,7 @@ Features
  10. UI - InProgress
  
 # How does it works?
-  whole concept of kdb3 build on top change tracking system. 
+  whole system of kdb3 build on top change tracking system. 
   
   POST /(database) takes objects as json documents and store it in sqlite database table with (incremental) change tracking sequence number in time. With this change tracking sequence, one can ask database what changed from last change sequence.
  
