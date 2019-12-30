@@ -10,9 +10,7 @@ Features
   5. Incremental Backup
   6. External Replication
   7. External Views
-  8. Cluster
-  9. High Availability with replica
- 10. UI - InProgress
+  8. UI - InProgress
  
 # How does it works?
   whole system of kdb3 build on top change tracking system. 
