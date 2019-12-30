@@ -25,9 +25,7 @@ Features
  
  Views in KDB3, is just another sqlite database. 
  
- You properbly knows about materialistic view from popular RDBMS databases.  
- 
- KDB3 has incrementally updated materialistic view, since kdb3 has change tracking system. With kdb3, one can build a view just as post speical kind of document called view document as follows.
+ You properbly knows about materialistic view from popular RDBMS databases. kdb3 has incrementally updated materialistic view, since kdb3 has change tracking system. one can build a view just as post speical kind of document called view document as follows.
  
  Ex: 
  
