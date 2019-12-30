@@ -48,6 +48,12 @@ Features
 
 Above example view document has instructions to create tables, sync up the data and named select stmts. data is inserted/updated, when one trying to accessing that view. when view defination changes, view will be rebuild next view request.
 
+View can be executed with followings
+
+GET /(database)/_design/(doc_id)/(viewname)/(select_name)
+
+GET /(database)/_design/_views/_all_docs/default
+
 ## How to Build?
 
     go build -tags "json1 fts5" # cgo support required.
