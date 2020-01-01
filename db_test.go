@@ -967,7 +967,7 @@ func TestDBDeleteDocument(t *testing.T) {
 }
 
 func TestNewDatabaseNew(t *testing.T) {
-	db, err := NewDatabase("testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+	db, err := NewDatabase("testdb", "testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("unexpected err %s", err)
 	}
@@ -988,21 +988,21 @@ func TestNewDatabaseNew(t *testing.T) {
 }
 
 func TestNewDatabaseOpenNoDatabase(t *testing.T) {
-	_, err := NewDatabase("testdb", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	_, err := NewDatabase("testdb", "testdb", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err == nil {
 		t.Errorf("expected err %s, got %s", ErrDBNotFound, err)
 	}
 }
 
 func TestNewDatabaseExists(t *testing.T) {
-	_, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
+	_, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
 	if err == nil {
 		t.Errorf("expected err %s, failed", err)
 	}
 }
 
 func TestNewDatabaseReopen(t *testing.T) {
-	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("expected err %s, failed", err)
 	}
@@ -1023,7 +1023,7 @@ func TestDatabaseValidateDesignDocument(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("unexpected err %s, failed", err)
 	}
@@ -1032,7 +1032,7 @@ func TestDatabaseValidateDesignDocument(t *testing.T) {
 }
 
 func TestDatabaseVacuum(t *testing.T) {
-	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("unexpected err %s, failed", err)
 	}
@@ -1040,7 +1040,7 @@ func TestDatabaseVacuum(t *testing.T) {
 }
 
 func TestDatabaseReOpen(t *testing.T) {
-	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
+	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
 	if err != nil {
 		t.Errorf("unexpected err %s, failed", err)
 	}
@@ -1058,9 +1058,9 @@ func TestDatabaseReOpen(t *testing.T) {
 }
 
 func TestDatabaseSelectView(t *testing.T) {
-	kdb.deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
+	deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
 	sl := NewServiceLocator()
-	db, err := NewDatabase("testdb1", "./data/dbs", "./data/mrviews", true, sl)
+	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", true, sl)
 	if err != nil {
 		t.Errorf("unexpected err %s, failed", err)
 	}
@@ -1074,5 +1074,5 @@ func TestDatabaseSelectView(t *testing.T) {
 
 	db.Close()
 
-	kdb.deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
+	deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
 }
