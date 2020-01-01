@@ -214,9 +214,9 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
 }
 
-func NewDatabase(name string, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
 	fileHandler := serviceLocator.GetFileHandler()
-	path := filepath.Join(dbPath, name+dbExt)
+	path := filepath.Join(dbPath, fileName+dbExt)
 	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
 			return nil, ErrDBNotFound

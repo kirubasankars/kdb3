@@ -57,6 +57,13 @@ func (db *LocalDB) Delete(name string) error {
 	return err
 }
 
+func (db *LocalDB) GetFileName(name string) string {
+	var fileName string
+	row := db.tx.QueryRow("SELECT filename FROM dbs WHERE name = ?", name)
+	row.Scan(&fileName)
+	return fileName
+}
+
 func (db *LocalDB) List() ([]string, error) {
 	var dbs []string
 	rows, err := db.tx.Query("SELECT name FROM dbs")

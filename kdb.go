@@ -55,10 +55,7 @@ func NewKDB() (*KDBEngine, error) {
 		return nil, err
 	}
 
-	kdb.localDB.Begin()
-	defer kdb.localDB.Rollback()
-
-	list, err := kdb.localDB.List()
+	list, err := kdb.ListDataBases()
 	if err != nil {
 		return nil, err
 	}
@@ -74,26 +71,13 @@ func NewKDB() (*KDBEngine, error) {
 }
 
 func (kdb *KDBEngine) ListDataBases() ([]string, error) {
+	kdb.localDB.Begin()
+	defer kdb.localDB.Commit()
 	return kdb.localDB.List()
 }
 
-func ValidateDBName(name string) bool {
-	if len(name) <= 0 || strings.Contains(name, "$") || name[0] == '_' {
-		return false
-	}
-	return true
-}
-
-func ValidateDocId(id string) bool {
-	id = strings.Trim(id, " ")
-	if len(id) > 0 && !strings.HasPrefix(id, "_design/") && id[0] == '_' {
-		return false
-	}
-	return true
-}
-
 func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
-	if !ValidateDBName(name) {
+	if !validateDBName(name) {
 		return ErrDBInvalidName
 	}
 
@@ -107,16 +91,20 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	kdb.localDB.Begin()
 	defer kdb.localDB.Rollback()
 
+	fileName := name
+
 	if createIfNotExists {
-		if err := kdb.localDB.Create(name, ""); err != nil {
+		if err := kdb.localDB.Create(name, fileName); err != nil {
 			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
 				return ErrDBExists
 			}
 			return err
 		}
+	} else {
+		fileName = kdb.localDB.GetFileName(name)
 	}
 
-	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
+	db, err := NewDatabase(name, fileName, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
 	if err != nil {
 		return err
 	}
@@ -144,27 +132,11 @@ func (kdb *KDBEngine) Delete(name string) error {
 	delete(kdb.dbs, name)
 	db.Close()
 
-	kdb.deleteDBFiles(kdb.dbPath, kdb.viewPath, name)
+	deleteDBFiles(kdb.dbPath, kdb.viewPath, name)
 
 	kdb.localDB.Commit()
 
 	return nil
-}
-
-func (kdb *KDBEngine) deleteDBFiles(dbPath, viewPath, dbname string) {
-	list, _ := ioutil.ReadDir(viewPath)
-	for idx := range list {
-		name := list[idx].Name()
-		if strings.HasPrefix(name, dbname+"$") && strings.HasSuffix(name, dbExt) {
-			os.Remove(filepath.Join(viewPath, name))
-		}
-	}
-
-	fileName := dbname + dbExt
-	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
-	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
-	os.Remove(filepath.Join(dbPath, fileName))
-
 }
 
 func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
@@ -174,7 +146,7 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	if !ok {
 		return nil, ErrDBNotFound
 	}
-	if !ValidateDocId(newDoc.ID) {
+	if !validateDocID(newDoc.ID) {
 		return nil, ErrDocInvalidID
 	}
 
@@ -310,4 +282,34 @@ func (kdb *KDBEngine) Info() []byte {
 	row.Scan(&version, &sqliteSourceID)
 	con.Close()
 	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
+}
+
+func deleteDBFiles(dbPath, viewPath, dbname string) {
+	list, _ := ioutil.ReadDir(viewPath)
+	for idx := range list {
+		name := list[idx].Name()
+		if strings.HasPrefix(name, dbname+"$") && strings.HasSuffix(name, dbExt) {
+			os.Remove(filepath.Join(viewPath, name))
+		}
+	}
+
+	fileName := dbname + dbExt
+	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
+	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
+	os.Remove(filepath.Join(dbPath, fileName))
+}
+
+func validateDBName(name string) bool {
+	if len(name) <= 0 || strings.Contains(name, "$") || name[0] == '_' {
+		return false
+	}
+	return true
+}
+
+func validateDocID(id string) bool {
+	id = strings.Trim(id, " ")
+	if len(id) > 0 && !strings.HasPrefix(id, "_design/") && id[0] == '_' {
+		return false
+	}
+	return true
 }
