@@ -7,9 +7,9 @@ type DBStat struct {
 }
 
 type DesignDocumentView struct {
-	Setup   []string          `json:"setup,omitempty"`
-	Scripts []string          `json:"exec,omitempty"`
-	Select  map[string]string `json:"select,omitempty"`
+	Setup  []string          `json:"setup,omitempty"`
+	Run    []string          `json:"run,omitempty"`
+	Select map[string]string `json:"select,omitempty"`
 }
 
 type DesignDocument struct {
