@@ -25,6 +25,7 @@ type KDBEngine struct {
 	rwmux          sync.RWMutex
 	serviceLocator ServiceLocator
 	fileHandler    FileHandler
+	localDB        *LocalDB
 }
 
 func NewKDB() (*KDBEngine, error) {
@@ -34,6 +35,7 @@ func NewKDB() (*KDBEngine, error) {
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
 	kdb.serviceLocator = NewServiceLocator()
+	kdb.localDB = &LocalDB{}
 
 	fileHandler := kdb.serviceLocator.GetFileHandler()
 
@@ -49,7 +51,14 @@ func NewKDB() (*KDBEngine, error) {
 		}
 	}
 
-	list, err := kdb.ListDataBases()
+	if err := kdb.localDB.Open(kdb.dbPath); err != nil {
+		return nil, err
+	}
+
+	kdb.localDB.Begin()
+	defer kdb.localDB.Rollback()
+
+	list, err := kdb.localDB.List()
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +81,7 @@ func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 	var dbs []string
 	for idx := range list {
 		name := list[idx].Name()
-		if strings.HasSuffix(name, dbExt) {
+		if strings.HasSuffix(name, dbExt) && !strings.HasPrefix(name, "_") {
 			dbs = append(dbs, strings.ReplaceAll(name, dbExt, ""))
 		}
 	}
@@ -106,11 +115,25 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 		return nil
 	}
 
-	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
+	kdb.localDB.Begin()
+	defer kdb.localDB.Rollback()
+
+	if createIfNotExists {
+		if err := kdb.localDB.Create(name, ""); err != nil {
+			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
+				return ErrDBExists
+			}
+			return err
+		}
+	}
+
+	db, err := NewDatabase(name, createIfNotExists, kdb.dbPath, kdb.viewPath, kdb.serviceLocator)
 	if err != nil {
 		return err
 	}
 	kdb.dbs[name] = db
+
+	kdb.localDB.Commit()
 
 	return nil
 }
@@ -118,6 +141,12 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 func (kdb *KDBEngine) Delete(name string) error {
 	kdb.rwmux.Lock()
 	defer kdb.rwmux.Unlock()
+
+	kdb.localDB.Begin()
+	defer kdb.localDB.Rollback()
+
+	kdb.localDB.Delete(name)
+
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return ErrDBNotFound
@@ -127,6 +156,8 @@ func (kdb *KDBEngine) Delete(name string) error {
 	db.Close()
 
 	kdb.deleteDBFiles(kdb.dbPath, kdb.viewPath, name)
+
+	kdb.localDB.Commit()
 
 	return nil
 }
@@ -289,5 +320,5 @@ func (kdb *KDBEngine) Info() []byte {
 	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
 	row.Scan(&version, &sqliteSourceID)
 	con.Close()
-	return []byte(fmt.Sprintf(`{"name":"kdb", "version":{"sqlite_version":"%s", "sqlite_source_id":"%s"}}`, version, sqliteSourceID))
+	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }
