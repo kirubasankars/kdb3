@@ -74,18 +74,7 @@ func NewKDB() (*KDBEngine, error) {
 }
 
 func (kdb *KDBEngine) ListDataBases() ([]string, error) {
-	list, err := ioutil.ReadDir(kdb.dbPath)
-	if err != nil {
-		return nil, err
-	}
-	var dbs []string
-	for idx := range list {
-		name := list[idx].Name()
-		if strings.HasSuffix(name, dbExt) && !strings.HasPrefix(name, "_") {
-			dbs = append(dbs, strings.ReplaceAll(name, dbExt, ""))
-		}
-	}
-	return dbs, nil
+	return kdb.localDB.List()
 }
 
 func ValidateDBName(name string) bool {
@@ -127,7 +116,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 		}
 	}
 
-	db, err := NewDatabase(name, createIfNotExists, kdb.dbPath, kdb.viewPath, kdb.serviceLocator)
+	db, err := NewDatabase(name, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
 	if err != nil {
 		return err
 	}
