@@ -172,8 +172,8 @@ func (db *FakeDatabaseReader) GetLastUpdateSequence() string {
 	return "GiJYxpHX92iFe_tvtuAICAkmdnOMXEm1erk_0RkfgCC7JHvbN64M2bv5CxtZrfSrrA1b48HGNvV57GbHuqVJrRv9L_1NuceGQQt0OGUs7BskxKjW51aylNDA5Zjqzir44wrUMm6x5W"
 }
 
-func (db *FakeDatabaseReader) GetDocumentCount() int {
-	return 3
+func (db *FakeDatabaseReader) GetDocumentCount() (int, int) {
+	return 3, 0
 }
 
 func (reader *FakeDatabaseReader) Close() error {
@@ -317,7 +317,7 @@ func TestDBDocumentCount(t *testing.T) {
 	reader := new(FakeDatabaseReader)
 	pool := NewTestFakeDatabaseReaderPool(reader)
 	db.readers = pool
-	v := db.GetDocumentCount()
+	v, _ := db.GetDocumentCount()
 
 	if v != 3 {
 		t.Errorf("expected %d, got %d", 3, v)
@@ -376,7 +376,7 @@ func TestDBStat(t *testing.T) {
 
 	db.Open(testConnectionString, false)
 
-	stat := db.Stat()
+	stat := db.GetStat()
 
 	if !reader.begin || !reader.commit {
 		t.Errorf("expected to call begin and commit, failed.")

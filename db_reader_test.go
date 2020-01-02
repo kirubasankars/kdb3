@@ -158,9 +158,9 @@ func TestReaderGetDocumentCount(t *testing.T) {
 
 	reader.Begin()
 
-	count := reader.GetDocumentCount()
-	if count != 3 {
-		t.Errorf("expected %d rows, got %d", 3, count)
+	docCount, deletedDocCount := reader.GetDocumentCount()
+	if docCount != 2 && deletedDocCount != 1 {
+		t.Errorf("expected %d rows, got %d", 2, docCount)
 	}
 
 	reader.Commit()

@@ -21,7 +21,7 @@ type DatabaseReader interface {
 	GetChanges(since string, limit int) ([]byte, error)
 
 	GetLastUpdateSequence() string
-	GetDocumentCount() int
+	GetDocumentCount() (int, int)
 }
 
 type DefaultDatabaseReader struct {
@@ -221,11 +221,18 @@ func (db *DefaultDatabaseReader) GetLastUpdateSequence() string {
 	return maxUpdateSeq
 }
 
-func (db *DefaultDatabaseReader) GetDocumentCount() int {
-	row := db.tx.QueryRow("SELECT COUNT(1) FROM documents")
-	count := 0
-	row.Scan(&count)
-	return count
+func (db *DefaultDatabaseReader) GetDocumentCount() (int, int) {
+	rows, _ := db.tx.Query("SELECT deleted, COUNT(1) as count FROM documents GROUP BY deleted")
+	deleted, count, docCount, deletedDocCount := 0, 0, 0, 0
+	for rows.Next() {
+		rows.Scan(&deleted, &count)
+		if deleted == 0 {
+			docCount = count
+		} else {
+			deletedDocCount = count
+		}
+	}
+	return docCount, deletedDocCount
 }
 
 func (reader *DefaultDatabaseReader) Close() error {

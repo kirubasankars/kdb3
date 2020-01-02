@@ -1,9 +1,10 @@
 package main
 
 type DBStat struct {
-	DBName    string `json:"db_name"`
-	UpdateSeq string `json:"update_seq"`
-	DocCount  int    `json:"doc_count"`
+	DBName          string `json:"db_name"`
+	UpdateSeq       string `json:"update_seq"`
+	DocCount        int    `json:"doc_count"`
+	DeletedDocCount int    `json:"deleted_doc_count"`
 }
 
 type DesignDocumentView struct {

@@ -18,7 +18,7 @@ func (db *LocalDB) Open(dbPath string) error {
 	tx, _ := con.Begin()
 
 	tx.Exec(`
-		CREATE TABLE IF NOT EXISTS dbs (name TEXT, filename TEXT, row_count INT, PRIMARY KEY(name));
+		CREATE TABLE IF NOT EXISTS dbs (name TEXT, filename TEXT, PRIMARY KEY(name));
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_filename (filename);
 	`)
 
@@ -76,9 +76,4 @@ func (db *LocalDB) List() ([]string, error) {
 		dbs = append(dbs, name)
 	}
 	return dbs, nil
-}
-
-func (db *LocalDB) UpdateRowCount(name string, rowcount int) error {
-	_, err := db.tx.Exec("UPDATE dbs SET row_count = ? WHERE name = ?", rowcount, name)
-	return err
 }
