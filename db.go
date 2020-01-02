@@ -8,10 +8,12 @@ import (
 )
 
 type Database struct {
-	Name      string
-	UpdateSeq string
-	DBPath    string
-	ViewPath  string
+	Name            string
+	UpdateSeq       string
+	DocCount        int
+	DeletedDocCount int
+	DBPath          string
+	ViewPath        string
 
 	mux         sync.Mutex
 	readers     DatabaseReaderPool
@@ -19,10 +21,6 @@ type Database struct {
 	changeSeq   *ChangeSequenceGenarator
 	idSeq       *SequenceUUIDGenarator
 	viewManager ViewManager
-}
-
-func (db *Database) ValidateDesignDocument(doc *Document) error {
-	return db.viewManager.ValidateDesignDocument(doc)
 }
 
 func (db *Database) Open(connectionString string, createIfNotExists bool) error {
@@ -44,6 +42,8 @@ func (db *Database) Open(connectionString string, createIfNotExists bool) error 
 		}
 		db.writer.Commit()
 	}
+
+	db.DocCount, db.DeletedDocCount = db.GetDocumentCount()
 
 	db.UpdateSeq = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
@@ -123,6 +123,14 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.UpdateSeq = updateSeq
 
+	if currentDoc == nil {
+		db.DocCount++
+	}
+	if newDoc.Deleted {
+		db.DocCount--
+		db.DeletedDocCount++
+	}
+
 	return newDoc, nil
 }
 
@@ -182,7 +190,7 @@ func (db *Database) GetChanges(since string, limit int) ([]byte, error) {
 	return reader.GetChanges(since, limit)
 }
 
-func (db *Database) GetDocumentCount() int {
+func (db *Database) GetDocumentCount() (int, int) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -192,11 +200,15 @@ func (db *Database) GetDocumentCount() int {
 	return reader.GetDocumentCount()
 }
 
-func (db *Database) Stat() *DBStat {
+func (db *Database) GetStat() *DBStat {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
 	stat := &DBStat{}
 	stat.DBName = db.Name
 	stat.UpdateSeq = db.UpdateSeq
-	stat.DocCount = db.GetDocumentCount()
+	stat.DocCount = db.DocCount
+	stat.DeletedDocCount = db.DeletedDocCount
 	return stat
 }
 
@@ -212,6 +224,10 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	}
 
 	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
+}
+
+func (db *Database) ValidateDesignDocument(doc *Document) error {
+	return db.viewManager.ValidateDesignDocument(doc)
 }
 
 func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {

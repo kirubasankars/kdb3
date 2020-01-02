@@ -223,7 +223,7 @@ func TestDeleteDocument(t *testing.T) {
 	}
 
 	stat, _ := kdb.DBStat("testdb")
-	if stat.DocCount != 3 {
+	if stat.DocCount != 2 {
 		t.Error("doc count failed")
 	}
 

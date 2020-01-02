@@ -108,6 +108,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	if err != nil {
 		return err
 	}
+
 	kdb.dbs[name] = db
 
 	kdb.localDB.Commit()
@@ -231,7 +232,7 @@ func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 	if !ok {
 		return nil, ErrDBNotFound
 	}
-	return db.Stat(), nil
+	return db.GetStat(), nil
 }
 
 func (kdb *KDBEngine) Vacuum(name string) error {
