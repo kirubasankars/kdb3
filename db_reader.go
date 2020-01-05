@@ -25,11 +25,13 @@ type DatabaseReader interface {
 }
 
 type DefaultDatabaseReader struct {
-	conn *sql.DB
-	tx   *sql.Tx
+	connectionString string
+	conn             *sql.DB
+	tx               *sql.Tx
 }
 
 func (reader *DefaultDatabaseReader) Open(connectionString string) error {
+	reader.connectionString = connectionString
 	con, err := sql.Open("sqlite3", connectionString)
 	if err != nil {
 		return err

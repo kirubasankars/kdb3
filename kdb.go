@@ -91,7 +91,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	kdb.localDB.Begin()
 	defer kdb.localDB.Rollback()
 
-	fileName := name
+	fileName := name + "-1"
 
 	if createIfNotExists {
 		if err := kdb.localDB.Create(name, fileName); err != nil {
@@ -122,7 +122,7 @@ func (kdb *KDBEngine) Delete(name string) error {
 
 	kdb.localDB.Begin()
 	defer kdb.localDB.Rollback()
-
+	fileName := kdb.localDB.GetFileName(name)
 	kdb.localDB.Delete(name)
 
 	db, ok := kdb.dbs[name]
@@ -133,7 +133,7 @@ func (kdb *KDBEngine) Delete(name string) error {
 	delete(kdb.dbs, name)
 	db.Close()
 
-	deleteDBFiles(kdb.dbPath, kdb.viewPath, name)
+	deleteDBFiles(kdb.dbPath, kdb.viewPath, fileName)
 
 	kdb.localDB.Commit()
 
