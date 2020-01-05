@@ -32,15 +32,16 @@ type ViewManager interface {
 }
 
 type DefaultViewManager struct {
-	viewPath             string
-	absoluteDatabasePath string
 	dbName               string
-	views                map[string]*View
-	ddocs                map[string]*DesignDocument
+	viewDirPath          string
+	absoluteDatabasePath string
 
-	viewFiles      map[string]map[string]bool
+	rwmux     sync.RWMutex
+	views     map[string]*View
+	ddocs     map[string]*DesignDocument
+	viewFiles map[string]map[string]bool
+
 	serviceLocator ServiceLocator
-	rwmux          sync.RWMutex
 }
 
 func (mgr *DefaultViewManager) SetupViews(db *Database) error {
@@ -79,16 +80,15 @@ func (mgr *DefaultViewManager) SetupViews(db *Database) error {
 }
 
 func (mgr *DefaultViewManager) Initialize(db *Database) error {
+	mgr.rwmux = sync.RWMutex{}
 	mgr.dbName = db.Name
-	mgr.viewPath = db.ViewPath
+	mgr.viewDirPath = db.ViewDirPath
 
 	absoluteDBPath, err := filepath.Abs(db.DBPath)
 	if err != nil {
 		panic(err)
 	}
 	mgr.absoluteDatabasePath = absoluteDBPath
-
-	mgr.rwmux = sync.RWMutex{}
 
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
@@ -128,7 +128,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 	for fileName, x := range mgr.viewFiles {
 		if len(x) <= 0 {
 			delete(mgr.viewFiles, fileName)
-			os.Remove(filepath.Join(mgr.viewPath, fileName+dbExt))
+			os.Remove(filepath.Join(mgr.viewDirPath, fileName+dbExt))
 		}
 	}
 
@@ -136,7 +136,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 }
 
 func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
-	list, err := ioutil.ReadDir(mgr.viewPath)
+	list, err := ioutil.ReadDir(mgr.viewDirPath)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) e
 		return nil
 	}
 
-	viewPath := filepath.Join(mgr.viewPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
+	viewPath := filepath.Join(mgr.viewDirPath, mgr.dbName+"$"+mgr.CalculateSignature(ddoc.Views[viewName])+dbExt)
 	viewConnectionString := viewPath + "?_journal=MEMORY&cache=shared&_mutex=no"
 
 	view := mgr.serviceLocator.GetView(viewName, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
@@ -320,7 +320,7 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 			//To takecare old one
 			if currentViewFile != "" && len(mgr.viewFiles[currentViewFile]) <= 0 {
 				delete(mgr.viewFiles, currentViewFile)
-				os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+				os.Remove(filepath.Join(mgr.viewDirPath, currentViewFile+dbExt))
 			}
 
 			updatedViews[qualifiedViewName] = newViewFile
@@ -339,7 +339,7 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
 				if len(mgr.viewFiles[currentViewFile]) <= 0 {
 
 					delete(mgr.viewFiles, currentViewFile)
-					os.Remove(filepath.Join(mgr.viewPath, currentViewFile+dbExt))
+					os.Remove(filepath.Join(mgr.viewDirPath, currentViewFile+dbExt))
 				}
 			}
 		}

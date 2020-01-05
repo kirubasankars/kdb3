@@ -12,10 +12,12 @@ type Database struct {
 	UpdateSeq       string
 	DocCount        int
 	DeletedDocCount int
-	DBPath          string
-	ViewPath        string
 
-	mux         sync.Mutex
+	DBPath      string
+	ViewDirPath string
+
+	mux sync.Mutex
+
 	readers     DatabaseReaderPool
 	writer      DatabaseWriter
 	changeSeq   *ChangeSequenceGenarator
@@ -44,7 +46,6 @@ func (db *Database) Open(connectionString string, createIfNotExists bool) error 
 	}
 
 	db.DocCount, db.DeletedDocCount = db.GetDocumentCount()
-
 	db.UpdateSeq = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
 
@@ -243,7 +244,7 @@ func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExis
 		}
 	}
 
-	db := &Database{Name: name, DBPath: path, ViewPath: defaultViewPath}
+	db := &Database{Name: name, DBPath: path, ViewDirPath: defaultViewPath}
 	db.idSeq = NewSequenceUUIDGenarator()
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
 	db.readers = NewDatabaseReaderPool(4, serviceLocator)
