@@ -91,7 +91,7 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	kdb.localDB.Begin()
 	defer kdb.localDB.Rollback()
 
-	fileName := name + "-1"
+	fileName := name
 
 	if createIfNotExists {
 		if err := kdb.localDB.Create(name, fileName); err != nil {
