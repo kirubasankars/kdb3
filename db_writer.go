@@ -72,13 +72,13 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(version, kind, deleted);
+			(doc_id, version, kind, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
-			(seq_id, deleted);
+			(doc_id, seq_id, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
-			(kind) WHERE kind IS NOT NULL;
+			(doc_id, kind) WHERE kind IS NOT NULL;
 		`
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
