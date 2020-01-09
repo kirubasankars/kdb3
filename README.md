@@ -1,5 +1,5 @@
 # kdb3
-database written in Go with sqlite3 as storage and query/view engine. Not ready yet.
+database written in Go with sqlite3 as storage and query/view engine. Not ready yet. doucmentation is incomplete and inprogress.
 
 Features
   1. Document Database - Done
