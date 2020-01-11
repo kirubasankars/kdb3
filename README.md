@@ -17,14 +17,14 @@ Let me assume you're familiar with sqlite3 database. To work with kdb3, its impo
 
 Let's create sqlite database for our blog with a table name called “documents” with sample data. it has only title attribute to make my example simple.
 
-  CREATE TABLE documents (data);  
-  INSERT INTO documents (data) VALUES(‘{“title”:”getting started”}’);
-  INSERT INTO documents (data) VALUES(‘{“title”:”kdb3 has full sql support”}’);
+    CREATE TABLE documents (data);  
+    INSERT INTO documents (data) VALUES(‘{“title”:”getting started”}’);
+    INSERT INTO documents (data) VALUES(‘{“title”:”kdb3 has full sql support”}’);
 
 Let’s create another table called “posts”, to show list of posts.
 
-  CREATE TABLE posts (title)
-  INSERT INTO posts (title) SELECT json_extract(data, ‘$.title’) from documents
+    CREATE TABLE posts (title)
+    INSERT INTO posts (title) SELECT json_extract(data, ‘$.title’) from documents
 
 Now “posts” table has materialized the data which is in “documents” table. Based on access pattern, we just have optimized way to look at list of posts. 
 
@@ -50,45 +50,45 @@ kdb3 database is a sqlite database file and it accepts only json documents, view
 
 You can create database as follows.
 
-  curl -X PUT localhost:8001/blog
-  {“ok”:true}
-
-Please read about materialized view here, if you are not familiar with it.
+    curl -X PUT localhost:8001/blog
+    {“ok”:true}
 
 materialized view are great, since one can optimize the data for particular access pattern and make data access really fast. But materialized view is never refreshed util you wanted to, since RDBMS has no way to know which rows are changed, so it has to reprocess all the rows in order to update the materialized view with latest data.
 
 kdb3 database accepts json objects and returns an id and version number. Id assigned, if not present in the document. Version number are used as optimistic concurrency locking, you always need latest version, in order to update the document. 
 
-  curl -X POST localhost:8001/blog -d ‘{“title”:”getting started”}’ {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd7","_version":1}
+    curl -X POST localhost:8001/blog -d ‘{“title”:”getting started”}’
+    {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd7","_version":1}
 
-  curl -X POST localhost:8001/blog -d ‘{“title”:”kdb3 is great”}’ {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd8","_version":1}
+    curl -X POST localhost:8001/blog -d ‘{“title”:”kdb3 is great”}’
+    {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd8","_version":1}
 
 One can view the document back as follows
 
-  curl -X GET localhost:8001/blog/f7f7a5d6d8d4b8292b346c83fd5fbbd7
+    curl -X GET localhost:8001/blog/f7f7a5d6d8d4b8292b346c83fd5fbbd7
 
 A change tracking sequence number is also assigned on every document insertion and modification. With change tracking in place, one can ask what changed in the database from last time.
 
-  curl -X GET localhost:8001/blog/_changes
-  {
-    "results": [
-      {
-        "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWh",
-        "version": 1,
-        "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd8"
-      },
-      {
-        "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWg",
-        "version": 1,
-        "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd7"
-      },
-      {
-        "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWf",
-        "version": 1,
-        "id": "_design/_views"
-      }
-    ]
-  }
+    curl -X GET localhost:8001/blog/_changes
+    {
+      "results": [
+        {
+          "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWh",
+          "version": 1,
+          "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd8"
+        },
+        {
+          "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWg",
+          "version": 1,
+          "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd7"
+        },
+        {
+          "seq": "PekcYXXlg_55f3i0o9utQ9271W5WFgDge742C4iWeFavCXxWf",
+          "version": 1,
+          "id": "_design/_views"
+        }
+      ]
+    }
 
 “_design/_views” is the default view definition, created on database creation. kdb3 materialized views uses change tracking sequence number to get latest data changes from its database and keep itself update to date. 
 
@@ -106,25 +106,25 @@ View engine, takes changed documents from databases and extract/compute data kee
 
 Example view definition:
 
-  {
-    "_id": "_design/posts",
-    "_version": 1,
-    "_kind": "design",
-    "views": {
-      "_all_posts": {
-        "setup": [
-          "CREATE TABLE IF NOT EXISTS posts (title, doc_id, PRIMARY KEY(doc_id))"
-        ],
-        "run": [
-          "DELETE FROM posts WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-          "INSERT OR REPLACE INTO posts (title, doc_id) SELECT json_extract(data, '$.title'), doc_id FROM latest_documents WHERE deleted = 0 AND json_extract(data, ‘$.title') is not null"
-        ],
-        "select": {
-          "default": "SELECT JSON_OBJECT('rows',JSON_GROUP_ARRAY(JSON_OBJECT('title', title, 'id', doc_id))) FROM posts"
+    {
+      "_id": "_design/posts",
+      "_version": 1,
+      "_kind": "design",
+      "views": {
+        "_all_posts": {
+          "setup": [
+            "CREATE TABLE IF NOT EXISTS posts (title, doc_id, PRIMARY KEY(doc_id))"
+          ],
+          "run": [
+            "DELETE FROM posts WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
+            "INSERT OR REPLACE INTO posts (title, doc_id) SELECT json_extract(data, '$.title'), doc_id FROM latest_documents WHERE deleted = 0 AND json_extract(data, ‘$.title') is not null"
+          ],
+          "select": {
+            "default": "SELECT JSON_OBJECT('rows',JSON_GROUP_ARRAY(JSON_OBJECT('title', title, 'id', doc_id))) FROM posts"
+          }
         }
       }
     }
-  }
 
 Note : POST following json document to same blog database.
 
@@ -138,9 +138,19 @@ Above view definition has enough information to build and keep data update to da
 
 View can be executed with followings
 
-GET /(database)/_design/(doc_id)/(viewname)/(select_name)
-
-GET /(database)/_design/_views/_all_docs/default
+    curl -X GET localhost:8001/blog/_design/posts/_all_posts
+    {
+      "rows": [
+        {
+          "title": "getting started",
+          "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd7"
+        },
+        {
+          "title": "kdb3 is great",
+          "id": "f7f7a5d6d8d4b8292b346c83fd5fbbd8"
+        }
+      ]
+    }
 
 ## How to Build?
 
