@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io/ioutil"
@@ -409,6 +410,10 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 	if err != nil {
 		return err
 	}
+	_, err = tx.Exec("CREATE VIEW documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, 0, '{}' as data ;")
+	if err != nil {
+		return err
+	}
 	var sqlErr string = ""
 
 	for _, v := range newDDoc.Views {
@@ -433,6 +438,19 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc *Document) error {
 		if sqlErr != "" {
 			break
 		}
+	}
+
+	_, err = tx.Exec("SELECT * FROM latest_changes WHERE 1 = 2")
+	if err != nil {
+		return errors.New("your script can't drop latest_changes")
+	}
+	_, err = tx.Exec("SELECT * FROM latest_documents WHERE 1 = 2")
+	if err != nil {
+		return errors.New("your script can't drop latest_documents")
+	}
+	_, err = tx.Exec("SELECT * FROM documents WHERE 1 = 2")
+	if err != nil {
+		return errors.New("your script can't drop documents")
 	}
 
 	if sqlErr != "" {
@@ -518,7 +536,7 @@ func (view *View) Vacuum() error {
 }
 
 func setupDatabase(db *sql.DB, absoluteDatabasePath string) error {
-	_, err := db.Exec("ATTACH DATABASE '" + absoluteDatabasePath + "' as docsdb;")
+	_, err := db.Exec("ATTACH DATABASE 'file://" + absoluteDatabasePath + "?mode=ro' as docsdb;")
 	if err != nil {
 		return err
 	}
