@@ -12,7 +12,7 @@ Features
   7. External Views
   8. UI - InProgress
  
-# How does it works?
+# How does it work?
 Let me assume you're familiar with sqlite3 database. To work with kdb3, its important. its a RDBMS database and does has support for json. https://www.sqlite.org/json1.html
 
 Let's create sqlite database for our blog with a table name called “documents” with sample data. it has only title attribute to make my example simple.
