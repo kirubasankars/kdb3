@@ -183,11 +183,7 @@ func (reader *FakeDatabaseReader) Close() error {
 type FakeViewManager struct {
 }
 
-func (sl *FakeViewManager) SetupViews(db *Database) error {
-	return nil
-}
-
-func (sl *FakeViewManager) Initialize(db *Database) error {
+func (sl *FakeViewManager) Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error {
 	return nil
 }
 
