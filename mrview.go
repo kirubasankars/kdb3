@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -18,8 +17,7 @@ import (
 )
 
 type ViewManager interface {
-	SetupViews(db *Database) error
-	Initialize(db *Database) error
+	Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error
 	ListViewFiles() ([]string, error)
 	OpenView(viewName string, ddoc *DesignDocument) error
 	GetView(viewName string) (*View, bool)
@@ -45,47 +43,11 @@ type DefaultViewManager struct {
 	serviceLocator ServiceLocator
 }
 
-func (mgr *DefaultViewManager) SetupViews(db *Database) error {
-	ddoc := &DesignDocument{}
-	ddoc.ID = "_design/_views"
-	ddoc.Kind = "design"
-	ddoc.Views = make(map[string]*DesignDocumentView)
-	ddv := &DesignDocumentView{}
-	ddv.Setup = append(ddv.Setup, "CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID")
-	ddv.Run = append(ddv.Run, "DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)")
-	ddv.Run = append(ddv.Run, "INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('version', version), doc_id FROM latest_documents WHERE deleted = 0")
-	ddv.Select = make(map[string]string)
-	ddv.Select["default"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})"
-	ddv.Select["with_docs"] = "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
-
-	ddoc.Views["_all_docs"] = ddv
-
-	buffer := &bytes.Buffer{}
-	encoder := json.NewEncoder(buffer)
-	encoder.SetEscapeHTML(false)
-	err := encoder.Encode(ddoc)
-	if err != nil {
-		panic(err)
-	}
-
-	designDoc, err := ParseDocument(buffer.Bytes())
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = db.PutDocument(designDoc)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (mgr *DefaultViewManager) Initialize(db *Database) error {
+func (mgr *DefaultViewManager) Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error {
 	mgr.rwmux = sync.RWMutex{}
-	mgr.dbName = db.Name
-	mgr.viewDirPath = db.ViewDirPath
-
-	absoluteDBPath, err := filepath.Abs(db.DBPath)
+	mgr.dbName = dbName
+	mgr.viewDirPath = viewDirPath
+	absoluteDBPath, err := filepath.Abs(dbPath)
 	if err != nil {
 		panic(err)
 	}
@@ -95,8 +57,7 @@ func (mgr *DefaultViewManager) Initialize(db *Database) error {
 	defer mgr.rwmux.Unlock()
 
 	//load all design docs into memory
-	docs, _ := db.GetAllDesignDocuments()
-	for _, x := range docs {
+	for _, x := range ddocs {
 		ddoc := &DesignDocument{}
 		err := json.Unmarshal(x.Data, ddoc)
 		if err != nil {
