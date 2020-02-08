@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,7 +24,7 @@ type KDBEngine struct {
 	rwmux          sync.RWMutex
 	serviceLocator ServiceLocator
 	fileHandler    FileHandler
-	localDB        *LocalDB
+	localDB        LocalDB
 }
 
 func NewKDB() (*KDBEngine, error) {
@@ -35,8 +34,8 @@ func NewKDB() (*KDBEngine, error) {
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
 	kdb.serviceLocator = NewServiceLocator()
-	kdb.localDB = &LocalDB{}
 
+	kdb.localDB = kdb.serviceLocator.GetLocalDB()
 	fileHandler := kdb.serviceLocator.GetFileHandler()
 
 	if !fileHandler.IsFileExists(kdb.dbPath) {
@@ -73,7 +72,7 @@ func NewKDB() (*KDBEngine, error) {
 func (kdb *KDBEngine) ListDataBases() ([]string, error) {
 	kdb.localDB.Begin()
 	defer kdb.localDB.Commit()
-	return kdb.localDB.List()
+	return kdb.localDB.ListDatabases()
 }
 
 func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
@@ -94,14 +93,14 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	fileName := name
 
 	if createIfNotExists {
-		if err := kdb.localDB.Create(name, fileName); err != nil {
+		if err := kdb.localDB.CreateDatabase(name, fileName); err != nil {
 			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
 				return ErrDBExists
 			}
 			return err
 		}
 	} else {
-		fileName = kdb.localDB.GetFileName(name)
+		fileName = kdb.localDB.GetDatabaseFileName(name)
 	}
 
 	db, err := NewDatabase(name, fileName, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
@@ -122,20 +121,23 @@ func (kdb *KDBEngine) Delete(name string) error {
 
 	kdb.localDB.Begin()
 	defer kdb.localDB.Rollback()
-	fileName := kdb.localDB.GetFileName(name)
-	kdb.localDB.Delete(name)
+
+	fileName := kdb.localDB.GetDatabaseFileName(name)
+	viewFileNames, _ := kdb.localDB.ListViewFiles(name)
+
+	kdb.localDB.DeleteViews(name)
+	kdb.localDB.DeleteDatabase(name)
 
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return ErrDBNotFound
 	}
-
 	delete(kdb.dbs, name)
 	db.Close()
 
-	deleteDBFiles(kdb.dbPath, kdb.viewPath, fileName)
-
 	kdb.localDB.Commit()
+
+	kdb.deleteDBFiles(fileName, viewFileNames)
 
 	return nil
 }
@@ -156,9 +158,6 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 		err := db.ValidateDesignDocument(newDoc)
 		if err != nil {
 			return nil, err
-		}
-		if newDoc.Deleted {
-			db.viewManager.UpdateDesignDocument(newDoc)
 		}
 	}
 
@@ -285,19 +284,14 @@ func (kdb *KDBEngine) Info() []byte {
 	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }
 
-func deleteDBFiles(dbPath, viewPath, dbname string) {
-	list, _ := ioutil.ReadDir(viewPath)
-	for idx := range list {
-		name := list[idx].Name()
-		if strings.HasPrefix(name, dbname+"$") && strings.HasSuffix(name, dbExt) {
-			os.Remove(filepath.Join(viewPath, name))
-		}
+func (kdb *KDBEngine) deleteDBFiles(dbname string, viewFiles []string) {
+	for _, vf := range viewFiles {
+		os.Remove(filepath.Join(kdb.viewPath, vf+dbExt))
 	}
-
 	fileName := dbname + dbExt
-	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
-	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
-	os.Remove(filepath.Join(dbPath, fileName))
+	os.Remove(filepath.Join(kdb.dbPath, fileName+"-shm"))
+	os.Remove(filepath.Join(kdb.dbPath, fileName+"-wal"))
+	os.Remove(filepath.Join(kdb.dbPath, fileName))
 }
 
 func validateDBName(name string) bool {
