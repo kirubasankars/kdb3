@@ -104,14 +104,17 @@ func (p *DefaultViewReaderPool) Return(r ViewReader) {
 
 func (p *DefaultViewReaderPool) Close() error {
 	var err error
+
+	count := 0
 	for {
 		var r ViewReader
 		select {
 		case r = <-p.pool:
 			err = r.Close()
+			count++
 		default:
 		}
-		if r == nil {
+		if count == p.limit {
 			break
 		}
 	}

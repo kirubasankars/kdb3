@@ -277,18 +277,19 @@ func (p *DefaultDatabaseReaderPool) Return(r DatabaseReader) {
 // TODO: close all connections (may be wait) by limit
 func (p *DefaultDatabaseReaderPool) Close() error {
 	var err error
+	count := 0
 	for {
 		var r DatabaseReader
 		select {
 		case r = <-p.pool:
 			err = r.Close()
+			count++
 		default:
 		}
-		if r == nil {
+		if count == p.limit {
 			break
 		}
 	}
-
 	return err
 }
 

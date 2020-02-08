@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -72,8 +73,9 @@ func (db *Database) Close() error {
 	defer db.mux.Unlock()
 
 	db.viewManager.Close()
-	db.writer.Close()
 	db.readers.Close()
+	db.writer.Close()
+
 	return nil
 }
 
@@ -133,6 +135,10 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	if newDoc.Deleted {
 		db.DocCount--
 		db.DeletedDocCount++
+
+		if strings.HasPrefix(newDoc.ID, "_design/") {
+			db.viewManager.UpdateDesignDocument(newDoc)
+		}
 	}
 
 	return newDoc, nil
