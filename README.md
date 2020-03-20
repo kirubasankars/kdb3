@@ -6,11 +6,12 @@ Features
   2. Optimistic Concurrency - Done
   3. Restful API - Done
   4. Change tracking - Done
-  4. Incrementally updated Materialized View (with sqlite3) - Done
-  5. Incremental Backup
-  6. External Replication
-  7. External Views
-  8. UI - InProgress
+  5. Incrementally updated Materialized View (with sqlite3) - Done
+  6. Live Vaccumm - InProgress
+  7. Incremental Backup
+  8. External Replication
+  9. External Views
+  10. UI - InProgress
  
 # How does it work?
 Let me assume you're familiar with sqlite3 database. To work with kdb3, its important. its a RDBMS database and does has support for json. https://www.sqlite.org/json1.html
