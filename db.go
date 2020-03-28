@@ -137,7 +137,7 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 		db.DeletedDocCount++
 
 		if strings.HasPrefix(newDoc.ID, "_design/") {
-			db.viewManager.UpdateDesignDocument(newDoc)
+			db.viewManager.UpdateDesignDocument(newDoc, "")
 		}
 	}
 

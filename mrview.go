@@ -24,7 +24,7 @@ type ViewManager interface {
 	SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	Close() error
 	Vacuum() error
-	UpdateDesignDocument(doc *Document) error
+	UpdateDesignDocument(doc *Document, qualifiedViewName string) error
 	ValidateDesignDocument(doc *Document) error
 	CalculateSignature(ddocv *DesignDocumentView) string
 	ParseQueryParams(query string) (string, []string)
@@ -55,7 +55,8 @@ func (mgr *DefaultViewManager) Initialize(dbName, dbPath, viewDirPath string, dd
 	mgr.rwmux.Lock()
 	defer mgr.rwmux.Unlock()
 
-	diskViewFiles, err := mgr.ListViewFiles()
+	// cleanup unused files
+	diskViewFiles, err := mgr.listViewFiles()
 	viewFiles, err := mgr.localdb.ListViewFiles(mgr.dbName)
 	for _, diskViewFile := range diskViewFiles {
 		found := false
@@ -82,7 +83,7 @@ func (mgr *DefaultViewManager) Initialize(dbName, dbPath, viewDirPath string, dd
 	return nil
 }
 
-func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
+func (mgr *DefaultViewManager) listViewFiles() ([]string, error) {
 	list, err := ioutil.ReadDir(mgr.viewDirPath)
 	if err != nil {
 		return nil, err
@@ -147,7 +148,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 		defer mgr.rwmux.RLock()
 		defer mgr.rwmux.Unlock()
 
-		err := mgr.UpdateDesignDocument(doc)
+		err := mgr.UpdateDesignDocument(doc, qualifiedViewName)
 		if err != nil {
 			return nil, err
 		}
@@ -218,45 +219,52 @@ func (mgr *DefaultViewManager) Vacuum() error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document) error {
-
-	ddocID := doc.ID
-	currentDDoc, ok := mgr.ddocs[ddocID]
-	if ok {
-		for vname := range currentDDoc.Views {
-
-			qualifiedViewName := ddocID + "$" + vname
-			delete(mgr.views, qualifiedViewName)
-
-			mgr.localdb.Begin()
-			defer mgr.localdb.Rollback()
-			files, _ := mgr.localdb.ListViewFiles(mgr.dbName)
-			_, viewFileName := mgr.localdb.GetViewFileName(mgr.dbName, qualifiedViewName)
-
-			refCount := 0
-			for _, vFile := range files {
-				if vFile == viewFileName {
-					refCount++
-				}
-			}
-			if refCount == 1 {
-				os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
-			}
-
-			mgr.localdb.DeleteView(mgr.dbName, qualifiedViewName)
-			mgr.localdb.Commit()
+func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document, viewName string) error {
+	var views []string
+	if viewName == "" {
+		ddoc := mgr.ddocs[doc.ID]
+		for viewName := range ddoc.Views {
+			views = append(views, doc.ID+"$"+viewName)
 		}
+	} else {
+		views = append(views, viewName)
 	}
 
+	mgr.localdb.Begin()
+	defer mgr.localdb.Rollback()
+
+	for _, qualifiedViewName := range views {
+		if view, ok := mgr.views[qualifiedViewName]; ok {
+			view.Close()
+		}
+		delete(mgr.views, qualifiedViewName)
+
+		files, _ := mgr.localdb.ListViewFiles(mgr.dbName)
+		_, viewFileName := mgr.localdb.GetViewFileName(mgr.dbName, qualifiedViewName)
+
+		refCount := 0
+		for _, vFile := range files {
+			if vFile == viewFileName {
+				refCount++
+			}
+		}
+		if refCount == 1 {
+			os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
+		}
+		mgr.localdb.DeleteView(mgr.dbName, qualifiedViewName)
+	}
+
+	mgr.localdb.Commit()
+
 	if doc.Deleted {
-		delete(mgr.ddocs, ddocID)
+		delete(mgr.ddocs, doc.ID)
 	} else {
 		newDDoc := &DesignDocument{}
 		err := json.Unmarshal(doc.Data, newDDoc)
 		if err != nil {
-			panic("invalid_design_document " + ddocID)
+			panic("invalid_design_document " + doc.ID)
 		}
-		mgr.ddocs[ddocID] = newDDoc
+		mgr.ddocs[doc.ID] = newDDoc
 	}
 
 	return nil
