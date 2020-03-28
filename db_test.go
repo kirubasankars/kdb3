@@ -1,12 +1,6 @@
 package main
 
-import (
-	"errors"
-	"fmt"
-	"net/url"
-	"testing"
-)
-
+/*
 type FakeDatabaseReaderPool struct {
 	reader   *FakeDatabaseReader
 	borrowed bool
@@ -1072,3 +1066,6 @@ func TestDatabaseSelectView(t *testing.T) {
 
 	deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
 }
+
+
+*/
