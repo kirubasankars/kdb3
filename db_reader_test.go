@@ -1,68 +1,80 @@
 package main
 
 import (
-	"os"
+	"database/sql"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func setupTestDatabaseWithWriter() error {
-	os.Remove(testConnectionString)
+var testConnectionString string = "file:testdb.db?mode=memory&cache=shared"
 
+func openTestDatabase() func() {
+	con, _ := sql.Open("sqlite3", testConnectionString)
+	tx, _ := con.Begin()
+	tx.Exec("CREATE TABLE a(b)")
+	tx.Commit()
+	return func() {
+		con.Close()
+	}
+}
+
+func setupTestDatabase1() {
 	serviceLocator := new(DefaultServiceLocator)
 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
 	err := writer.Open(testConnectionString)
 	if err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	err = writer.Begin()
 	if err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	if err := writer.ExecBuildScript(); err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
 	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
 	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
 	if err := writer.PutDocument("seqID3", doc, nil); err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
 	if err := writer.PutDocument("seqID4", doc, nil); err != nil {
-		return err
+		fmt.Println("unable to setup test database")
+		return
 	}
 
 	writer.Commit()
 
 	writer.Close()
-
-	return nil
-}
-
-func deleteTestDatabaseWithWriter() {
-	os.Remove(testConnectionString)
 }
 
 func TestReaderGetDocumentByID(t *testing.T) {
 
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -76,15 +88,13 @@ func TestReaderGetDocumentByID(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetDocumentRevisionByID(t *testing.T) {
 
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -98,15 +108,12 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetDocumentByIDandVersion(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -120,15 +127,12 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -142,15 +146,12 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetDocumentCount(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -165,15 +166,12 @@ func TestReaderGetDocumentCount(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetLastUpdateSequence(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -188,15 +186,12 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetChanges(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -210,15 +205,12 @@ func TestReaderGetChanges(t *testing.T) {
 	}
 	reader.Commit()
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderGetAllDesignDocuments(t *testing.T) {
-
-	if err := setupTestDatabaseWithWriter(); err != nil {
-		t.Errorf("unable to setup a database. %s", err.Error())
-	}
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+	setupTestDatabase1()
 
 	serviceLocator := new(DefaultServiceLocator)
 	var reader DatabaseReader = serviceLocator.GetDatabaseReader()
@@ -241,11 +233,12 @@ func TestReaderGetAllDesignDocuments(t *testing.T) {
 	reader.Commit()
 
 	reader.Close()
-
-	deleteTestDatabaseWithWriter()
 }
 
 func TestReaderPool(t *testing.T) {
+	dbCloseHandle := openTestDatabase()
+	defer dbCloseHandle()
+
 	serviceLocator := new(DefaultServiceLocator)
 	readers := NewDatabaseReaderPool(1, serviceLocator)
 	readers.Open(testConnectionString)

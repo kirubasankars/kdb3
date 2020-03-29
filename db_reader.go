@@ -76,7 +76,7 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?", ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
-		return nil, err
+		return nil, ErrDocNotFound
 	}
 
 	if doc.ID == "" {
