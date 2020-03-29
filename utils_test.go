@@ -15,7 +15,7 @@ func TestFormatDocString1(t *testing.T) {
 
 func TestFormatDocString2(t *testing.T) {
 	o := formatDocString("1", 0, false)
-	expected := `{"_id":"1",}`
+	expected := `{"_id":"1"}`
 
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
