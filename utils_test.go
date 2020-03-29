@@ -9,6 +9,7 @@ func TestFormatDocString1(t *testing.T) {
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
 	}
+	//
 }
 
 func TestFormatDocString2(t *testing.T) {
