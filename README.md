@@ -1,4 +1,4 @@
-# kdb3
+# kdb3 ![Go](https://github.com/kirubasankars/kdb3/workflows/Go/badge.svg)
 database written in Go with sqlite3 as storage and query/view engine. Not ready yet. doucmentation is incomplete and inprogress.
 
 Features
