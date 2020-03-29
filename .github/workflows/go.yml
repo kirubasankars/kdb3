@@ -27,4 +27,4 @@ jobs:
     - name: Build
       run: go build -tags "json1" -v .
     - name: Test
-      run: go -tags "json1" test
+      run: go test -tags "json1"
