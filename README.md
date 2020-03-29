@@ -7,7 +7,7 @@ Features
   3. Restful API - Done
   4. Change tracking - Done
   5. Incrementally updated Materialized View (with sqlite3) - Done
-  6. Live Vaccumm - InProgress
+  6. Live Vaccum - InProgress
   7. Incremental Backup
   8. External Replication
   9. External Views
