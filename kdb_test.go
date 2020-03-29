@@ -51,11 +51,7 @@ func TestCreateDatabase(t *testing.T) {
 
 func TestListDatabases(t *testing.T) {
 	kdb, _ := NewKDB()
-	err := kdb.Open("testdb1", true)
-	if err != nil {
-		t.Error(err)
-	}
-	err = kdb.Open("testdb2", true)
+	err := kdb.Open("testdb", true)
 	if err != nil {
 		t.Error(err)
 	}
@@ -66,23 +62,16 @@ func TestListDatabases(t *testing.T) {
 	}
 	var dbCount = 0
 	for _, x := range dbs {
-		if x == "testdb1" {
-			dbCount++
-		}
-		if x == "testdb2" {
+		if x == "testdb" {
 			dbCount++
 		}
 	}
 
-	if dbCount != 2 {
+	if dbCount != 1 {
 		t.Error("list databases failed")
 	}
 
-	err = kdb.Delete("testdb1")
-	if err != nil {
-		t.Error(err)
-	}
-	err = kdb.Delete("testdb2")
+	err = kdb.Delete("testdb")
 	if err != nil {
 		t.Error(err)
 	}
