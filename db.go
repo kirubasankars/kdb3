@@ -292,9 +292,6 @@ func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExis
 	db.idSeq = NewSequenceUUIDGenarator()
 
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
-	if db.DBPath == "testdb" {
-		connectionString = "file:testdb.db?mode=memory&cache=shared"
-	}
 
 	db.readers = NewDatabaseReaderPool(4, serviceLocator)
 	db.writer = serviceLocator.GetDatabaseWriter()
