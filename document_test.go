@@ -18,11 +18,11 @@ func TestParseDocumentBadJSON(t *testing.T) {
 func TestParseDocumentWithVerisonandNoID(t *testing.T) {
 	_, err := ParseDocument([]byte(`{"_version":1}`))
 	if err == nil {
-		t.Errorf("expected to fail with %s", ErrDocInvalidID)
+		t.Errorf("expected to fail with %s", ErrDocumentInvalidID)
 	}
 
-	if err != nil && !errors.Is(err, ErrDocInvalidInput) {
-		t.Errorf("expected to fail with %s", ErrDocInvalidID)
+	if err != nil && !errors.Is(err, ErrDocumentInvalidInput) {
+		t.Errorf("expected to fail with %s", ErrDocumentInvalidID)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestParseDocumentObject(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected to fail")
 	}
-	if !errors.Is(err, ErrDocInvalidInput) {
-		t.Errorf("expected to fail with %s, got %s", err.Error(), ErrDocInvalidInput)
+	if !errors.Is(err, ErrDocumentInvalidInput) {
+		t.Errorf("expected to fail with %s, got %s", err.Error(), ErrDocumentInvalidInput)
 	}
 }

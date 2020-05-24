@@ -74,11 +74,11 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 	}
 
 	if doc.ID == "" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, ErrDocNotFound
+		return doc, ErrDocumentNotFound
 	}
 
 	return doc, nil
@@ -91,15 +91,15 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?", ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
 	if err != nil && err.Error() != "sql: no rows in result set" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	if doc.ID == "" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, ErrDocNotFound
+		return doc, ErrDocumentNotFound
 	}
 
 	return doc, nil
@@ -112,7 +112,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, data as data FROM documents WHERE doc_id = ?", ID, ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
@@ -130,11 +130,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	doc.Data = data
 
 	if doc.ID == "" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, ErrDocNotFound
+		return doc, ErrDocumentNotFound
 	}
 
 	return doc, nil
@@ -164,11 +164,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 	doc.Data = data
 
 	if doc.ID == "" {
-		return nil, ErrDocNotFound
+		return nil, ErrDocumentNotFound
 	}
 
 	if doc.Deleted == true {
-		return doc, ErrDocNotFound
+		return doc, ErrDocumentNotFound
 	}
 
 	return doc, nil

@@ -6,6 +6,7 @@ type ServiceLocator interface {
 
 	GetDatabaseWriter() DatabaseWriter
 	GetDatabaseReader() DatabaseReader
+	GetDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool) (Database, error)
 	GetLocalDB() LocalDB
 
 	GetViewManager() ViewManager
@@ -58,10 +59,15 @@ func (serviceLocator *DefaultServiceLocator) GetLocalDB() LocalDB {
 	return serviceLocator.localdb
 }
 
+// GetDatabase resolve database instance
+func (serviceLocator *DefaultServiceLocator) GetDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool) (Database, error) {
+	return NewDatabase(name, fileName, dbPath, defaultViewPath, createIfNotExists, serviceLocator)
+}
+
 // NewServiceLocator create new servicelocator
 func NewServiceLocator() ServiceLocator {
 	serviceLocator := new(DefaultServiceLocator)
 	serviceLocator.fileHandler = new(DefaultFileHandler)
-	serviceLocator.localdb = &DefaultLocalDB{}
+	serviceLocator.localdb = NewLocalDB()
 	return serviceLocator
 }
