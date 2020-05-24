@@ -71,7 +71,6 @@ func setupTestDatabase1() {
 }
 
 func TestReaderGetDocumentByID(t *testing.T) {
-
 	dbCloseHandle := openTestDatabase()
 	defer dbCloseHandle()
 	setupTestDatabase1()
@@ -82,8 +81,12 @@ func TestReaderGetDocumentByID(t *testing.T) {
 
 	reader.Begin()
 
-	if _, err := reader.GetDocumentByID("1"); err != nil {
+	doc, err := reader.GetDocumentByID("1")
+	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
+	}
+	if doc.Version != 1 {
+		t.Errorf("missing doc version")
 	}
 
 	reader.Commit()
@@ -91,7 +94,6 @@ func TestReaderGetDocumentByID(t *testing.T) {
 }
 
 func TestReaderGetDocumentRevisionByID(t *testing.T) {
-
 	dbCloseHandle := openTestDatabase()
 	defer dbCloseHandle()
 	setupTestDatabase1()
@@ -102,8 +104,12 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 
 	reader.Begin()
 
-	if _, err := reader.GetDocumentRevisionByID("1"); err != nil {
+	doc, err := reader.GetDocumentRevisionByID("1")
+	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
+	}
+	if doc.Version != 1 {
+		t.Errorf("missing doc version")
 	}
 
 	reader.Commit()

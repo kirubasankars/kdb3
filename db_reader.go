@@ -96,7 +96,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 	row := reader.tx.QueryRow("SELECT doc_id, version, ifnull(kind, '') as kind, deleted, data as data FROM documents WHERE doc_id = ?", ID, ID)
 	err := row.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
 	if err != nil && err.Error() != "sql: no rows in result set" {
-		return nil, err
+		return nil, ErrDocNotFound
 	}
 
 	var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
