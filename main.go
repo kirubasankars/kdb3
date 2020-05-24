@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var kdb *KDBEngine
+var kdb *KDB
 
 func main() {
 	var err error

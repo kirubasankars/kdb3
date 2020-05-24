@@ -16,7 +16,8 @@ import (
 
 var dbExt = ".db"
 
-type KDBEngine struct {
+// KDB kdb
+type KDB struct {
 	dbPath   string
 	viewPath string
 
@@ -27,8 +28,9 @@ type KDBEngine struct {
 	localDB        LocalDB
 }
 
-func NewKDB() (*KDBEngine, error) {
-	kdb := new(KDBEngine)
+// NewKDB create kdb instance
+func NewKDB() (*KDB, error) {
+	kdb := new(KDB)
 	kdb.dbs = make(map[string]*Database)
 	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
@@ -54,7 +56,7 @@ func NewKDB() (*KDBEngine, error) {
 		return nil, err
 	}
 
-	list, err := kdb.ListDataBases()
+	list, err := kdb.ListDatabases()
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +71,15 @@ func NewKDB() (*KDBEngine, error) {
 	return kdb, nil
 }
 
-func (kdb *KDBEngine) ListDataBases() ([]string, error) {
+// ListDatabases List the databases
+func (kdb *KDB) ListDatabases() ([]string, error) {
 	kdb.localDB.Begin()
 	defer kdb.localDB.Commit()
 	return kdb.localDB.ListDatabases()
 }
 
-func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
+// Open open the kdb database
+func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	if !validateDBName(name) {
 		return ErrDBInvalidName
 	}
@@ -115,7 +119,8 @@ func (kdb *KDBEngine) Open(name string, createIfNotExists bool) error {
 	return nil
 }
 
-func (kdb *KDBEngine) Delete(name string) error {
+// Delete delete the kdb database
+func (kdb *KDB) Delete(name string) error {
 	kdb.rwmux.Lock()
 	defer kdb.rwmux.Unlock()
 
@@ -142,7 +147,8 @@ func (kdb *KDBEngine) Delete(name string) error {
 	return nil
 }
 
-func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, error) {
+// PutDocument insert a document
+func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -164,12 +170,14 @@ func (kdb *KDBEngine) PutDocument(name string, newDoc *Document) (*Document, err
 	return db.PutDocument(newDoc)
 }
 
-func (kdb *KDBEngine) DeleteDocument(name string, doc *Document) (*Document, error) {
+// DeleteDocument delete a document
+func (kdb *KDB) DeleteDocument(name string, doc *Document) (*Document, error) {
 	doc.Deleted = true
 	return kdb.PutDocument(name, doc)
 }
 
-func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
+// GetDocument get a document
+func (kdb *KDB) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -180,7 +188,8 @@ func (kdb *KDBEngine) GetDocument(name string, doc *Document, includeDoc bool) (
 	return db.GetDocument(doc, includeDoc)
 }
 
-func (kdb *KDBEngine) BulkDocuments(name string, body []byte) ([]byte, error) {
+// BulkDocuments insert multiple documents
+func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 	fValues, err := fastjson.ParseBytes(body)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
@@ -202,7 +211,8 @@ func (kdb *KDBEngine) BulkDocuments(name string, body []byte) ([]byte, error) {
 	return []byte(outputs.String()), nil
 }
 
-func (kdb *KDBEngine) BulkGetDocuments(name string, body []byte) ([]byte, error) {
+// BulkGetDocuments get multiple documents
+func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 	fValues, err := fastjson.ParseBytes(body)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
@@ -224,7 +234,8 @@ func (kdb *KDBEngine) BulkGetDocuments(name string, body []byte) ([]byte, error)
 	return []byte(outputs.String()), nil
 }
 
-func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
+// DBStat kdb stat
+func (kdb *KDB) DBStat(name string) (*DBStat, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -234,7 +245,8 @@ func (kdb *KDBEngine) DBStat(name string) (*DBStat, error) {
 	return db.GetStat(), nil
 }
 
-func (kdb *KDBEngine) Vacuum(name string) error {
+// Vacuum vacuum
+func (kdb *KDB) Vacuum(name string) error {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -246,7 +258,8 @@ func (kdb *KDBEngine) Vacuum(name string) error {
 	return db.Vacuum()
 }
 
-func (kdb *KDBEngine) Changes(name string, since string, limit int) ([]byte, error) {
+// Changes list changes
+func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -259,7 +272,8 @@ func (kdb *KDBEngine) Changes(name string, since string, limit int) ([]byte, err
 	return db.GetChanges(since, limit)
 }
 
-func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+// SelectView select the kdb view
+func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	kdb.rwmux.RLock()
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[dbName]
@@ -275,7 +289,8 @@ func (kdb *KDBEngine) SelectView(dbName, designDocID, viewName, selectName strin
 	return rs, nil
 }
 
-func (kdb *KDBEngine) Info() []byte {
+// Info get kdb info
+func (kdb *KDB) Info() []byte {
 	var version, sqliteSourceID string
 	con, _ := sql.Open("sqlite3", ":memory:")
 	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
@@ -284,7 +299,7 @@ func (kdb *KDBEngine) Info() []byte {
 	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }
 
-func (kdb *KDBEngine) deleteDBFiles(dbname string, viewFiles []string) {
+func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 	for _, vf := range viewFiles {
 		os.Remove(filepath.Join(kdb.viewPath, vf+dbExt))
 	}

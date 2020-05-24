@@ -276,7 +276,7 @@ func PutDDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func AllDatabases(w http.ResponseWriter, r *http.Request) {
-	list, err := kdb.ListDataBases()
+	list, err := kdb.ListDatabases()
 	if err != nil {
 		NotOK(err, w)
 		return
