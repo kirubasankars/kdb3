@@ -10,7 +10,30 @@ import (
 	"sync"
 )
 
-type Database struct {
+// Database interface
+type Database interface {
+	Open(connectionString string, createIfNotExists bool) error
+	Close() error
+
+	PutDocument(newDoc *Document) (*Document, error)
+	DeleteDocument(doc *Document) (*Document, error)
+	GetDocument(doc *Document, includeData bool) (*Document, error)
+	GetAllDesignDocuments() ([]*Document, error)
+	GetLastUpdateSequence() string
+	GetChanges(since string, limit int) ([]byte, error)
+
+	GetDocumentCount() (int, int)
+	GetStat() *DBStat
+	Vacuum() error
+	SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	ValidateDesignDocument(doc *Document) error
+	SetupAllDocsViews() error
+
+	GetViewManager() ViewManager
+}
+
+// DefaultDatabase default implementation of database
+type DefaultDatabase struct {
 	Name            string
 	UpdateSeq       string
 	DocCount        int
@@ -28,7 +51,8 @@ type Database struct {
 	viewManager ViewManager
 }
 
-func (db *Database) Open(connectionString string, createIfNotExists bool) error {
+// Open open kdb database
+func (db *DefaultDatabase) Open(connectionString string, createIfNotExists bool) error {
 
 	err := db.writer.Open(connectionString + "&mode=rwc")
 	if err != nil {
@@ -68,7 +92,8 @@ func (db *Database) Open(connectionString string, createIfNotExists bool) error 
 	return nil
 }
 
-func (db *Database) Close() error {
+// Close close the kdb database
+func (db *DefaultDatabase) Close() error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
@@ -79,7 +104,8 @@ func (db *Database) Close() error {
 	return nil
 }
 
-func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
+// PutDocument put a document
+func (db *DefaultDatabase) PutDocument(newDoc *Document) (*Document, error) {
 
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -144,12 +170,14 @@ func (db *Database) PutDocument(newDoc *Document) (*Document, error) {
 	return newDoc, nil
 }
 
-func (db *Database) DeleteDocument(doc *Document) (*Document, error) {
+// DeleteDocument delete a document
+func (db *DefaultDatabase) DeleteDocument(doc *Document) (*Document, error) {
 	doc.Deleted = true
 	return db.PutDocument(doc)
 }
 
-func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, error) {
+// GetDocument get a document
+func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
@@ -170,7 +198,8 @@ func (db *Database) GetDocument(doc *Document, includeData bool) (*Document, err
 	return reader.GetDocumentRevisionByID(doc.ID)
 }
 
-func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
+// GetAllDesignDocuments get all design document
+func (db *DefaultDatabase) GetAllDesignDocuments() ([]*Document, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -180,7 +209,8 @@ func (db *Database) GetAllDesignDocuments() ([]*Document, error) {
 	return reader.GetAllDesignDocuments()
 }
 
-func (db *Database) GetLastUpdateSequence() string {
+// GetLastUpdateSequence get last sequence number
+func (db *DefaultDatabase) GetLastUpdateSequence() string {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -190,7 +220,8 @@ func (db *Database) GetLastUpdateSequence() string {
 	return reader.GetLastUpdateSequence()
 }
 
-func (db *Database) GetChanges(since string, limit int) ([]byte, error) {
+// GetChanges get changes
+func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -200,7 +231,8 @@ func (db *Database) GetChanges(since string, limit int) ([]byte, error) {
 	return reader.GetChanges(since, limit)
 }
 
-func (db *Database) GetDocumentCount() (int, int) {
+// GetDocumentCount get document count
+func (db *DefaultDatabase) GetDocumentCount() (int, int) {
 	reader := db.readers.Borrow()
 	defer db.readers.Return(reader)
 
@@ -210,7 +242,8 @@ func (db *Database) GetDocumentCount() (int, int) {
 	return reader.GetDocumentCount()
 }
 
-func (db *Database) GetStat() *DBStat {
+// GetStat get database stat
+func (db *DefaultDatabase) GetStat() *DBStat {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
@@ -222,11 +255,13 @@ func (db *Database) GetStat() *DBStat {
 	return stat
 }
 
-func (db *Database) Vacuum() error {
+// Vacuum vacuum
+func (db *DefaultDatabase) Vacuum() error {
 	return db.writer.Vacuum()
 }
 
-func (db *Database) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+// SelectView select view
+func (db *DefaultDatabase) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	inputDoc := &Document{ID: ddocID}
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
@@ -236,11 +271,18 @@ func (db *Database) SelectView(ddocID, viewName, selectName string, values url.V
 	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
 }
 
-func (db *Database) ValidateDesignDocument(doc *Document) error {
+// ValidateDesignDocument validate design document
+func (db *DefaultDatabase) ValidateDesignDocument(doc *Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
 }
 
-func (db *Database) SetupAllDocsViews() error {
+// GetViewManager get a view manager
+func (db *DefaultDatabase) GetViewManager() ViewManager {
+	return db.viewManager
+}
+
+// SetupAllDocsViews setup default views
+func (db *DefaultDatabase) SetupAllDocsViews() error {
 	ddoc := &DesignDocument{}
 	ddoc.ID = "_design/_views"
 	ddoc.Kind = "design"
@@ -275,7 +317,8 @@ func (db *Database) SetupAllDocsViews() error {
 	return nil
 }
 
-func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (*Database, error) {
+// NewDatabase create database instance
+func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (Database, error) {
 	fileHandler := serviceLocator.GetFileHandler()
 	path := filepath.Join(dbPath, fileName+dbExt)
 	if !fileHandler.IsFileExists(path) {
@@ -288,7 +331,7 @@ func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExis
 		}
 	}
 
-	db := &Database{Name: name, DBPath: path, ViewDirPath: defaultViewPath}
+	db := &DefaultDatabase{Name: name, DBPath: path, ViewDirPath: defaultViewPath}
 	db.idSeq = NewSequenceUUIDGenarator()
 
 	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
