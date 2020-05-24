@@ -81,7 +81,7 @@ func (kdb *KDB) ListDatabases() ([]string, error) {
 // Open open the kdb database
 func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	if !ValidateDatabaseName(name) {
-		return ErrDBInvalidName
+		return ErrDatabaseInvalidName
 	}
 
 	kdb.rwmux.Lock()
@@ -99,7 +99,7 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	if createIfNotExists {
 		if err := kdb.localDB.CreateDatabase(name, fileName); err != nil {
 			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
-				return ErrDBExists
+				return ErrDatabaseExists
 			}
 			return err
 		}
@@ -107,7 +107,7 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 		fileName = kdb.localDB.GetDatabaseFileName(name)
 	}
 
-	db, err := NewDatabase(name, fileName, kdb.dbPath, kdb.viewPath, createIfNotExists, kdb.serviceLocator)
+	db, err := kdb.serviceLocator.GetDatabase(name, fileName, kdb.dbPath, kdb.viewPath, createIfNotExists)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (kdb *KDB) Delete(name string) error {
 
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return ErrDBNotFound
+		return ErrDatabaseNotFound
 	}
 	delete(kdb.dbs, name)
 	db.Close()
@@ -153,10 +153,10 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, ErrDBNotFound
+		return nil, ErrDatabaseNotFound
 	}
 	if !ValidateDocumentID(newDoc.ID) {
-		return nil, ErrDocInvalidID
+		return nil, ErrDocumentInvalidID
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
@@ -240,7 +240,7 @@ func (kdb *KDB) DBStat(name string) (*DBStat, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, ErrDBNotFound
+		return nil, ErrDatabaseNotFound
 	}
 	return db.GetStat(), nil
 }
@@ -251,7 +251,7 @@ func (kdb *KDB) Vacuum(name string) error {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return ErrDBNotFound
+		return ErrDatabaseNotFound
 	}
 
 	db.GetViewManager().Vacuum()
@@ -264,7 +264,7 @@ func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
-		return nil, ErrDBNotFound
+		return nil, ErrDatabaseNotFound
 	}
 	if limit == 0 {
 		limit = 10000
@@ -278,7 +278,7 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 	defer kdb.rwmux.RUnlock()
 	db, ok := kdb.dbs[dbName]
 	if !ok {
-		return nil, ErrDBNotFound
+		return nil, ErrDatabaseNotFound
 	}
 
 	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)

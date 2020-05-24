@@ -123,19 +123,19 @@ func (db *DefaultDatabase) PutDocument(newDoc *Document) (*Document, error) {
 	}
 
 	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
-	if err != nil && err != ErrDocNotFound {
+	if err != nil && err != ErrDocumentNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
 
 	if currentDoc != nil {
 		if currentDoc.Deleted {
 			if newDoc.Version > 0 && currentDoc.Version > newDoc.Version {
-				return nil, ErrDocConflict
+				return nil, ErrDocumentConflict
 			}
 			newDoc.Version = currentDoc.Version
 		} else {
 			if currentDoc.Version != newDoc.Version {
-				return nil, ErrDocConflict
+				return nil, ErrDocumentConflict
 			}
 		}
 	}
@@ -323,11 +323,11 @@ func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExis
 	path := filepath.Join(dbPath, fileName+dbExt)
 	if !fileHandler.IsFileExists(path) {
 		if !createIfNotExists {
-			return nil, ErrDBNotFound
+			return nil, ErrDatabaseNotFound
 		}
 	} else {
 		if createIfNotExists {
-			return nil, ErrDBExists
+			return nil, ErrDatabaseExists
 		}
 	}
 

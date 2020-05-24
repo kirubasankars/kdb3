@@ -93,8 +93,8 @@ func TestWriterDeleteDocument(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocNotFound {
-		t.Errorf("expected %s, got doc or err %s", ErrDocNotFound, err)
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
 	}
 
 	writer.Commit()
@@ -113,8 +113,8 @@ func TestWriterDocNotFound(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocNotFound {
-		t.Errorf("expected %s, got doc or err %s", ErrDocNotFound, err)
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
 		fmt.Println(err)
 	}
 

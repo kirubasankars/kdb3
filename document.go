@@ -32,7 +32,7 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	obj := v.GetObject()
 	if obj == nil {
-		return nil, fmt.Errorf("%s: %w", "payload expected as json object", ErrDocInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "payload expected as json object", ErrDocumentInvalidInput)
 	}
 
 	var (
@@ -65,7 +65,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	}
 
 	if id == "" && version != 0 {
-		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocumentInvalidInput)
 	}
 
 	var b []byte
