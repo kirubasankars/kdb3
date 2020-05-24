@@ -1,5 +1,6 @@
 package main
 
+// ServiceLocator interface
 type ServiceLocator interface {
 	GetFileHandler() FileHandler
 
@@ -13,42 +14,51 @@ type ServiceLocator interface {
 	GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader
 }
 
+// DefaultServiceLocator default implementation of ServiceLocator
 type DefaultServiceLocator struct {
 	fileHandler *DefaultFileHandler
 	localdb     LocalDB
 }
 
-func (sl *DefaultServiceLocator) GetFileHandler() FileHandler {
-	return sl.fileHandler
+// GetFileHandler resolve FileHandler instance
+func (serviceLocator *DefaultServiceLocator) GetFileHandler() FileHandler {
+	return serviceLocator.fileHandler
 }
 
-func (sl *DefaultServiceLocator) GetDatabaseWriter() DatabaseWriter {
+// GetDatabaseWriter resolve DatabaseWriter instance
+func (serviceLocator *DefaultServiceLocator) GetDatabaseWriter() DatabaseWriter {
 	databaseWriter := new(DefaultDatabaseWriter)
 	databaseWriter.reader = new(DefaultDatabaseReader)
 	return databaseWriter
 }
 
-func (sl *DefaultServiceLocator) GetDatabaseReader() DatabaseReader {
+// GetDatabaseReader resolve DatabaseReader instance
+func (serviceLocator *DefaultServiceLocator) GetDatabaseReader() DatabaseReader {
 	databaseReader := new(DefaultDatabaseReader)
 	return databaseReader
 }
 
-func (sl *DefaultServiceLocator) GetViewManager() ViewManager {
-	return NewViewManager(sl)
+// GetViewManager resolve ViewManager instance
+func (serviceLocator *DefaultServiceLocator) GetViewManager() ViewManager {
+	return NewViewManager(serviceLocator)
 }
 
-func (sl *DefaultServiceLocator) GetView(viewName, viewFileName, viewFilePath, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
-	return NewView(viewName, viewFileName, viewFilePath, connectionString, absoluteDatabasePath, ddoc, viewManager, sl)
+// GetView resolve View instance
+func (serviceLocator *DefaultServiceLocator) GetView(viewName, viewFileName, viewFilePath, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
+	return NewView(viewName, viewFileName, viewFilePath, connectionString, absoluteDatabasePath, ddoc, viewManager, serviceLocator)
 }
 
-func (sl *DefaultServiceLocator) GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader {
+// GetViewReader resolve ViewReader instance
+func (serviceLocator *DefaultServiceLocator) GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader {
 	return NewViewReader(connectionString, absoluteDatabasePath, selectScripts)
 }
 
-func (sl *DefaultServiceLocator) GetLocalDB() LocalDB {
-	return sl.localdb
+// GetLocalDB resolve LocalDB instance
+func (serviceLocator *DefaultServiceLocator) GetLocalDB() LocalDB {
+	return serviceLocator.localdb
 }
 
+// NewServiceLocator create new servicelocator
 func NewServiceLocator() ServiceLocator {
 	serviceLocator := new(DefaultServiceLocator)
 	serviceLocator.fileHandler = new(DefaultFileHandler)

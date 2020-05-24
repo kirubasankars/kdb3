@@ -21,7 +21,7 @@ type KDB struct {
 	dbPath   string
 	viewPath string
 
-	dbs            map[string]*Database
+	dbs            map[string]Database
 	rwmux          sync.RWMutex
 	serviceLocator ServiceLocator
 	fileHandler    FileHandler
@@ -31,7 +31,7 @@ type KDB struct {
 // NewKDB create kdb instance
 func NewKDB() (*KDB, error) {
 	kdb := new(KDB)
-	kdb.dbs = make(map[string]*Database)
+	kdb.dbs = make(map[string]Database)
 	kdb.rwmux = sync.RWMutex{}
 	kdb.dbPath = "./data/dbs"
 	kdb.viewPath = "./data/mrviews"
@@ -80,7 +80,7 @@ func (kdb *KDB) ListDatabases() ([]string, error) {
 
 // Open open the kdb database
 func (kdb *KDB) Open(name string, createIfNotExists bool) error {
-	if !validateDBName(name) {
+	if !ValidateDatabaseName(name) {
 		return ErrDBInvalidName
 	}
 
@@ -155,7 +155,7 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	if !ok {
 		return nil, ErrDBNotFound
 	}
-	if !validateDocID(newDoc.ID) {
+	if !ValidateDocumentID(newDoc.ID) {
 		return nil, ErrDocInvalidID
 	}
 
@@ -254,7 +254,7 @@ func (kdb *KDB) Vacuum(name string) error {
 		return ErrDBNotFound
 	}
 
-	db.viewManager.Vacuum()
+	db.GetViewManager().Vacuum()
 	return db.Vacuum()
 }
 
@@ -309,14 +309,16 @@ func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 	os.Remove(filepath.Join(kdb.dbPath, fileName))
 }
 
-func validateDBName(name string) bool {
+// ValidateDatabaseName validate correctness of the name
+func ValidateDatabaseName(name string) bool {
 	if len(name) <= 0 || strings.Contains(name, "$") || name[0] == '_' {
 		return false
 	}
 	return true
 }
 
-func validateDocID(id string) bool {
+// ValidateDocumentID validate correctness of the document id
+func ValidateDocumentID(id string) bool {
 	id = strings.Trim(id, " ")
 	if len(id) > 0 && !strings.HasPrefix(id, "_design/") && id[0] == '_' {
 		return false
