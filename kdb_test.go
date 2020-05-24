@@ -56,7 +56,7 @@ func TestListDatabases(t *testing.T) {
 		t.Error(err)
 	}
 
-	dbs, err := kdb.ListDataBases()
+	dbs, err := kdb.ListDatabases()
 	if err != nil {
 		t.Error(err)
 	}
