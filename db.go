@@ -5,61 +5,57 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 )
 
 // Database interface
 type Database interface {
-	Open(connectionString string, createIfNotExists bool) error
+	Open(createIfNotExists bool) error
 	Close() error
 
-	PutDocument(newDoc *Document) (*Document, error)
+	PutDocument(doc *Document) (*Document, error)
 	DeleteDocument(doc *Document) (*Document, error)
 	GetDocument(doc *Document, includeData bool) (*Document, error)
 	GetAllDesignDocuments() ([]*Document, error)
 	GetLastUpdateSequence() string
 	GetChanges(since string, limit int) ([]byte, error)
-
 	GetDocumentCount() (int, int)
-	GetStat() *DBStat
-	Vacuum() error
-	SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+
+	GetStat() *DatabaseStat
+	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	ValidateDesignDocument(doc *Document) error
 	SetupAllDocsViews() error
+	Vacuum() error
 
 	GetViewManager() ViewManager
 }
 
 // DefaultDatabase default implementation of database
 type DefaultDatabase struct {
-	Name            string
-	UpdateSeq       string
-	DocCount        int
-	DeletedDocCount int
+	Name                 string
+	UpdateSequence       string
+	DocumentCount        int
+	DeletedDocumentCount int
 
-	DBPath      string
-	ViewDirPath string
+	mutex     sync.Mutex
+	changeSeq *ChangeSequenceGenarator
+	idSeq     *SequenceUUIDGenarator
 
-	mux sync.Mutex
+	reader DatabaseReader
+	writer DatabaseWriter
 
-	readers     DatabaseReaderPool
-	writer      DatabaseWriter
-	changeSeq   *ChangeSequenceGenarator
-	idSeq       *SequenceUUIDGenarator
 	viewManager ViewManager
 }
 
 // Open open kdb database
-func (db *DefaultDatabase) Open(connectionString string, createIfNotExists bool) error {
-
-	err := db.writer.Open(connectionString + "&mode=rwc")
+func (db *DefaultDatabase) Open(createIfNotExists bool) error {
+	err := db.writer.Open()
 	if err != nil {
 		panic(err)
 	}
 
-	err = db.readers.Open(connectionString + "&mode=ro")
+	err = db.reader.Open()
 	if err != nil {
 		panic(err)
 	}
@@ -72,19 +68,19 @@ func (db *DefaultDatabase) Open(connectionString string, createIfNotExists bool)
 		db.writer.Commit()
 	}
 
-	db.DocCount, db.DeletedDocCount = db.GetDocumentCount()
-	db.UpdateSeq = db.GetLastUpdateSequence()
-	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSeq)
+	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
+	db.UpdateSequence = db.GetLastUpdateSequence()
+	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSequence)
 
 	if createIfNotExists {
-		err := db.SetupAllDocsViews()
+		err = db.SetupAllDocsViews()
 		if err != nil {
 			return err
 		}
 	}
 
 	ddocs, _ := db.GetAllDesignDocuments()
-	err = db.viewManager.Initialize(db.Name, db.DBPath, db.ViewDirPath, ddocs)
+	err = db.viewManager.Initialize(ddocs)
 	if err != nil {
 		return err
 	}
@@ -94,21 +90,18 @@ func (db *DefaultDatabase) Open(connectionString string, createIfNotExists bool)
 
 // Close close the kdb database
 func (db *DefaultDatabase) Close() error {
-	db.mux.Lock()
-	defer db.mux.Unlock()
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
 
 	db.viewManager.Close()
-	db.readers.Close()
+	db.reader.Close()
 	db.writer.Close()
 
 	return nil
 }
 
 // PutDocument put a document
-func (db *DefaultDatabase) PutDocument(newDoc *Document) (*Document, error) {
-
-	db.mux.Lock()
-	defer db.mux.Unlock()
+func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 
 	writer := db.writer
 
@@ -118,33 +111,33 @@ func (db *DefaultDatabase) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	if newDoc.ID == "" {
-		newDoc.ID = db.idSeq.Next()
+	if doc.ID == "" {
+		doc.ID = db.idSeq.Next()
 	}
 
-	currentDoc, err := writer.GetDocumentRevisionByID(newDoc.ID)
+	currentDoc, err := writer.GetDocumentRevisionByID(doc.ID)
 	if err != nil && err != ErrDocumentNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
 
 	if currentDoc != nil {
 		if currentDoc.Deleted {
-			if newDoc.Version > 0 && currentDoc.Version > newDoc.Version {
+			if doc.Version > 0 && currentDoc.Version > doc.Version {
 				return nil, ErrDocumentConflict
 			}
-			newDoc.Version = currentDoc.Version
+			doc.Version = currentDoc.Version
 		} else {
-			if currentDoc.Version != newDoc.Version {
+			if currentDoc.Version != doc.Version {
 				return nil, ErrDocumentConflict
 			}
 		}
 	}
 
-	newDoc.CalculateNextVersion()
+	doc.CalculateNextVersion()
 
 	updateSeq := db.changeSeq.Next()
 
-	err = writer.PutDocument(updateSeq, newDoc, currentDoc)
+	err = writer.PutDocument(updateSeq, doc, currentDoc)
 	if err != nil {
 		return nil, err
 	}
@@ -153,21 +146,21 @@ func (db *DefaultDatabase) PutDocument(newDoc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	db.UpdateSeq = updateSeq
+	db.UpdateSequence = updateSeq
 
 	if currentDoc == nil {
-		db.DocCount++
+		db.DocumentCount++
 	}
-	if newDoc.Deleted {
-		db.DocCount--
-		db.DeletedDocCount++
+	if doc.Deleted {
+		db.DocumentCount--
+		db.DeletedDocumentCount++
 
-		if strings.HasPrefix(newDoc.ID, "_design/") {
-			db.viewManager.UpdateDesignDocument(newDoc, "")
+		if strings.HasPrefix(doc.ID, "_design/") {
+			db.viewManager.UpdateDesignDocument(doc, "")
 		}
 	}
 
-	return newDoc, nil
+	return doc, nil
 }
 
 // DeleteDocument delete a document
@@ -179,8 +172,7 @@ func (db *DefaultDatabase) DeleteDocument(doc *Document) (*Document, error) {
 // GetDocument get a document
 func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
+	reader := db.reader
 
 	reader.Begin()
 	defer reader.Commit()
@@ -200,8 +192,7 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 
 // GetAllDesignDocuments get all design document
 func (db *DefaultDatabase) GetAllDesignDocuments() ([]*Document, error) {
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
+	reader := db.reader
 
 	reader.Begin()
 	defer reader.Commit()
@@ -211,8 +202,7 @@ func (db *DefaultDatabase) GetAllDesignDocuments() ([]*Document, error) {
 
 // GetLastUpdateSequence get last sequence number
 func (db *DefaultDatabase) GetLastUpdateSequence() string {
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
+	reader := db.reader
 
 	reader.Begin()
 	defer reader.Commit()
@@ -222,8 +212,7 @@ func (db *DefaultDatabase) GetLastUpdateSequence() string {
 
 // GetChanges get changes
 func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
+	reader := db.reader
 
 	reader.Begin()
 	defer reader.Commit()
@@ -233,8 +222,7 @@ func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
 
 // GetDocumentCount get document count
 func (db *DefaultDatabase) GetDocumentCount() (int, int) {
-	reader := db.readers.Borrow()
-	defer db.readers.Return(reader)
+	reader := db.reader
 
 	reader.Begin()
 	defer reader.Commit()
@@ -243,15 +231,15 @@ func (db *DefaultDatabase) GetDocumentCount() (int, int) {
 }
 
 // GetStat get database stat
-func (db *DefaultDatabase) GetStat() *DBStat {
-	db.mux.Lock()
-	defer db.mux.Unlock()
+func (db *DefaultDatabase) GetStat() *DatabaseStat {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
 
-	stat := &DBStat{}
+	stat := &DatabaseStat{}
 	stat.DBName = db.Name
-	stat.UpdateSeq = db.UpdateSeq
-	stat.DocCount = db.DocCount
-	stat.DeletedDocCount = db.DeletedDocCount
+	stat.UpdateSeq = db.UpdateSequence
+	stat.DocCount = db.DocumentCount
+	stat.DeletedDocCount = db.DeletedDocumentCount
 	return stat
 }
 
@@ -261,14 +249,14 @@ func (db *DefaultDatabase) Vacuum() error {
 }
 
 // SelectView select view
-func (db *DefaultDatabase) SelectView(ddocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	inputDoc := &Document{ID: ddocID}
+func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	inputDoc := &Document{ID: designDocID}
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err
 	}
 
-	return db.viewManager.SelectView(db.UpdateSeq, outputDoc, viewName, selectName, values, stale)
+	return db.viewManager.SelectView(db.UpdateSequence, outputDoc, viewName, selectName, values, stale)
 }
 
 // ValidateDesignDocument validate design document
@@ -318,32 +306,18 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 }
 
 // NewDatabase create database instance
-func NewDatabase(name, fileName, dbPath, defaultViewPath string, createIfNotExists bool, serviceLocator ServiceLocator) (Database, error) {
-	fileHandler := serviceLocator.GetFileHandler()
-	path := filepath.Join(dbPath, fileName+dbExt)
-	if !fileHandler.IsFileExists(path) {
-		if !createIfNotExists {
-			return nil, ErrDatabaseNotFound
-		}
-	} else {
-		if createIfNotExists {
-			return nil, ErrDatabaseExists
-		}
-	}
-
-	db := &DefaultDatabase{Name: name, DBPath: path, ViewDirPath: defaultViewPath}
+func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) Database {
+	db := &DefaultDatabase{Name: name}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	connectionString := db.DBPath + "?_journal=WAL&cache=shared&_mutex=no"
+	db.reader = serviceLocator.GetDatabaseReader(name)
+	db.writer = serviceLocator.GetDatabaseWriter(name)
+	db.viewManager = serviceLocator.GetViewManager(name)
 
-	db.readers = NewDatabaseReaderPool(4, serviceLocator)
-	db.writer = serviceLocator.GetDatabaseWriter()
-	db.viewManager = serviceLocator.GetViewManager()
-
-	err := db.Open(connectionString, createIfNotExists)
+	err := db.Open(createIfNotExists)
 	if err != nil {
 		panic(err)
 	}
 
-	return db, nil
+	return db
 }

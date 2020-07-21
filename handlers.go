@@ -12,14 +12,20 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func HeadDocument(w http.ResponseWriter, r *http.Request) {
+type KDBHandler struct {
+	kdb *KDB
+	seq *SequenceUUIDGenarator
+}
+
+func (handler KDBHandler) HeadDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
-	getDocument(db, docid, false, w, r)
+	handler.getDocument(db, docid, false, w, r)
 }
 
-func GetDatabase(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) GetDatabase(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	if err := kdb.Open(db, false); err != nil {
@@ -35,7 +41,8 @@ func GetDatabase(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stat)
 }
 
-func PutDatabase(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) PutDatabase(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	if err := kdb.Open(db, true); err != nil {
@@ -48,7 +55,8 @@ func PutDatabase(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
-func DeleteDatabase(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	if err := kdb.Delete(db); err != nil {
@@ -61,7 +69,8 @@ func DeleteDatabase(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
-func DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	r.ParseForm()
@@ -81,7 +90,8 @@ func DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
 	w.Write(rs)
 }
 
-func DatabaseChanges(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	r.ParseForm()
@@ -98,7 +108,8 @@ func DatabaseChanges(w http.ResponseWriter, r *http.Request) {
 	w.Write(rs)
 }
 
-func DatabaseCompact(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DatabaseCompact(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	err := kdb.Vacuum(db)
@@ -112,7 +123,8 @@ func DatabaseCompact(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"ok":true}`)
 }
 
-func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
@@ -147,7 +159,8 @@ func putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(output))
 }
 
-func getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	ver := r.FormValue("version")
 	var inputDoc = &Document{}
 	if ver != "" {
@@ -171,7 +184,8 @@ func getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *h
 	}
 }
 
-func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	ver := r.FormValue("version")
 
 	if ver == "" {
@@ -194,29 +208,30 @@ func deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
 }
 
-func GetDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
 
-	getDocument(db, docid, true, w, r)
+	handler.getDocument(db, docid, true, w, r)
 }
 
-func DeleteDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
-	deleteDocument(db, docid, w, r)
+	handler.deleteDocument(db, docid, w, r)
 }
 
-func PutDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) PutDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
-	putDocument(db, docid, w, r)
+	handler.putDocument(db, docid, w, r)
 }
 
-func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
@@ -235,7 +250,8 @@ func BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
 	w.Write(outputs)
 }
 
-func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
@@ -254,28 +270,29 @@ func BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
 	w.Write(outputs)
 }
 
-func GetDDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) GetDDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := "_design/" + vars["docid"]
-	getDocument(db, docid, true, w, r)
+	handler.getDocument(db, docid, true, w, r)
 }
 
-func DeleteDDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) DeleteDDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := "_design/" + vars["docid"]
-	deleteDocument(db, docid, w, r)
+	handler.deleteDocument(db, docid, w, r)
 }
 
-func PutDDocument(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) PutDDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := "_design/" + vars["docid"]
-	putDocument(db, docid, w, r)
+	handler.putDocument(db, docid, w, r)
 }
 
-func AllDatabases(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) AllDatabases(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	list, err := kdb.ListDatabases()
 	if err != nil {
 		NotOK(err, w)
@@ -291,7 +308,8 @@ func AllDatabases(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SelectView(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) SelectView(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	vars := mux.Vars(r)
 
 	db := vars["db"]
@@ -322,15 +340,14 @@ func SelectView(w http.ResponseWriter, r *http.Request) {
 	w.Write(rs)
 }
 
-func GetInfo(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(kdb.Info())
 }
 
-var seq = NewSequenceUUIDGenarator()
-
-func GetUUIDs(w http.ResponseWriter, r *http.Request) {
+func (handler KDBHandler) GetUUIDs(w http.ResponseWriter, r *http.Request) {
 	c := r.FormValue("count")
 	count, _ := strconv.Atoi(c)
 	if count <= 0 {
@@ -338,9 +355,16 @@ func GetUUIDs(w http.ResponseWriter, r *http.Request) {
 	}
 	var list []string
 	for i := 0; i < count; i++ {
-		list = append(list, seq.Next())
+		list = append(list, handler.seq.Next())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(list)
+}
+
+func NewKDBHandler(kdb *KDB) KDBHandler {
+	handler := new(KDBHandler)
+	handler.kdb = kdb
+	handler.seq = NewSequenceUUIDGenarator()
+	return *handler
 }

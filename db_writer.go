@@ -5,7 +5,7 @@ import (
 )
 
 type DatabaseWriter interface {
-	Open(connectionString string) error
+	Open() error
 	Close() error
 
 	Begin() error
@@ -21,14 +21,14 @@ type DatabaseWriter interface {
 
 type DefaultDatabaseWriter struct {
 	connectionString string
-	reader           *DefaultDatabaseReader
-	conn             *sql.DB
-	tx               *sql.Tx
+
+	reader *DefaultDatabaseReader
+	conn   *sql.DB
+	tx     *sql.Tx
 }
 
-func (writer *DefaultDatabaseWriter) Open(connectionString string) error {
-	writer.connectionString = connectionString
-	con, err := sql.Open("sqlite3", connectionString)
+func (writer *DefaultDatabaseWriter) Open() error {
+	con, err := sql.Open("sqlite3", writer.connectionString)
 	if err != nil {
 		return err
 	}
@@ -37,11 +37,13 @@ func (writer *DefaultDatabaseWriter) Open(connectionString string) error {
 	return nil
 }
 
+// Close connection
 func (writer *DefaultDatabaseWriter) Close() error {
 	err := writer.conn.Close()
 	return err
 }
 
+// Begin begin transaction
 func (writer *DefaultDatabaseWriter) Begin() error {
 	var err error
 	writer.tx, err = writer.conn.Begin()
@@ -49,6 +51,7 @@ func (writer *DefaultDatabaseWriter) Begin() error {
 	return err
 }
 
+// Commit commit transaction
 func (writer *DefaultDatabaseWriter) Commit() error {
 	return writer.tx.Commit()
 }
