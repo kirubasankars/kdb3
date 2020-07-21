@@ -177,7 +177,7 @@ func (reader *FakeDatabaseReader) Close() error {
 type FakeViewManager struct {
 }
 
-func (sl *FakeViewManager) Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error {
+func (sl *FakeViewManager) Initialize(dbName, dbDirPath, viewDirPath string, designDocs []*Document) error {
 	return nil
 }
 
@@ -279,7 +279,7 @@ func TestDBLoadUpdateSeqID(t *testing.T) {
 
 	l := db.GetLastUpdateSequence()
 
-	if db.UpdateSeq != l {
+	if db.UpdateSequence != l {
 		t.Errorf("failed to load last update seq id.")
 	}
 	if !reader.begin || !reader.commit {
@@ -376,11 +376,11 @@ func TestDBStat(t *testing.T) {
 		t.Errorf("expected to call borrow and return, failed.")
 	}
 
-	if stat.DocCount != 3 {
-		t.Errorf("expected doc count %d, got %d", 3, stat.DocCount)
+	if stat.DocumentCount != 3 {
+		t.Errorf("expected doc count %d, got %d", 3, stat.DocumentCount)
 	}
 
-	if stat.UpdateSeq != reader.GetLastUpdateSequence() {
+	if stat.UpdateSequence != reader.GetLastUpdateSequence() {
 		t.Errorf("expected to load last update seqid. failed")
 	}
 }
@@ -544,7 +544,7 @@ func TestDBPutDocumentNewDocID(t *testing.T) {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
 }
@@ -576,7 +576,7 @@ func TestDBPutDocumentNewDocWithID(t *testing.T) {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
 }
@@ -613,7 +613,7 @@ func TestDBPutDocumentConflict(t *testing.T) {
 		t.Errorf("expected to have nil, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 		return
 	}
@@ -651,7 +651,7 @@ func Test1DBPutDocumentConflict(t *testing.T) {
 		t.Errorf("expected to have nil, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 	}
 }
@@ -683,7 +683,7 @@ func TestDBPutDocumentUpdateDoc(t *testing.T) {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
 }
@@ -711,7 +711,7 @@ func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
 		t.Errorf("expected to call begin and rollback, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have same seq id, failed.")
 	}
 }
@@ -748,7 +748,7 @@ func TestDBPutDocumentBeginError(t *testing.T) {
 		t.Errorf("unexpected to have return doc, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 	}
 }
@@ -785,7 +785,7 @@ func TestDBPutDocumentCommitError(t *testing.T) {
 		t.Errorf("unexpected to have return doc, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 	}
 }
@@ -844,7 +844,7 @@ func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
 		t.Errorf("unexpected to have return doc, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 	}
 }
@@ -881,7 +881,7 @@ func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
 		t.Errorf("expected to have nil, failed.")
 	}
 
-	if db.UpdateSeq != db.GetLastUpdateSequence() {
+	if db.UpdateSequence != db.GetLastUpdateSequence() {
 		t.Errorf("unexpected to have new seq id, failed.")
 	}
 }
@@ -913,7 +913,7 @@ func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
 
@@ -951,7 +951,7 @@ func TestDBDeleteDocument(t *testing.T) {
 		t.Errorf("expected to have id and version, failed.")
 	}
 
-	if db.UpdateSeq == db.GetLastUpdateSequence() {
+	if db.UpdateSequence == db.GetLastUpdateSequence() {
 		t.Errorf("expected to have new seq id, failed.")
 	}
 }

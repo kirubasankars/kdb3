@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"path/filepath"
 )
 
 type ViewWriter interface {
@@ -47,7 +48,7 @@ func (vw *DefaultViewWriter) Open() error {
 	if err != nil {
 		return err
 	}
-	err = setupDatabase(db, vw.absoluteDatabasePath)
+	err = setupViewDatabase(db, vw.absoluteDatabasePath)
 	if err != nil {
 		return err
 	}
@@ -98,10 +99,16 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 	return tx.Commit()
 }
 
-func NewViewWriter(connectionString, absoluteDatabasePath string, setupScripts, scripts []Query) *DefaultViewWriter {
+func NewViewWriter(DBName, DBPath, connectionString string, setupScripts, scripts []Query) *DefaultViewWriter {
 	viewWriter := new(DefaultViewWriter)
 	viewWriter.connectionString = connectionString
-	viewWriter.absoluteDatabasePath = absoluteDatabasePath
+
+	absoluteDBPath, err := filepath.Abs(DBPath)
+	if err != nil {
+		panic(err)
+	}
+	viewWriter.absoluteDatabasePath = absoluteDBPath
+
 	viewWriter.setupScripts = setupScripts
 	viewWriter.scripts = scripts
 	return viewWriter

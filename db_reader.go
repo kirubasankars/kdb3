@@ -7,7 +7,7 @@ import (
 
 // DatabaseReader DatabaseReader interface
 type DatabaseReader interface {
-	Open(connectionString string) error
+	Open() error
 	Close() error
 	Begin() error
 	Commit() error
@@ -25,25 +25,17 @@ type DatabaseReader interface {
 	GetDocumentCount() (int, int)
 }
 
-// DatabaseReaderPool DatabaseReader Pool
-type DatabaseReaderPool interface {
-	Open(connectionString string) error
-	Borrow() DatabaseReader
-	Return(r DatabaseReader)
-	Close() error
-}
-
-// DefaultDatabaseReader default implmentation database interface
+// DefaultDatabaseReader default implementation database interface
 type DefaultDatabaseReader struct {
 	connectionString string
-	conn             *sql.DB
-	tx               *sql.Tx
+
+	conn *sql.DB
+	tx   *sql.Tx
 }
 
 // Open open database reader with connectionString
-func (reader *DefaultDatabaseReader) Open(connectionString string) error {
-	reader.connectionString = connectionString
-	con, err := sql.Open("sqlite3", connectionString)
+func (reader *DefaultDatabaseReader) Open() error {
+	con, err := sql.Open("sqlite3", reader.connectionString)
 	if err != nil {
 		return err
 	}
@@ -261,64 +253,4 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 // Close close the database reader
 func (reader *DefaultDatabaseReader) Close() error {
 	return reader.conn.Close()
-}
-
-// DefaultDatabaseReaderPool default implementation of reader pool
-type DefaultDatabaseReaderPool struct {
-	pool           chan DatabaseReader
-	limit          int
-	serviceLocator ServiceLocator
-}
-
-// Open open reader pool
-func (p *DefaultDatabaseReaderPool) Open(connectionString string) error {
-	for x := 0; x < p.limit; x++ {
-		r := p.serviceLocator.GetDatabaseReader()
-		err := r.Open(connectionString)
-		if err != nil {
-			panic(err)
-		}
-		p.pool <- r
-	}
-	return nil
-}
-
-// Borrow borrow a reader
-func (p *DefaultDatabaseReaderPool) Borrow() DatabaseReader {
-	return <-p.pool
-}
-
-// Return return a reader
-func (p *DefaultDatabaseReaderPool) Return(r DatabaseReader) {
-	p.pool <- r
-}
-
-// TODO: close all connections (may be wait) by limit
-// Close reader pool
-func (p *DefaultDatabaseReaderPool) Close() error {
-	var err error
-	count := 0
-	for {
-		var r DatabaseReader
-		select {
-		case r = <-p.pool:
-			err = r.Close()
-			count++
-		default:
-		}
-		if count == p.limit {
-			break
-		}
-	}
-	return err
-}
-
-// NewDatabaseReaderPool create new reader pool
-func NewDatabaseReaderPool(limit int, serviceLocator ServiceLocator) DatabaseReaderPool {
-	readers := DefaultDatabaseReaderPool{
-		pool:           make(chan DatabaseReader, limit),
-		limit:          limit,
-		serviceLocator: serviceLocator,
-	}
-	return &readers
 }

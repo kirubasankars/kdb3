@@ -7,16 +7,12 @@ import (
 	"time"
 )
 
-var kdb *KDB
-
 func main() {
-	var err error
-	kdb, err = NewKDB()
+	kdb, err := NewKDB()
 	if err != nil {
 		panic(err)
 	}
-
-	router := NewRouter()
+	router := NewRouter(kdb)
 
 	srv := &http.Server{
 		Handler:      router,

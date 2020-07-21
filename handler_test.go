@@ -12,10 +12,11 @@ import (
 
 //https://blog.questionable.services/article/testing-http-handlers-go/
 func TestGetUUID(t *testing.T) {
+	kdb, _ := NewKDB()
 	var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/_uuids?count=10", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -64,11 +65,13 @@ func testExpect409(t *testing.T, rr *httptest.ResponseRecorder) {
 			status, http.StatusConflict)
 	}
 }
+
 func TestGetInfo(t *testing.T) {
+	kdb, _ := NewKDB()
 	var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -76,18 +79,18 @@ func TestGetInfo(t *testing.T) {
 	v, _ := parser.Parse(rr.Body.String())
 
 	version := v.GetObject("version").Get("sqlite_version").String()
-	if version != `"3.31.1"` {
-		t.Errorf(`expected version "3.31.1", got %s`, version)
+	if version != `"3.26.0"` {
+		t.Errorf(`expected version "3.26.0", got %s`, version)
 	}
 
 	testExpectJSONContentType(t, rr)
 }
 
 func TestHandlerPutDatabase(t *testing.T) {
-	kdb, _ = NewKDB()
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("PUT", "/testdb", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -100,10 +103,11 @@ func TestHandlerPutDatabase(t *testing.T) {
 }
 
 func TestHandlerPutDocument(t *testing.T) {
+	kdb, _ := NewKDB()
 	body := bytes.NewBufferString("{}")
 	req, _ := http.NewRequest("POST", "/testdb", body)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -116,7 +120,8 @@ func TestHandlerPutDocument(t *testing.T) {
 }
 
 func TestHandlerPutDocument1(t *testing.T) {
-	handler := NewRouter()
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb)
 
 	body := bytes.NewBufferString(`{"_id":1}`)
 	req, _ := http.NewRequest("POST", "/testdb", body)
@@ -153,7 +158,8 @@ func TestHandlerPutDocument1(t *testing.T) {
 }
 
 func TestHandlerDeleteDocument(t *testing.T) {
-	handler := NewRouter()
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb)
 
 	req, _ := http.NewRequest("DELETE", "/testdb/1?version=2", nil)
 	rr := httptest.NewRecorder()
@@ -170,7 +176,8 @@ func TestHandlerDeleteDocument(t *testing.T) {
 }
 
 func TestHandlerPutDeletedDocument(t *testing.T) {
-	handler := NewRouter()
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb)
 
 	body := bytes.NewBufferString(`{"_id":1, "_version":2}`)
 	req, _ := http.NewRequest("POST", "/testdb", body)
@@ -196,10 +203,11 @@ func TestHandlerPutDeletedDocument(t *testing.T) {
 }
 
 func TestHandlerBulkDocuments(t *testing.T) {
+	kdb, _ := NewKDB()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ := http.NewRequest("POST", "/testdb/_bulk_docs", body)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 	expected := `[{"_id":"3","_version":1},{"_id":"4","_version":1}]`
 
@@ -212,10 +220,11 @@ func TestHandlerBulkDocuments(t *testing.T) {
 }
 
 func TestHandlerBulkGetDocuments(t *testing.T) {
+	kdb, _ := NewKDB()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ := http.NewRequest("POST", "/testdb/_bulk_gets", body)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 	expected := `[{"_id":"3","_version":1},{"_id":"4","_version":1}]`
 
@@ -238,9 +247,10 @@ type testChange struct {
 }
 
 func TestHandlerGetChanges(t *testing.T) {
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("GET", "/testdb/_changes", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -271,7 +281,8 @@ func TestHandlerGetChanges(t *testing.T) {
 }
 
 func TestHandlerGetDocument(t *testing.T) {
-	handler := NewRouter()
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb)
 
 	req, _ := http.NewRequest("GET", "/testdb/1", nil)
 	rr := httptest.NewRecorder()
@@ -297,15 +308,15 @@ func TestHandlerGetDocument(t *testing.T) {
 }
 
 func TestHandlerGetDatabase(t *testing.T) {
-	kdb, _ = NewKDB()
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("GET", "/testdb", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
 	testExpectJSONContentType(t, rr)
-	stat := &DBStat{}
+	stat := &DatabaseStat{}
 	json.Unmarshal(rr.Body.Bytes(), stat)
 
 	if stat.DBName != "testdb" || stat.DocCount != 5 {
@@ -314,10 +325,10 @@ func TestHandlerGetDatabase(t *testing.T) {
 }
 
 func TestHandlerGetDDatabase(t *testing.T) {
-	kdb, _ = NewKDB()
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("GET", "/testdb/_design/_views", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -333,15 +344,16 @@ func TestHandlerGetDDatabase(t *testing.T) {
 type testAllDocsRows struct {
 	Rows []testEmpty
 }
+
 type testEmpty struct {
 	ID string `json:"id"`
 }
 
 func TestHandlerPutDDatabase(t *testing.T) {
-	kdb, _ = NewKDB()
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("GET", "/testdb/_design/_views", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -410,9 +422,10 @@ func TestHandlerPutDDatabase(t *testing.T) {
 }
 
 func TestDeleteDatabase(t *testing.T) {
+	kdb, _ := NewKDB()
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter()
+	handler := NewRouter(kdb)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,46 +17,44 @@ import (
 )
 
 type ViewManager interface {
-	Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error
-	OpenView(viewName string, ddoc *DesignDocument) error
+	Initialize(designDocs []*Document) error
+	OpenView(viewName string, designDoc *DesignDocument) error
 	GetView(viewName string) (*View, bool)
 	SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	Close() error
-	Vacuum() error
+
 	UpdateDesignDocument(doc *Document, qualifiedViewName string) error
 	ValidateDesignDocument(doc *Document) error
-	CalculateSignature(ddocv *DesignDocumentView) string
+	CalculateSignature(designView *DesignDocumentView) string
 	ParseQueryParams(query string) (string, []string)
+
+	Close() error
+	Vacuum() error
 }
 
 type DefaultViewManager struct {
-	dbName               string
-	viewDirPath          string
-	absoluteDatabasePath string
+	DBName      string
+	DBPath      string
+	viewDirPath string
 
-	rwmux          sync.RWMutex
+	rwMutex        sync.RWMutex
 	views          map[string]*View
-	ddocs          map[string]*DesignDocument
-	localdb        LocalDB
+	designDocs     map[string]*DesignDocument
+	localDB        LocalDB
 	serviceLocator ServiceLocator
 }
 
-func (mgr *DefaultViewManager) Initialize(dbName, dbPath, viewDirPath string, ddocs []*Document) error {
-	mgr.rwmux = sync.RWMutex{}
-	mgr.dbName = dbName
-	mgr.viewDirPath = viewDirPath
-	absoluteDBPath, err := filepath.Abs(dbPath)
-	if err != nil {
-		panic(err)
-	}
-	mgr.absoluteDatabasePath = absoluteDBPath
+func (mgr *DefaultViewManager) Initialize(designDocs []*Document) error {
+	mgr.rwMutex = sync.RWMutex{}
 
-	mgr.rwmux.Lock()
-	defer mgr.rwmux.Unlock()
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
 
 	// cleanup unused files
 	diskViewFiles, err := mgr.listViewFiles()
-	viewFiles, err := mgr.localdb.ListViewFiles(mgr.dbName)
+	if err != nil {
+		panic(err)
+	}
+	viewFiles, err := mgr.localDB.ListViewFiles(mgr.DBName)
 	for _, diskViewFile := range diskViewFiles {
 		found := false
 		for _, viewFile := range viewFiles {
@@ -71,13 +68,13 @@ func (mgr *DefaultViewManager) Initialize(dbName, dbPath, viewDirPath string, dd
 	}
 
 	//load all design docs into memory
-	for _, x := range ddocs {
+	for _, x := range designDocs {
 		ddoc := &DesignDocument{}
 		err := json.Unmarshal(x.Data, ddoc)
 		if err != nil {
 			return err
 		}
-		mgr.ddocs[x.ID] = ddoc
+		mgr.designDocs[x.ID] = ddoc
 	}
 
 	return nil
@@ -91,45 +88,39 @@ func (mgr *DefaultViewManager) listViewFiles() ([]string, error) {
 	var viewFiles []string
 	for idx := range list {
 		name := list[idx].Name()
-		if strings.HasPrefix(name, mgr.dbName+"$") && strings.HasSuffix(name, dbExt) {
+		if strings.HasPrefix(name, mgr.DBName+"$") && strings.HasSuffix(name, dbExt) {
 			viewFiles = append(viewFiles, strings.ReplaceAll(name, dbExt, ""))
 		}
 	}
 	return viewFiles, nil
 }
 
-func (mgr *DefaultViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
-	qualifiedViewName := ddoc.ID + "$" + viewName
+func (mgr *DefaultViewManager) OpenView(viewName string, designDoc *DesignDocument) error {
+	qualifiedViewName := designDoc.ID + "$" + viewName
 	if _, ok := mgr.views[qualifiedViewName]; ok {
 		return nil
 	}
 
-	if _, ok := ddoc.Views[viewName]; !ok {
+	if _, ok := designDoc.Views[viewName]; !ok {
 		return nil
 	}
 
 	var currentViewHash, viewFileName string
 
-	mgr.localdb.Begin()
-
-	newHash := mgr.CalculateSignature(ddoc.Views[viewName])
-	currentViewHash, viewFileName = mgr.localdb.GetViewFileName(mgr.dbName, qualifiedViewName)
+	newHash := mgr.CalculateSignature(designDoc.Views[viewName])
+	currentViewHash, viewFileName = mgr.localDB.GetViewFileName(mgr.DBName, qualifiedViewName)
 
 	if currentViewHash != newHash {
-		viewFileName = mgr.dbName + "$" + newHash
-		mgr.localdb.UpdateView(mgr.dbName, qualifiedViewName, newHash, viewFileName)
+		viewFileName = mgr.DBName + "$" + newHash
+		mgr.localDB.UpdateView(mgr.DBName, qualifiedViewName, newHash, viewFileName)
 	}
 
-	viewPath := filepath.Join(mgr.viewDirPath, viewFileName+dbExt)
-	viewConnectionString := viewPath + "?_journal=MEMORY&cache=shared&_mutex=no"
-	view := mgr.serviceLocator.GetView(viewName, viewFileName, viewPath, viewConnectionString, mgr.absoluteDatabasePath, ddoc, mgr)
+	view := NewView(mgr.DBName, viewName, designDoc, mgr, mgr.serviceLocator)
 	if err := view.Open(); err != nil {
 		return err
 	}
 
 	mgr.views[qualifiedViewName] = view
-
-	mgr.localdb.Commit()
 
 	return nil
 }
@@ -138,21 +129,21 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 	ddocID := doc.ID
 	qualifiedViewName := ddocID + "$" + viewName
 
-	mgr.rwmux.RLock()
-	defer mgr.rwmux.RUnlock()
+	mgr.rwMutex.RLock()
+	defer mgr.rwMutex.RUnlock()
 
 	update := func() (*View, error) {
-		mgr.rwmux.RUnlock()
-		mgr.rwmux.Lock()
+		mgr.rwMutex.RUnlock()
+		mgr.rwMutex.Lock()
 
-		defer mgr.rwmux.RLock()
-		defer mgr.rwmux.Unlock()
+		defer mgr.rwMutex.RLock()
+		defer mgr.rwMutex.Unlock()
 
 		err := mgr.UpdateDesignDocument(doc, qualifiedViewName)
 		if err != nil {
 			return nil, err
 		}
-		ddoc, _ := mgr.ddocs[ddocID]
+		ddoc, _ := mgr.designDocs[ddocID]
 		err = mgr.OpenView(viewName, ddoc)
 		if err != nil {
 			return nil, err
@@ -178,7 +169,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 		return view.Select(selectName, values)
 	}
 
-	ddoc := mgr.ddocs[ddocID]
+	ddoc := mgr.designDocs[ddocID]
 	if doc.Version != ddoc.Version {
 		view, err = update()
 		if err != nil {
@@ -199,8 +190,8 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc *Document, vie
 }
 
 func (mgr *DefaultViewManager) Close() error {
-	mgr.rwmux.Lock()
-	defer mgr.rwmux.Unlock()
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
 
 	for k, v := range mgr.views {
 		v.Close()
@@ -211,8 +202,8 @@ func (mgr *DefaultViewManager) Close() error {
 }
 
 func (mgr *DefaultViewManager) Vacuum() error {
-	mgr.rwmux.Lock()
-	defer mgr.rwmux.Unlock()
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
 	for _, v := range mgr.views {
 		v.Vacuum()
 	}
@@ -222,7 +213,7 @@ func (mgr *DefaultViewManager) Vacuum() error {
 func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document, viewName string) error {
 	var views []string
 	if viewName == "" {
-		ddoc := mgr.ddocs[doc.ID]
+		ddoc := mgr.designDocs[doc.ID]
 		for viewName := range ddoc.Views {
 			views = append(views, doc.ID+"$"+viewName)
 		}
@@ -230,17 +221,14 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document, viewName stri
 		views = append(views, viewName)
 	}
 
-	mgr.localdb.Begin()
-	defer mgr.localdb.Rollback()
-
 	for _, qualifiedViewName := range views {
 		if view, ok := mgr.views[qualifiedViewName]; ok {
 			view.Close()
 		}
 		delete(mgr.views, qualifiedViewName)
 
-		files, _ := mgr.localdb.ListViewFiles(mgr.dbName)
-		_, viewFileName := mgr.localdb.GetViewFileName(mgr.dbName, qualifiedViewName)
+		files, _ := mgr.localDB.ListViewFiles(mgr.DBName)
+		_, viewFileName := mgr.localDB.GetViewFileName(mgr.DBName, qualifiedViewName)
 
 		refCount := 0
 		for _, vFile := range files {
@@ -251,36 +239,34 @@ func (mgr *DefaultViewManager) UpdateDesignDocument(doc *Document, viewName stri
 		if refCount == 1 {
 			os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
 		}
-		mgr.localdb.DeleteView(mgr.dbName, qualifiedViewName)
+		mgr.localDB.DeleteView(mgr.DBName, qualifiedViewName)
 	}
 
-	mgr.localdb.Commit()
-
 	if doc.Deleted {
-		delete(mgr.ddocs, doc.ID)
+		delete(mgr.designDocs, doc.ID)
 	} else {
 		newDDoc := &DesignDocument{}
 		err := json.Unmarshal(doc.Data, newDDoc)
 		if err != nil {
 			panic("invalid_design_document " + doc.ID)
 		}
-		mgr.ddocs[doc.ID] = newDDoc
+		mgr.designDocs[doc.ID] = newDDoc
 	}
 
 	return nil
 }
 
-func (mgr *DefaultViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
+func (mgr *DefaultViewManager) CalculateSignature(designView *DesignDocumentView) string {
 	content := ""
-	if ddocv != nil {
+	if designView != nil {
 		crc32q := crc32.MakeTable(0xD5828281)
-		if ddocv.Select != nil {
-			for _, x := range ddocv.Setup {
+		if designView.Select != nil {
+			for _, x := range designView.Setup {
 				content += x
 			}
 		}
-		if ddocv.Run != nil {
-			for _, x := range ddocv.Run {
+		if designView.Run != nil {
+			for _, x := range designView.Run {
 				content += x
 			}
 		}
@@ -382,11 +368,14 @@ func (mgr *DefaultViewManager) GetView(viewName string) (*View, bool) {
 	return nil, false
 }
 
-func NewViewManager(serviceLocator ServiceLocator) *DefaultViewManager {
+func NewViewManager(DBName, DBPath, viewDirPath string, serviceLocator ServiceLocator) *DefaultViewManager {
 	mgr := &DefaultViewManager{}
+	mgr.DBName = DBName
+	mgr.DBPath = DBPath
+	mgr.viewDirPath = viewDirPath
 	mgr.views = make(map[string]*View)
-	mgr.ddocs = make(map[string]*DesignDocument)
-	mgr.localdb = serviceLocator.GetLocalDB()
+	mgr.designDocs = make(map[string]*DesignDocument)
+	mgr.localDB = serviceLocator.GetLocalDB()
 	mgr.serviceLocator = serviceLocator
 	return mgr
 }
@@ -402,21 +391,20 @@ type View struct {
 
 	currentSeqID string
 
-	viewReaderPool ViewReaderPool
-	viewWriter     ViewWriter
+	viewReader ViewReader
+	viewWriter ViewWriter
 
-	mux sync.Mutex
+	mutex sync.Mutex
 }
 
 func (view *View) Open() error {
 	view.viewWriter.Open()
-	view.viewReaderPool.Open()
+	view.viewReader.Open()
 	return nil
 }
 
 func (view *View) Close() error {
-
-	view.viewReaderPool.Close()
+	view.viewReader.Close()
 	view.viewWriter.Close()
 
 	return nil
@@ -427,8 +415,8 @@ func (view *View) Build(nextSeqID string) error {
 		return nil
 	}
 
-	view.mux.Lock()
-	defer view.mux.Unlock()
+	view.mutex.Lock()
+	defer view.mutex.Unlock()
 
 	if view.currentSeqID >= nextSeqID {
 		return nil
@@ -445,16 +433,14 @@ func (view *View) Build(nextSeqID string) error {
 }
 
 func (view *View) Select(name string, values url.Values) ([]byte, error) {
-	viewReader := view.viewReaderPool.Borrow()
-	defer view.viewReaderPool.Return(viewReader)
-	return viewReader.Select(name, values)
+	return view.viewReader.Select(name, values)
 }
 
 func (view *View) Vacuum() error {
 	return nil
 }
 
-func setupDatabase(db *sql.DB, absoluteDatabasePath string) error {
+func setupViewDatabase(db *sql.DB, absoluteDatabasePath string) error {
 	_, err := db.Exec("ATTACH DATABASE 'file://" + absoluteDatabasePath + "?mode=ro' as docsdb;")
 	if err != nil {
 		return err
@@ -472,7 +458,7 @@ func setupDatabase(db *sql.DB, absoluteDatabasePath string) error {
 	return nil
 }
 
-func NewView(viewName, viewFileName, viewFilePath, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager, serviceLocator ServiceLocator) *View {
+func NewView(DBName, viewName string, ddoc *DesignDocument, viewManager ViewManager, serviceLocator ServiceLocator) *View {
 	view := &View{}
 
 	if _, ok := ddoc.Views[viewName]; !ok {
@@ -481,9 +467,6 @@ func NewView(viewName, viewFileName, viewFilePath, connectionString, absoluteDat
 
 	view.name = viewName
 	view.ddocID = ddoc.ID
-	view.viewFileName = viewFileName
-	view.viewFilePath = viewFilePath
-	view.absoluteDatabasePath = absoluteDatabasePath
 
 	setupScripts := *new([]Query)
 	scripts := *new([]Query)
@@ -501,8 +484,8 @@ func NewView(viewName, viewFileName, viewFilePath, connectionString, absoluteDat
 		selectScripts[k] = Query{text: text, params: params}
 	}
 
-	view.viewWriter = NewViewWriter(connectionString+"&mode=rwc", absoluteDatabasePath, setupScripts, scripts)
-	view.viewReaderPool = NewViewReaderPool(connectionString+"&mode=ro", absoluteDatabasePath, 4, serviceLocator, selectScripts)
+	view.viewWriter = serviceLocator.GetViewWriter(DBName, viewName, *ddoc, setupScripts, scripts)
+	view.viewReader = serviceLocator.GetViewReader(DBName, viewName, *ddoc, selectScripts)
 
 	return view
 }

@@ -18,11 +18,8 @@ var dbExt = ".db"
 
 // KDB kdb
 type KDB struct {
-	dbPath   string
-	viewPath string
-
 	dbs            map[string]Database
-	rwmux          sync.RWMutex
+	rwMutex        sync.RWMutex
 	serviceLocator ServiceLocator
 	fileHandler    FileHandler
 	localDB        LocalDB
@@ -32,27 +29,28 @@ type KDB struct {
 func NewKDB() (*KDB, error) {
 	kdb := new(KDB)
 	kdb.dbs = make(map[string]Database)
-	kdb.rwmux = sync.RWMutex{}
-	kdb.dbPath = "./data/dbs"
-	kdb.viewPath = "./data/mrviews"
+	kdb.rwMutex = sync.RWMutex{}
 	kdb.serviceLocator = NewServiceLocator()
 
 	kdb.localDB = kdb.serviceLocator.GetLocalDB()
 	fileHandler := kdb.serviceLocator.GetFileHandler()
 
-	if !fileHandler.IsFileExists(kdb.dbPath) {
-		if err := fileHandler.MkdirAll(kdb.dbPath); err != nil {
+	dbPath := kdb.serviceLocator.GetDBDirPath()
+	viewPath := kdb.serviceLocator.GetViewDirPath()
+
+	if !fileHandler.IsFileExists(dbPath) {
+		if err := fileHandler.MkdirAll(dbPath); err != nil {
 			return nil, err
 		}
 	}
 
-	if !fileHandler.IsFileExists(kdb.viewPath) {
-		if err := fileHandler.MkdirAll(kdb.viewPath); err != nil {
+	if !fileHandler.IsFileExists(viewPath) {
+		if err := fileHandler.MkdirAll(viewPath); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := kdb.localDB.Open(kdb.dbPath); err != nil {
+	if err := kdb.localDB.Open(dbPath); err != nil {
 		return nil, err
 	}
 
@@ -63,7 +61,8 @@ func NewKDB() (*KDB, error) {
 
 	for idx := range list {
 		name := list[idx]
-		if err = kdb.Open(name, false); err != nil {
+		createIfNotExists := false
+		if err = kdb.Open(name, createIfNotExists); err != nil {
 			return nil, err
 		}
 	}
@@ -73,8 +72,6 @@ func NewKDB() (*KDB, error) {
 
 // ListDatabases List the databases
 func (kdb *KDB) ListDatabases() ([]string, error) {
-	kdb.localDB.Begin()
-	defer kdb.localDB.Commit()
 	return kdb.localDB.ListDatabases()
 }
 
@@ -84,48 +81,31 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 		return ErrDatabaseInvalidName
 	}
 
-	kdb.rwmux.Lock()
-	defer kdb.rwmux.Unlock()
+	kdb.rwMutex.Lock()
+	defer kdb.rwMutex.Unlock()
 
 	if _, ok := kdb.dbs[name]; ok && !createIfNotExists {
 		return nil
 	}
 
-	kdb.localDB.Begin()
-	defer kdb.localDB.Rollback()
-
-	fileName := name + "_1"
-
 	if createIfNotExists {
-		if err := kdb.localDB.CreateDatabase(name, fileName); err != nil {
+		if err := kdb.localDB.CreateDatabase(name, name); err != nil {
 			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
 				return ErrDatabaseExists
 			}
 			return err
 		}
-	} else {
-		fileName = kdb.localDB.GetDatabaseFileName(name)
 	}
 
-	db, err := kdb.serviceLocator.GetDatabase(name, fileName, kdb.dbPath, kdb.viewPath, createIfNotExists)
-	if err != nil {
-		return err
-	}
-
-	kdb.dbs[name] = db
-
-	kdb.localDB.Commit()
+	kdb.dbs[name] = kdb.serviceLocator.GetDatabase(name, createIfNotExists)
 
 	return nil
 }
 
 // Delete delete the kdb database
 func (kdb *KDB) Delete(name string) error {
-	kdb.rwmux.Lock()
-	defer kdb.rwmux.Unlock()
-
-	kdb.localDB.Begin()
-	defer kdb.localDB.Rollback()
+	kdb.rwMutex.Lock()
+	defer kdb.rwMutex.Unlock()
 
 	fileName := kdb.localDB.GetDatabaseFileName(name)
 	viewFileNames, _ := kdb.localDB.ListViewFiles(name)
@@ -140,8 +120,6 @@ func (kdb *KDB) Delete(name string) error {
 	delete(kdb.dbs, name)
 	db.Close()
 
-	kdb.localDB.Commit()
-
 	kdb.deleteDBFiles(fileName, viewFileNames)
 
 	return nil
@@ -149,8 +127,8 @@ func (kdb *KDB) Delete(name string) error {
 
 // PutDocument insert a document
 func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -178,8 +156,8 @@ func (kdb *KDB) DeleteDocument(name string, doc *Document) (*Document, error) {
 
 // GetDocument get a document
 func (kdb *KDB) GetDocument(name string, doc *Document, includeDoc bool) (*Document, error) {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, errors.New("db_not_found")
@@ -235,9 +213,9 @@ func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 }
 
 // DBStat kdb stat
-func (kdb *KDB) DBStat(name string) (*DBStat, error) {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+func (kdb *KDB) DBStat(name string) (*DatabaseStat, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -247,8 +225,8 @@ func (kdb *KDB) DBStat(name string) (*DBStat, error) {
 
 // Vacuum vacuum
 func (kdb *KDB) Vacuum(name string) error {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return ErrDatabaseNotFound
@@ -260,8 +238,8 @@ func (kdb *KDB) Vacuum(name string) error {
 
 // Changes list changes
 func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -274,8 +252,8 @@ func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
 
 // SelectView select the kdb view
 func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	kdb.rwmux.RLock()
-	defer kdb.rwmux.RUnlock()
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[dbName]
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -300,13 +278,16 @@ func (kdb *KDB) Info() []byte {
 }
 
 func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
+	dbPath := kdb.serviceLocator.GetDBDirPath()
+	viewPath := kdb.serviceLocator.GetViewDirPath()
+
 	for _, vf := range viewFiles {
-		os.Remove(filepath.Join(kdb.viewPath, vf+dbExt))
+		os.Remove(filepath.Join(viewPath, vf+dbExt))
 	}
 	fileName := dbname + dbExt
-	os.Remove(filepath.Join(kdb.dbPath, fileName+"-shm"))
-	os.Remove(filepath.Join(kdb.dbPath, fileName+"-wal"))
-	os.Remove(filepath.Join(kdb.dbPath, fileName))
+	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
+	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
+	os.Remove(filepath.Join(dbPath, fileName))
 }
 
 // ValidateDatabaseName validate correctness of the name
