@@ -1,123 +1,139 @@
 package main
 
-// import (
-// 	"fmt"
-// 	"testing"
-// )
+import (
+	"database/sql"
+	"fmt"
+	"testing"
+)
 
-// func setupTestDatabase2() {
-// 	serviceLocator := new(DefaultServiceLocator)
-// 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
-// 	err := writer.Open(testConnectionString)
-// 	if err != nil {
-// 		fmt.Println("unable to setup test database")
-// 		return
-// 	}
+var writerTestConnectionString string = "file:test.db?mode=memory&cache=shared"
 
-// 	err = writer.Begin()
-// 	if err != nil {
-// 		fmt.Println("unable to setup test database")
-// 		return
-// 	}
+func openTestDatabaseForWriter() func() {
+	con, _ := sql.Open("sqlite3", writerTestConnectionString)
+	tx, _ := con.Begin()
+	tx.Exec("CREATE TABLE temp(a)")
+	tx.Commit()
+	return func() {
+		con.Close()
+	}
+}
 
-// 	if err := writer.ExecBuildScript(); err != nil {
-// 		fmt.Println("unable to setup test database")
-// 		return
-// 	}
+func setupTestDatabaseForWriter() {
+	var writer DefaultDatabaseWriter
+	writer.connectionString = writerTestConnectionString
+	writer.reader = new(DefaultDatabaseReader)
+	err := writer.Open()
+	if err != nil {
+		fmt.Println("unable to setup test database")
+		return
+	}
 
-// 	writer.Commit()
+	err = writer.Begin()
+	if err != nil {
+		fmt.Println("unable to setup test database")
+		return
+	}
 
-// 	writer.Close()
-// }
+	if err := writer.ExecBuildScript(); err != nil {
+		fmt.Println("unable to setup test database")
+		return
+	}
 
-// func TestWriterPutDocument(t *testing.T) {
+	writer.Commit()
 
-// 	dbCloseHandle := openTestDatabase()
-// 	defer dbCloseHandle()
-// 	setupTestDatabase2()
+	writer.Close()
+}
 
-// 	serviceLocator := new(DefaultServiceLocator)
-// 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
-// 	writer.Open(testConnectionString)
+func TestWriterPutDocument(t *testing.T) {
+	dbHandle := openTestDatabaseForWriter()
+	defer dbHandle()
+	setupTestDatabaseForWriter()
 
-// 	writer.Begin()
+	var writer DefaultDatabaseWriter
+	writer.connectionString = writerTestConnectionString
+	writer.reader = new(DefaultDatabaseReader)
+	writer.Open()
 
-// 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-// 	if err := writer.PutDocument("seqID", doc, nil); err != nil {
-// 		t.Errorf("unable to put document, error %s", err.Error())
-// 	}
+	writer.Begin()
 
-// 	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
-// 		t.Errorf("unable to get document, error %s", err.Error())
-// 	}
+	doc, _ := ParseDocument([]byte(`{"_id":1}`))
+	if err := writer.PutDocument("seqID", doc, nil); err != nil {
+		t.Errorf("unable to put document, error %s", err.Error())
+	}
 
-// 	writer.Commit()
+	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
+		t.Errorf("unable to get document, error %s", err.Error())
+	}
 
-// 	writer.Begin()
+	writer.Commit()
 
-// 	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
-// 		t.Errorf("unable to get document, error %s", err.Error())
-// 	}
+	writer.Begin()
 
-// 	writer.Commit()
+	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
+		t.Errorf("unable to get document, error %s", err.Error())
+	}
 
-// 	writer.Close()
-// }
+	writer.Commit()
 
-// func TestWriterDeleteDocument(t *testing.T) {
-// 	dbCloseHandle := openTestDatabase()
-// 	defer dbCloseHandle()
-// 	setupTestDatabase2()
+	writer.Close()
+}
 
-// 	serviceLocator := new(DefaultServiceLocator)
-// 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
-// 	writer.Open(testConnectionString)
+func TestWriterDeleteDocument(t *testing.T) {
+	dbHandle := openTestDatabaseForWriter()
+	defer dbHandle()
+	setupTestDatabaseForWriter()
 
-// 	writer.Begin()
+	var writer DefaultDatabaseWriter
+	writer.connectionString = writerTestConnectionString
+	writer.reader = new(DefaultDatabaseReader)
+	writer.Open()
 
-// 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-// 	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
-// 		t.Errorf("unable to put document, error %s", err.Error())
-// 	}
+	writer.Begin()
 
-// 	writer.Commit()
+	doc, _ := ParseDocument([]byte(`{"_id":1}`))
+	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
+		t.Errorf("unable to put document, error %s", err.Error())
+	}
 
-// 	writer.Begin()
+	writer.Commit()
 
-// 	doc, _ = ParseDocument([]byte(`{"_id":1, "_version":1, "_deleted":true}`))
-// 	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
-// 		t.Errorf("unable to delete document, error %s", err.Error())
-// 	}
+	writer.Begin()
 
-// 	writer.Commit()
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_version":1, "_deleted":true}`))
+	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
+		t.Errorf("unable to delete document, error %s", err.Error())
+	}
 
-// 	writer.Begin()
+	writer.Commit()
 
-// 	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
-// 		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
-// 	}
+	writer.Begin()
 
-// 	writer.Commit()
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
+	}
 
-// 	writer.Close()
-// }
+	writer.Commit()
 
-// func TestWriterDocNotFound(t *testing.T) {
-// 	dbCloseHandle := openTestDatabase()
-// 	defer dbCloseHandle()
-// 	setupTestDatabase2()
+	writer.Close()
+}
 
-// 	serviceLocator := new(DefaultServiceLocator)
-// 	var writer DatabaseWriter = serviceLocator.GetDatabaseWriter()
-// 	writer.Open(testConnectionString)
+func TestWriterDocNotFound(t *testing.T) {
+	dbHandle := openTestDatabaseForWriter()
+	defer dbHandle()
+	setupTestDatabaseForWriter()
 
-// 	writer.Begin()
+	var writer DefaultDatabaseWriter
+	writer.connectionString = writerTestConnectionString
+	writer.reader = new(DefaultDatabaseReader)
+	writer.Open()
 
-// 	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
-// 		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
-// 		fmt.Println(err)
-// 	}
+	writer.Begin()
 
-// 	writer.Commit()
-// 	writer.Close()
-// }
+	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
+		fmt.Println(err)
+	}
+
+	writer.Commit()
+	writer.Close()
+}
