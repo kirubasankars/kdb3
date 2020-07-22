@@ -79,7 +79,7 @@ func TestGetInfo(t *testing.T) {
 	v, _ := parser.Parse(rr.Body.String())
 
 	version := v.GetObject("version").Get("sqlite_version").String()
-	if version != `3.32.2` {
+	if version != `"3.32.2"` {
 		t.Errorf(`expected version "3.32.2", got %s`, version)
 	}
 
