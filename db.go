@@ -106,7 +106,6 @@ func (db *DefaultDatabase) Close() error {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
-	db.viewManager.Close()
 	writer := <-db.writer
 	writer.Close()
 
@@ -118,6 +117,8 @@ func (db *DefaultDatabase) Close() error {
 			reader.Close()
 		}
 	}()
+
+	db.viewManager.Close()
 
 	return nil
 }
@@ -366,13 +367,14 @@ func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLoca
 	db := &DefaultDatabase{Name: name}
 	db.idSeq = NewSequenceUUIDGenarator()
 
-	db.reader = make(chan DatabaseReader, 2)
 	db.writer = make(chan DatabaseWriter, 1)
-
-	db.reader <- serviceLocator.GetDatabaseReader(name)
-	db.reader <- serviceLocator.GetDatabaseReader(name)
+	db.reader = make(chan DatabaseReader, 2)
 
 	db.writer <- serviceLocator.GetDatabaseWriter(name)
+	readersCount := cap(db.reader)
+	for i := 0; i < readersCount; i++ {
+		db.reader <- serviceLocator.GetDatabaseReader(name)
+	}
 	db.viewManager = serviceLocator.GetViewManager(name)
 
 	err := db.Open(createIfNotExists)
