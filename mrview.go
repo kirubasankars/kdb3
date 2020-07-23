@@ -33,7 +33,6 @@ type ViewManager interface {
 
 type DefaultViewManager struct {
 	DBName      string
-	DBPath      string
 	viewDirPath string
 
 	rwMutex        sync.RWMutex
@@ -378,11 +377,10 @@ func (mgr *DefaultViewManager) GetView(viewName string) (*View, bool) {
 	return nil, false
 }
 
-func NewViewManager(DBName, DBPath, viewDirPath string, serviceLocator ServiceLocator) *DefaultViewManager {
+func NewViewManager(DBName, viewDirPath string, serviceLocator ServiceLocator) *DefaultViewManager {
 	mgr := &DefaultViewManager{}
 
 	mgr.DBName = DBName
-	mgr.DBPath = DBPath
 	mgr.viewDirPath = viewDirPath
 	mgr.views = make(map[string]*View)
 	mgr.designDocs = make(map[string]*DesignDocument)
@@ -407,7 +405,7 @@ type View struct {
 }
 
 func (view *View) Open() error {
-	viewWriter := <- view.viewWriter
+	viewWriter := <-view.viewWriter
 	defer func() {
 		view.viewWriter <- viewWriter
 	}()
@@ -435,7 +433,7 @@ func (view *View) Open() error {
 }
 
 func (view *View) Close() error {
-	viewWriter := <- view.viewWriter
+	viewWriter := <-view.viewWriter
 	viewWriter.Close()
 
 	// close all readers
@@ -462,7 +460,7 @@ func (view *View) Build(nextSeqID string) error {
 		return nil
 	}
 
-	viewWriter := <- view.viewWriter
+	viewWriter := <-view.viewWriter
 	defer func() {
 		view.viewWriter <- viewWriter
 	}()
@@ -478,8 +476,8 @@ func (view *View) Build(nextSeqID string) error {
 }
 
 func (view *View) Select(name string, values url.Values) ([]byte, error) {
-	viewReader := <- view.viewReader
-	defer func () {
+	viewReader := <-view.viewReader
+	defer func() {
 		view.viewReader <- viewReader
 	}()
 	return viewReader.Select(name, values)
