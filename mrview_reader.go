@@ -22,13 +22,12 @@ type DefaultViewReader struct {
 }
 
 func (vr *DefaultViewReader) Open() error {
-	db, err := sql.Open("sqlite3", vr.connectionString)
+	var err error
+	vr.con, err = sql.Open("sqlite3", vr.connectionString)
 	if err != nil {
 		return err
 	}
-	vr.con = db
-
-	return setupViewDatabase(db, vr.absoluteDatabasePath)
+	return setupViewDatabase(vr.con, vr.absoluteDatabasePath)
 }
 
 func (vr *DefaultViewReader) Close() error {
@@ -61,13 +60,13 @@ func (vr *DefaultViewReader) Select(name string, values url.Values) ([]byte, err
 func NewViewReader(DBName string, DBPath string, connectionString string, selectScripts map[string]Query) *DefaultViewReader {
 	viewReader := new(DefaultViewReader)
 	viewReader.connectionString = connectionString
+	viewReader.selectScripts = selectScripts
 
 	absoluteDBPath, err := filepath.Abs(DBPath)
 	if err != nil {
 		panic(err)
 	}
 	viewReader.absoluteDatabasePath = absoluteDBPath
-	viewReader.selectScripts = selectScripts
 
 	return viewReader
 }

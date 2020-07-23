@@ -18,7 +18,7 @@ type DatabaseReader interface {
 	GetDocumentByID(ID string) (*Document, error)
 	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
 
-	GetAllDesignDocuments() ([]*Document, error)
+	GetAllDesignDocuments() ([]Document, error)
 	GetChanges(since string, limit int) ([]byte, error)
 
 	GetLastUpdateSequence() string
@@ -167,9 +167,9 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 }
 
 // GetAllDesignDocuments get all design documents
-func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
+func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error) {
 
-	var docs []*Document
+	var docs []Document
 	rows, err := reader.tx.Query("SELECT doc_id FROM documents WHERE doc_id like '_design/%' AND deleted != 1")
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]*Document, error
 		if err != nil {
 			return nil, err
 		}
-		docs = append(docs, doc)
+		docs = append(docs, *doc)
 	}
 	return docs, nil
 }

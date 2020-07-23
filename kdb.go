@@ -97,6 +97,10 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 		}
 	}
 
+	if kdb.localDB.GetDatabaseFileName(name) == "" {
+		return ErrDatabaseNotFound
+	}
+
 	kdb.dbs[name] = kdb.serviceLocator.GetDatabase(name, createIfNotExists)
 
 	return nil
@@ -139,7 +143,7 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
 		newDoc.Kind = "design"
-		err := db.ValidateDesignDocument(newDoc)
+		err := db.ValidateDesignDocument(*newDoc)
 		if err != nil {
 			return nil, err
 		}
