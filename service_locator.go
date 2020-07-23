@@ -62,9 +62,7 @@ func (serviceLocator *DefaultServiceLocator) GetDatabaseReader(dbName string) Da
 
 // GetViewManager resolve ViewManager instance
 func (serviceLocator *DefaultServiceLocator) GetViewManager(dbName string) ViewManager {
-	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
-	return NewViewManager(dbName, DBPath, serviceLocator.viewDirPath, serviceLocator)
+	return NewViewManager(dbName, serviceLocator.viewDirPath, serviceLocator)
 }
 
 // GetViewReader resolve ViewReader instance
