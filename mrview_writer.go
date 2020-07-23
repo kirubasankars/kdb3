@@ -13,11 +13,10 @@ type ViewWriter interface {
 
 type DefaultViewWriter struct {
 	connectionString     string
+	con 				 *sql.DB
 	absoluteDatabasePath string
 	setupScripts         []Query
 	scripts              []Query
-
-	con *sql.DB
 }
 
 func (vw *DefaultViewWriter) Open() error {
@@ -30,14 +29,15 @@ func (vw *DefaultViewWriter) Open() error {
 	if err != nil {
 		return err
 	}
-	buildSQL := `CREATE TABLE IF NOT EXISTS view_meta (
-		Id						INTEGER PRIMARY KEY,
-		current_seq_id		  	TEXT,
-		next_seq_id		  		TEXT
-	) WITHOUT ROWID;
-
-	INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
-		SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+	buildSQL := `
+		CREATE TABLE IF NOT EXISTS view_meta (
+			Id						INTEGER PRIMARY KEY,
+			current_seq_id		  	TEXT,
+			next_seq_id		  		TEXT
+		) WITHOUT ROWID;
+	
+		INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
+			SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	`
 
 	if _, err = tx.Exec(buildSQL); err != nil {
@@ -102,14 +102,14 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 func NewViewWriter(DBName, DBPath, connectionString string, setupScripts, scripts []Query) *DefaultViewWriter {
 	viewWriter := new(DefaultViewWriter)
 	viewWriter.connectionString = connectionString
+	viewWriter.setupScripts = setupScripts
+	viewWriter.scripts = scripts
 
-	absoluteDBPath, err := filepath.Abs(DBPath)
+	absoluteDatabasePath, err := filepath.Abs(DBPath)
 	if err != nil {
 		panic(err)
 	}
-	viewWriter.absoluteDatabasePath = absoluteDBPath
+	viewWriter.absoluteDatabasePath = absoluteDatabasePath
 
-	viewWriter.setupScripts = setupScripts
-	viewWriter.scripts = scripts
 	return viewWriter
 }

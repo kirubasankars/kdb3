@@ -15,8 +15,8 @@ type ServiceLocator interface {
 	GetDatabaseReader(dbName string) DatabaseReader
 
 	GetViewManager(dbName string) ViewManager
-	GetViewReader(dbName, viewName string, ddoc DesignDocument, selectScripts map[string]Query) ViewReader
-	GetViewWriter(dbName, viewName string, ddoc DesignDocument, setup, scripts []Query) ViewWriter
+	GetViewReader(dbName, docID, viewName string, selectScripts map[string]Query) ViewReader
+	GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter
 }
 
 // DefaultServiceLocator default implementation of ServiceLocator
@@ -68,11 +68,11 @@ func (serviceLocator *DefaultServiceLocator) GetViewManager(dbName string) ViewM
 }
 
 // GetViewReader resolve ViewReader instance
-func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, viewName string, ddoc DesignDocument, selectScripts map[string]Query) ViewReader {
+func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewName string, selectScripts map[string]Query) ViewReader {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
 	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
 
-	qualifiedViewName := ddoc.ID + "$" + viewName
+	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
 	connectionString := viewFilePath + "?_journal=MEMORY&cache=shared&_mutex=no&mode=ro"
@@ -80,11 +80,11 @@ func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, viewName stri
 }
 
 // GetViewWriter resolve ViewWriter instance
-func (serviceLocator *DefaultServiceLocator) GetViewWriter(dbName, viewName string, ddoc DesignDocument, setup, scripts []Query) ViewWriter {
+func (serviceLocator *DefaultServiceLocator) GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
 	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
 
-	qualifiedViewName := ddoc.ID + "$" + viewName
+	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
 	connectionString := viewFilePath + "?_journal=MEMORY&cache=shared&_mutex=no&mode=rwc"

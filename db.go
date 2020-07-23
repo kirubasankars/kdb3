@@ -15,14 +15,14 @@ type Database interface {
 	PutDocument(doc *Document) (*Document, error)
 	DeleteDocument(doc *Document) (*Document, error)
 	GetDocument(doc *Document, includeData bool) (*Document, error)
-	GetAllDesignDocuments() ([]*Document, error)
+	GetAllDesignDocuments() ([]Document, error)
 	GetLastUpdateSequence() string
 	GetChanges(since string, limit int) ([]byte, error)
 	GetDocumentCount() (int, int)
 
 	GetStat() *DatabaseStat
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	ValidateDesignDocument(doc *Document) error
+	ValidateDesignDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
 
@@ -63,7 +63,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 			err = reader.Open()
 			if err != nil {
 				reader.Close()
-				panic(err)
+				continue
 			}
 			readers[i] = reader
 		}
@@ -181,7 +181,7 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 		db.DeletedDocumentCount++
 
 		if strings.HasPrefix(doc.ID, "_design/") {
-			db.viewManager.UpdateDesignDocument(doc, "")
+			db.viewManager.OnDesignDocumentChange(*doc, "")
 		}
 	}
 
@@ -219,7 +219,7 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 }
 
 // GetAllDesignDocuments get all design document
-func (db *DefaultDatabase) GetAllDesignDocuments() ([]*Document, error) {
+func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
 	reader := <-db.reader
 	defer func() {
 		db.reader <- reader
@@ -291,12 +291,12 @@ func (db *DefaultDatabase) Vacuum() error {
 			2. Close Writer
 			3. Copy remaining data (with min (max from step 1) and max new update seq) to new data file
 			4. Close all readers
-			5. Close viewManager and views
+			5. Close all view's readers and writers
 			6. Update localDB with new data file name
 			7. Create writer and open it
 			8. Create Readers and open it all
 			9. Push writer and readers to its corresponding channels
-		   10. Open viewManager and views
+		   10. Open all view's readers and writers
 		   11. Delete old data file
 	*/
 	defer func() {
@@ -313,11 +313,11 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 		return nil, err
 	}
 
-	return db.viewManager.SelectView(db.UpdateSequence, outputDoc, viewName, selectName, values, stale)
+	return db.viewManager.SelectView(db.UpdateSequence, *outputDoc, viewName, selectName, values, stale)
 }
 
 // ValidateDesignDocument validate design document
-func (db *DefaultDatabase) ValidateDesignDocument(doc *Document) error {
+func (db *DefaultDatabase) ValidateDesignDocument(doc Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
 }
 
