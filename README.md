@@ -232,7 +232,7 @@ View can be executed with followings
       ]
     }
 
-## incrementally updated materialistic View
+## incrementally updated materialized View
 
 ### to view, view definitions
 
