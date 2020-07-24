@@ -176,13 +176,15 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	if currentDoc == nil {
 		db.DocumentCount++
 	}
+
 	if doc.Deleted {
 		db.DocumentCount--
 		db.DeletedDocumentCount++
+	}
 
-		if strings.HasPrefix(doc.ID, "_design/") {
-			db.viewManager.OnDesignDocumentChange(*doc, "")
-		}
+	if currentDoc != nil && strings.HasPrefix(doc.ID, "_design/") {
+		// call only if design doc changed
+		db.viewManager.DeleteViewsIfRemoved(*doc)
 	}
 
 	return doc, nil

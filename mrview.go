@@ -22,7 +22,7 @@ type ViewManager interface {
 	GetView(viewName string) (*View, bool)
 	SelectView(updateSeqID string, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 
-	OnDesignDocumentChange(doc Document, qualifiedViewName string) error
+	DeleteViewsIfRemoved(doc Document)
 	ValidateDesignDocument(doc Document) error
 	CalculateSignature(designView DesignDocumentView) string
 	ParseQueryParams(query string) (string, []string)
@@ -99,15 +99,12 @@ func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
 }
 
 func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentView DesignDocumentView) error {
+	var currentViewHash, viewFileName, currentViewFileName string
+	var view *View
+	var ok bool
+
 	qualifiedViewName := docID + "$" + viewName
-	if _, ok := mgr.views[qualifiedViewName]; ok {
-		// view is exists
-		return nil
-	}
-
-	var currentViewHash, viewFileName string
-
-	currentViewHash, viewFileName = mgr.localDB.GetViewFileName(mgr.DBName, qualifiedViewName)
+	currentViewHash, currentViewFileName = mgr.localDB.GetViewFileName(mgr.DBName, qualifiedViewName)
 	newViewHash := mgr.CalculateSignature(designDocumentView)
 
 	if currentViewHash != newViewHash {
@@ -116,18 +113,45 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 		mgr.localDB.UpdateView(mgr.DBName, qualifiedViewName, newViewHash, viewFileName)
 	}
 
-	view := NewView(mgr.DBName, docID, viewName, &designDocumentView, mgr, mgr.serviceLocator)
-	if err := view.Open(); err != nil {
-		return err
+	if view, ok = mgr.views[qualifiedViewName]; ok {
+		if currentViewHash != newViewHash {
+			view.Close() // safe close readers and writer
+
+			setupScripts := *new([]Query)
+			runScripts := *new([]Query)
+			selectScripts := make(map[string]Query)
+			designDocView := designDocumentView
+
+			for _, text := range designDocView.Setup {
+				setupScripts = append(setupScripts, Query{text: text})
+			}
+			for _, text := range designDocView.Run {
+				runScripts = append(runScripts, Query{text: text})
+			}
+			for k, v := range designDocView.Select {
+				text, params := mgr.ParseQueryParams(v)
+				selectScripts[k] = Query{text: text, params: params}
+			}
+
+			view.setupScripts = setupScripts
+			view.runScripts = runScripts
+			view.selectScripts = selectScripts
+
+			view.ReInitialize() // safe initialize to writer and readers
+			mgr.deleteViewFileIfNoReference(currentViewFileName)
+		}
+	} else {
+		view = NewView(mgr.DBName, docID, viewName, &designDocumentView, mgr, mgr.serviceLocator)
+		if err := view.Open(); err != nil {
+			return err
+		}
+		mgr.views[qualifiedViewName] = view
 	}
-
-	mgr.views[qualifiedViewName] = view
-
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqID string, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	designDocID := designDoc.ID
+func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
 	mgr.rwMutex.RLock()
@@ -142,14 +166,19 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, designDoc Document
 		defer mgr.rwMutex.Unlock() // remove write lock
 		// in the end
 
-		err := mgr.OnDesignDocumentChange(designDoc, qualifiedViewName)
+		designDoc := &DesignDocument{}
+		err := json.Unmarshal(doc.Data, designDoc)
 		if err != nil {
-			return nil, err
+			panic("invalid_design_document " + doc.ID)
+		}
+		if _, ok := mgr.designDocs[doc.ID]; !ok {
+			// document is new
+			mgr.designDocs[doc.ID] = designDoc
 		}
 
-		designDoc, _ := mgr.designDocs[designDocID]
 		designDocView := designDoc.Views[viewName]
 		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
+		mgr.designDocs[doc.ID] = designDoc
 		if err != nil {
 			return nil, err
 		}
@@ -162,6 +191,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, designDoc Document
 	view, ok := mgr.views[qualifiedViewName]
 	if !ok {
 		// if view not found. try to find and open
+		// new doc handled here
 		view, err = update()
 		if err != nil {
 			return nil, err
@@ -178,7 +208,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, designDoc Document
 	}
 
 	currentDesignDoc := mgr.designDocs[designDocID]
-	if designDoc.Version != currentDesignDoc.Version {
+	if doc.Version != currentDesignDoc.Version {
 		view, err = update()
 		if err != nil {
 			return nil, err
@@ -220,52 +250,72 @@ func (mgr *DefaultViewManager) Vacuum() error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) OnDesignDocumentChange(doc Document, qualifiedViewName string) error {
-	var views []string
-	if qualifiedViewName == "" {
-		designDoc := mgr.designDocs[doc.ID]
-		for viewName := range designDoc.Views {
-			views = append(views, doc.ID+"$"+viewName)
-		}
-	} else {
-		views = append(views, qualifiedViewName)
-	}
+func (mgr *DefaultViewManager) deleteViews(qualifiedViewNames []string) {
 
-	for _, qualifiedViewName := range views {
+	for _, qualifiedViewName := range qualifiedViewNames {
 		// delete current view and it's data file
+
 		if view, ok := mgr.views[qualifiedViewName]; ok {
+			// safe close all readers and writer
 			view.Close()
 		}
 		delete(mgr.views, qualifiedViewName)
 
-		localDBViewFileNames, _ := mgr.localDB.ListViewFiles(mgr.DBName)
 		_, viewFileName := mgr.localDB.GetViewFileName(mgr.DBName, qualifiedViewName)
-
-		referenceCount := 0
-		for _, vFile := range localDBViewFileNames {
-			if vFile == viewFileName {
-				referenceCount++
-			}
-		}
-		if referenceCount == 1 {
-			// delete data file, only if its used by one view
-			os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
-		}
 		mgr.localDB.DeleteView(mgr.DBName, qualifiedViewName)
-	}
 
+		mgr.deleteViewFileIfNoReference(viewFileName)
+	}
+}
+
+func (mgr *DefaultViewManager) deleteViewFileIfNoReference(viewFileName string) {
+	if viewFileName == "" {
+		return
+	}
+	localDBViewFileNames, _ := mgr.localDB.ListViewFiles(mgr.DBName)
+	referenceCount := 0
+	for _, vFile := range localDBViewFileNames {
+		if vFile == viewFileName {
+			referenceCount++
+		}
+	}
+	if referenceCount <= 0 {
+		// delete data file, only if its used by one view
+		os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
+	}
+}
+
+func (mgr *DefaultViewManager) DeleteViewsIfRemoved(doc Document) {
 	if doc.Deleted {
-		delete(mgr.designDocs, doc.ID)
+		if designDoc, ok := mgr.designDocs[doc.ID]; ok {
+			var views []string
+			for viewName, _ := range designDoc.Views {
+				qualifiedViewName := doc.ID + "$" + viewName
+				views = append(views, qualifiedViewName)
+			}
+			mgr.deleteViews(views)
+			delete(mgr.designDocs, doc.ID)
+		}
 	} else {
-		newDDoc := &DesignDocument{}
-		err := json.Unmarshal(doc.Data, newDDoc)
+		// on document update, find any deleted views and clean them
+		currentDesignDoc := mgr.designDocs[doc.ID]
+		newDesignDoc := &DesignDocument{}
+		err := json.Unmarshal(doc.Data, newDesignDoc)
 		if err != nil {
 			panic("invalid_design_document " + doc.ID)
 		}
-		mgr.designDocs[doc.ID] = newDDoc
-	}
 
-	return nil
+		var deletedViews []string
+		for viewName, _ := range currentDesignDoc.Views {
+			if _, ok := newDesignDoc.Views[viewName]; !ok {
+				qualifiedViewName := doc.ID + "$" + viewName
+				deletedViews = append(deletedViews, qualifiedViewName)
+			}
+		}
+		if len(deletedViews) > 0 {
+			mgr.deleteViews(deletedViews)
+		}
+	}
 }
 
 func (mgr *DefaultViewManager) CalculateSignature(designDocumentView DesignDocumentView) string {
@@ -324,7 +374,7 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 	if err != nil {
 		return err
 	}
-	var sqlErr string = ""
+	var sqlErr = ""
 
 	for _, v := range newDDoc.Views {
 		for _, x := range v.Setup {
@@ -396,12 +446,34 @@ var viewResultValidation = regexp.MustCompile("sql: expected (\\d+) destination 
 
 type View struct {
 	name         string
+	DBName       string
 	designDocID  string
 	mutex        sync.Mutex
 	currentSeqID string
 
 	viewReader chan ViewReader
 	viewWriter chan ViewWriter
+
+	serviceLocator ServiceLocator
+
+	setupScripts  []Query
+	runScripts    []Query
+	selectScripts map[string]Query
+}
+
+func (view *View) ReInitialize() error {
+	viewWriter := view.serviceLocator.GetViewWriter(view.DBName, view.name, view.designDocID, view.setupScripts, view.runScripts)
+	viewWriter.Open()
+	view.viewWriter <- viewWriter
+
+	readersCount := cap(view.viewReader)
+	for i := 0; i < readersCount; i++ {
+		viewReader := view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.selectScripts)
+		viewReader.Open()
+		view.viewReader <- viewReader
+	}
+
+	return nil
 }
 
 func (view *View) Open() error {
@@ -436,7 +508,7 @@ func (view *View) Close() error {
 	viewWriter := <-view.viewWriter
 	viewWriter.Close()
 
-	// close all readers
+	// safe close all readers
 	func() {
 		readersCount := cap(view.viewReader)
 		for i := 0; i < readersCount; i++ {
@@ -492,9 +564,10 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 
 	view.name = viewName
 	view.designDocID = docID
-
+	view.DBName = DBName
+	view.serviceLocator = serviceLocator
 	setupScripts := *new([]Query)
-	scripts := *new([]Query)
+	runScripts := *new([]Query)
 	selectScripts := make(map[string]Query)
 	designDocView := designDocumentView
 
@@ -502,20 +575,24 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 		setupScripts = append(setupScripts, Query{text: text})
 	}
 	for _, text := range designDocView.Run {
-		scripts = append(scripts, Query{text: text})
+		runScripts = append(runScripts, Query{text: text})
 	}
 	for k, v := range designDocView.Select {
 		text, params := viewManager.ParseQueryParams(v)
 		selectScripts[k] = Query{text: text, params: params}
 	}
 
+	view.setupScripts = setupScripts
+	view.runScripts = runScripts
+	view.selectScripts = selectScripts
+
 	view.viewReader = make(chan ViewReader, 1)
 	view.viewWriter = make(chan ViewWriter, 1)
 
-	view.viewWriter <- serviceLocator.GetViewWriter(DBName, viewName, docID, setupScripts, scripts)
+	view.viewWriter <- view.serviceLocator.GetViewWriter(view.DBName, view.name, view.designDocID, view.setupScripts, view.runScripts)
 	readersCount := cap(view.viewReader)
 	for i := 0; i < readersCount; i++ {
-		view.viewReader <- serviceLocator.GetViewReader(DBName, viewName, docID, selectScripts)
+		view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.selectScripts)
 	}
 
 	return view
