@@ -293,13 +293,12 @@ func (db *DefaultDatabase) Vacuum() error {
 			2. Close Writer
 			3. Copy remaining data (with min (max from step 1) and max new update seq) to new data file
 			4. Close all readers
-			5. Close all view's readers and writers
+			5. Close all views
 			6. Update localDB with new data file name
 			7. Create writer and open it
 			8. Create Readers and open it all
 			9. Push writer and readers to its corresponding channels
-		   10. Open all view's readers and writers
-		   11. Delete old data file
+		   10. Delete old data file
 	*/
 	defer func() {
 		db.writer <- writer
