@@ -18,5 +18,6 @@ data/**
 kdb
 
 **/.DS_Store
+.idea
 
 share/www/ace/**
