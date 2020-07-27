@@ -122,7 +122,7 @@ func (kdb *KDB) Delete(name string) error {
 		return ErrDatabaseNotFound
 	}
 	delete(kdb.dbs, name)
-	db.Close()
+	db.Close(true)
 
 	kdb.deleteDBFiles(fileName, viewFileNames)
 
