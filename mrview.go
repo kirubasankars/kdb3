@@ -27,7 +27,7 @@ type ViewManager interface {
 	CalculateSignature(designView DesignDocumentView) string
 	ParseQueryParams(query string) (string, []string)
 
-	Close() error
+	Close(closeChannel bool) error
 	Vacuum() error
 }
 
@@ -115,7 +115,7 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 
 	if view, ok = mgr.views[qualifiedViewName]; ok {
 		if currentViewHash != newViewHash {
-			view.Close() // safe close readers and writer
+			view.Close(false) // safe close readers and writer
 
 			setupScripts := *new([]Query)
 			runScripts := *new([]Query)
@@ -229,12 +229,12 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 	return view.Select(selectName, values)
 }
 
-func (mgr *DefaultViewManager) Close() error {
+func (mgr *DefaultViewManager) Close(closeChannel bool) error {
 	mgr.rwMutex.Lock()
 	defer mgr.rwMutex.Unlock()
 
 	for k, v := range mgr.views {
-		v.Close()
+		v.Close(closeChannel)
 		delete(mgr.views, k)
 	}
 
@@ -257,7 +257,7 @@ func (mgr *DefaultViewManager) deleteViews(qualifiedViewNames []string) {
 
 		if view, ok := mgr.views[qualifiedViewName]; ok {
 			// safe close all readers and writer
-			view.Close()
+			view.Close(true)
 		}
 		delete(mgr.views, qualifiedViewName)
 
@@ -286,6 +286,9 @@ func (mgr *DefaultViewManager) deleteViewFileIfNoReference(viewFileName string) 
 }
 
 func (mgr *DefaultViewManager) DeleteViewsIfRemoved(doc Document) {
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
+
 	if doc.Deleted {
 		if designDoc, ok := mgr.designDocs[doc.ID]; ok {
 			var views []string
@@ -504,7 +507,7 @@ func (view *View) Open() error {
 	return nil
 }
 
-func (view *View) Close() error {
+func (view *View) Close(closeChannel bool) error {
 	viewWriter := <-view.viewWriter
 	viewWriter.Close()
 
@@ -516,6 +519,11 @@ func (view *View) Close() error {
 			viewReader.Close()
 		}
 	}()
+
+	if closeChannel {
+		close(view.viewWriter)
+		close(view.viewReader)
+	}
 
 	return nil
 }
@@ -532,7 +540,10 @@ func (view *View) Build(nextSeqID string) error {
 		return nil
 	}
 
-	viewWriter := <-view.viewWriter
+	viewWriter, ok := <-view.viewWriter
+	if !ok {
+		return ErrViewNotFound
+	}
 	defer func() {
 		view.viewWriter <- viewWriter
 	}()
@@ -548,7 +559,10 @@ func (view *View) Build(nextSeqID string) error {
 }
 
 func (view *View) Select(name string, values url.Values) ([]byte, error) {
-	viewReader := <-view.viewReader
+	viewReader, ok := <-view.viewReader
+	if !ok {
+		return nil, ErrViewNotFound
+	}
 	defer func() {
 		view.viewReader <- viewReader
 	}()

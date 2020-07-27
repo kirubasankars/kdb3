@@ -10,7 +10,7 @@ import (
 // Database interface
 type Database interface {
 	Open(createIfNotExists bool) error
-	Close() error
+	Close(closeChannel bool) error
 
 	PutDocument(doc *Document) (*Document, error)
 	DeleteDocument(doc *Document) (*Document, error)
@@ -102,7 +102,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 }
 
 // Close close the kdb database
-func (db *DefaultDatabase) Close() error {
+func (db *DefaultDatabase) Close(closeChannel bool) error {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
@@ -118,14 +118,22 @@ func (db *DefaultDatabase) Close() error {
 		}
 	}()
 
-	db.viewManager.Close()
+	db.viewManager.Close(closeChannel)
+
+	if closeChannel {
+		close(db.writer)
+		close(db.reader)
+	}
 
 	return nil
 }
 
 // PutDocument put a document
 func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
-	writer := <-db.writer
+	writer, ok := <-db.writer
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
 	defer func() {
 		db.writer <- writer
 	}()
@@ -199,7 +207,10 @@ func (db *DefaultDatabase) DeleteDocument(doc *Document) (*Document, error) {
 // GetDocument get a document
 func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Document, error) {
 
-	reader := <-db.reader
+	reader, ok := <-db.reader
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
 	defer func() {
 		db.reader <- reader
 	}()
@@ -222,7 +233,10 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 
 // GetAllDesignDocuments get all design document
 func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
-	reader := <-db.reader
+	reader, ok := <-db.reader
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
 	defer func() {
 		db.reader <- reader
 	}()
@@ -235,7 +249,10 @@ func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
 
 // GetLastUpdateSequence get last sequence number
 func (db *DefaultDatabase) GetLastUpdateSequence() string {
-	reader := <-db.reader
+	reader, ok := <-db.reader
+	if !ok {
+		panic(ErrDatabaseNotFound)
+	}
 	defer func() {
 		db.reader <- reader
 	}()
@@ -248,7 +265,10 @@ func (db *DefaultDatabase) GetLastUpdateSequence() string {
 
 // GetChanges get changes
 func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
-	reader := <-db.reader
+	reader, ok := <-db.reader
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
 	defer func() {
 		db.reader <- reader
 	}()
@@ -261,7 +281,10 @@ func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
 
 // GetDocumentCount get document count
 func (db *DefaultDatabase) GetDocumentCount() (int, int) {
-	reader := <-db.reader
+	reader, ok := <-db.reader
+	if !ok {
+		panic(ErrDatabaseNotFound)
+	}
 	defer func() {
 		db.reader <- reader
 	}()
