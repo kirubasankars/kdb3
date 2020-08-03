@@ -1,78 +1,57 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
 	"testing"
 )
 
-var readerTestConnectionString string = "file:test.db?mode=memory&cache=shared"
+var readerTestConnectionString = "file:test.db?mode=memory&cache=shared"
 
 func openTestDatabaseForReader() func() {
-	con, _ := sql.Open("sqlite3", readerTestConnectionString)
-	tx, _ := con.Begin()
-	tx.Exec("CREATE TABLE temp(a)")
-	tx.Commit()
-	return func() {
-		con.Close()
-	}
-}
-
-func setupTestDatabaseForReader() {
 	var writer DefaultDatabaseWriter
 	writer.reader = new(DefaultDatabaseReader)
 	writer.connectionString = readerTestConnectionString
 
-	err := writer.Open()
-	if err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.Open()
 
-	err = writer.Begin()
-	if err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
-
-	if err := writer.ExecBuildScript(); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.Begin()
+	writer.ExecBuildScript()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
-	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.PutDocument("seqID1", doc, nil)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
-	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.PutDocument("seqID2", doc, nil)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
-	if err := writer.PutDocument("seqID3", doc, nil); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.PutDocument("seqID3", doc, nil)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
-	if err := writer.PutDocument("seqID4", doc, nil); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
+	writer.PutDocument("seqID3", doc, nil)
+
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
+	writer.PutDocument("seqID4", doc, nil)
 
 	writer.Commit()
 
-	writer.Close()
+	writer.conn.Exec("UPDATE documents SET deleted = 'aa' WHERE doc_id = 'invalid'")
+
+	return func() {
+		writer.Close()
+	}
+}
+
+func TestReaderInvalidConnectionString(t *testing.T) {
+	var reader DefaultDatabaseReader
+	reader.connectionString = "."
+	err := reader.Open()
+	if err == nil {
+		t.Errorf("expected error invalid db name")
+	}
 }
 
 func TestReaderGetDocumentByID(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -83,8 +62,37 @@ func TestReaderGetDocumentByID(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
-	if doc.Version != 1 {
-		t.Errorf("missing doc version")
+
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByID("2")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByID("_design/_views")
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByID("invalid")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	doc, err = reader.GetDocumentByID("nothing")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
 	reader.Commit()
@@ -94,7 +102,6 @@ func TestReaderGetDocumentByID(t *testing.T) {
 func TestReaderGetDocumentRevisionByID(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -106,8 +113,37 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
-	if doc.Version != 1 {
-		t.Errorf("missing doc version")
+
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByID("2")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByID("_design/_views")
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByID("invalid")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	doc, err = reader.GetDocumentRevisionByID("nothing")
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
 	reader.Commit()
@@ -117,7 +153,6 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -129,6 +164,43 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
+	doc, err := reader.GetDocumentByIDandVersion("1", 1)
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByIDandVersion("2", 2)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByIDandVersion("_design/_views", 1)
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentByIDandVersion("invalid", 1)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	doc, err = reader.GetDocumentByIDandVersion("nothing", 1)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
 	reader.Commit()
 	reader.Close()
 }
@@ -136,7 +208,6 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -148,6 +219,43 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
+	doc, err := reader.GetDocumentRevisionByIDandVersion("1", 1)
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByIDandVersion("2", 2)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByIDandVersion("_design/_views", 1)
+	if err != nil {
+		t.Errorf("unexpected error %s", err.Error())
+	}
+
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+		t.Errorf("unexpected doc values")
+	}
+
+	doc, err = reader.GetDocumentRevisionByIDandVersion("invalid", 1)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
+	doc, err = reader.GetDocumentRevisionByIDandVersion("nothing", 1)
+	if err == nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
+
 	reader.Commit()
 	reader.Close()
 }
@@ -155,7 +263,6 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 func TestReaderGetDocumentCount(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -175,7 +282,6 @@ func TestReaderGetDocumentCount(t *testing.T) {
 func TestReaderGetLastUpdateSequence(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
@@ -195,14 +301,13 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 func TestReaderGetChanges(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":true},{"seq":"seqID1","version":1,"id":"1"}]}`
+	expected := `{"results":[{"seq":"seqID4","version":1,"id":"_design/_views"},{"seq":"seqID3","version":2,"id":"2","deleted":true},{"seq":"seqID3","version":1,"id":"invalid"},{"seq":"seqID1","version":1,"id":"1"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
@@ -214,7 +319,6 @@ func TestReaderGetChanges(t *testing.T) {
 func TestReaderGetAllDesignDocuments(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
-	setupTestDatabaseForReader()
 
 	var reader DefaultDatabaseReader
 	reader.connectionString = readerTestConnectionString

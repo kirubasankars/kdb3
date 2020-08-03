@@ -39,6 +39,10 @@ func (reader *DefaultDatabaseReader) Open() error {
 	if err != nil {
 		return err
 	}
+	err = con.Ping()
+	if err != nil {
+		return err
+	}
 	reader.conn = con
 	return nil
 }
@@ -186,7 +190,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 			return nil, err
 		}
 
-		doc, _ := reader.GetDocumentByID(id)
+		doc, err := reader.GetDocumentByID(id)
 		if err != nil {
 			return nil, err
 		}
