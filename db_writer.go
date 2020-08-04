@@ -13,10 +13,9 @@ type DatabaseWriter interface {
 	Rollback() error
 
 	ExecBuildScript() error
-	Vacuum() error
 
 	GetDocumentRevisionByID(docID string) (*Document, error)
-	PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error
+	PutDocument(updateSeqID string, newDoc *Document) error
 }
 
 type DefaultDatabaseWriter struct {
@@ -29,6 +28,10 @@ type DefaultDatabaseWriter struct {
 
 func (writer *DefaultDatabaseWriter) Open() error {
 	con, err := sql.Open("sqlite3", writer.connectionString)
+	if err != nil {
+		return err
+	}
+	err = con.Ping()
 	if err != nil {
 		return err
 	}
@@ -56,10 +59,12 @@ func (writer *DefaultDatabaseWriter) Commit() error {
 	return writer.tx.Commit()
 }
 
+// Rollback rollback transaction
 func (writer *DefaultDatabaseWriter) Rollback() error {
 	return writer.tx.Rollback()
 }
 
+// ExecBuildScript build tables
 func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	tx := writer.tx
 
@@ -90,16 +95,13 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	return nil
 }
 
-func (writer *DefaultDatabaseWriter) Vacuum() error {
-	_, err := writer.conn.Exec("VACUUM")
-	return err
-}
-
+// GetDocumentRevisionByID get document revision by id
 func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
 	return writer.reader.GetDocumentRevisionByID(docID)
 }
 
-func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
+// PutDocument put document
+func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document) error {
 	tx := writer.tx
 	var kind []byte
 	if newDoc.Kind != "" {

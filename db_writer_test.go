@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 )
@@ -9,45 +8,50 @@ import (
 var writerTestConnectionString string = "file:test.db?mode=memory&cache=shared"
 
 func openTestDatabaseForWriter() func() {
-	con, _ := sql.Open("sqlite3", writerTestConnectionString)
-	tx, _ := con.Begin()
-	tx.Exec("CREATE TABLE temp(a)")
-	tx.Commit()
-	return func() {
-		con.Close()
-	}
-}
-
-func setupTestDatabaseForWriter() {
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
 	writer.reader = new(DefaultDatabaseReader)
-	err := writer.Open()
-	if err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
 
-	err = writer.Begin()
-	if err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.Open()
 
-	if err := writer.ExecBuildScript(); err != nil {
-		fmt.Println("unable to setup test database")
-		return
-	}
+	writer.Begin()
+
+	writer.ExecBuildScript()
+
+	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
+	writer.PutDocument("seqID1", doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
+	writer.PutDocument("seqID2", doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
+	writer.PutDocument("seqID3", doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
+	writer.PutDocument("seqID3", doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
+	writer.PutDocument("seqID4", doc)
 
 	writer.Commit()
 
-	writer.Close()
+	return func() {
+		writer.Close()
+	}
+}
+
+func TestWriterInvalidConnectionString(t *testing.T) {
+	var writer DefaultDatabaseWriter
+	writer.connectionString = "."
+	err := writer.Open()
+	if err == nil {
+		t.Errorf("expected error invalid db name")
+	}
 }
 
 func TestWriterPutDocument(t *testing.T) {
 	dbHandle := openTestDatabaseForWriter()
 	defer dbHandle()
-	setupTestDatabaseForWriter()
 
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
@@ -57,7 +61,12 @@ func TestWriterPutDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	if err := writer.PutDocument("seqID", doc, nil); err != nil {
+	if err := writer.PutDocument("seqID", doc); err != nil {
+		t.Errorf("unable to put document, error %s", err.Error())
+	}
+
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_kind":"design"}`))
+	if err := writer.PutDocument("seqID", doc); err != nil {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
@@ -70,6 +79,23 @@ func TestWriterPutDocument(t *testing.T) {
 	writer.Begin()
 
 	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
+		t.Errorf("unable to get document, error %s", err.Error())
+	}
+
+	writer.Commit()
+
+	writer.Begin()
+
+	doc, _ = ParseDocument([]byte(`{"_id":"new"}`))
+	if err := writer.PutDocument("seqID", doc); err != nil {
+		t.Errorf("unable to put document, error %s", err.Error())
+	}
+
+	writer.Rollback()
+
+	writer.Begin()
+
+	if _, err := writer.GetDocumentRevisionByID("new"); err == nil {
 		t.Errorf("unable to get document, error %s", err.Error())
 	}
 
@@ -81,7 +107,6 @@ func TestWriterPutDocument(t *testing.T) {
 func TestWriterDeleteDocument(t *testing.T) {
 	dbHandle := openTestDatabaseForWriter()
 	defer dbHandle()
-	setupTestDatabaseForWriter()
 
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
@@ -91,7 +116,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	if err := writer.PutDocument("seqID1", doc, nil); err != nil {
+	if err := writer.PutDocument("seqID1", doc); err != nil {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
@@ -100,7 +125,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ = ParseDocument([]byte(`{"_id":1, "_version":1, "_deleted":true}`))
-	if err := writer.PutDocument("seqID2", doc, nil); err != nil {
+	if err := writer.PutDocument("seqID2", doc); err != nil {
 		t.Errorf("unable to delete document, error %s", err.Error())
 	}
 
@@ -120,7 +145,6 @@ func TestWriterDeleteDocument(t *testing.T) {
 func TestWriterDocNotFound(t *testing.T) {
 	dbHandle := openTestDatabaseForWriter()
 	defer dbHandle()
-	setupTestDatabaseForWriter()
 
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
@@ -129,7 +153,7 @@ func TestWriterDocNotFound(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+	if _, err := writer.GetDocumentRevisionByID("4"); err == nil || err != ErrDocumentNotFound {
 		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
 		fmt.Println(err)
 	}
