@@ -1,62 +1,21 @@
 # kdb3 ![Go](https://github.com/kirubasankars/kdb3/workflows/Go/badge.svg)
-database written in Go with sqlite3 as storage and query/view engine. Not ready yet. doucmentation is incomplete and inprogress.
+database written in Go with sqlite3 as storage and query/view engine. documentation is incomplete and in-progress.
 
 Features
-  1. Document Database - Done
-  2. Optimistic Concurrency - Done
-  3. Restful API - Done
-  4. Change tracking - Done
-  5. Incrementally updated Materialized View (with sqlite3) - Done
-  6. Live Vaccum - InProgress
-  7. Incremental Backup
-  8. External Replication
-  9. External Views
-  10. UI - InProgress
- 
-# How does it work?
-Let me assume you're familiar with sqlite3 database. To work with kdb3, its important. its a RDBMS database and does has support for json. https://www.sqlite.org/json1.html
+  1. Document Database
+  2. Optimistic Concurrency
+  3. Restful API
+  4. Change tracking
+  5. Incrementally updated Materialized View (with sqlite3)
+  6. Live Vacuum - InProgress
+  7. UI - InProgress
 
-Let's create sqlite database for our blog with a table name called “documents” with sample data. it has only title attribute to make my example simple.
-
-    CREATE TABLE documents (data);  
-    INSERT INTO documents (data) VALUES(‘{“title”:”getting started”}’);
-    INSERT INTO documents (data) VALUES(‘{“title”:”kdb3 has full sql support”}’);
-
-Let’s create another table called “posts”, to show list of posts.
-
-    CREATE TABLE posts (title)
-    INSERT INTO posts (title) SELECT json_extract(data, ‘$.title’) from documents
-
-Now “posts” table has materialized the data which is in “documents” table. Based on access pattern, we just have optimized way to look at list of posts. 
-
-If data changed in “documents” table, we have noway know what changed, so we have to delete and recreate all the rows in “posts” tables. What if we have change tracking, now we can delete/update only changed rows.kdb3 is just doing that. 
-
-kdb3 is a document database and it has full support for SQL language. Let’s discuss about some of its concepts. Most of its design decisions are heavily inspired by couchdb. kdb3 uses sqlite3 as a storage/query engine and you can interact with it using HTTP rest api. kdb3 has two major components, database and its views. views are materialized. 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-kdb3 database is a sqlite database file and it accepts only json documents, views are made with row/column based tables. materialized view is a just another sqlite database file.
-
-You can create database as follows.
+Database can be created as follows.
 
     curl -X PUT localhost:8001/blog
     {“ok”:true}
 
-materialized view are great, since one can optimize the data for particular access pattern and make data access really fast. But materialized view is never refreshed util you wanted to, since RDBMS has no way to know which rows are changed, so it has to reprocess all the rows in order to update the materialized view with latest data.
-
-kdb3 database accepts json objects and returns an id and version number. Id assigned, if not present in the document. Version number are used as optimistic concurrency locking, you always need latest version, in order to update the document. 
+database accepts json object and returns an id and version number. ID assigned, if not present in the document. Version number used as optimistic concurrency locking, you always need the latest version, in order to update the document. 
 
     curl -X POST localhost:8001/blog -d ‘{“title”:”getting started”}’
     {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd7","_version":1}
@@ -64,11 +23,11 @@ kdb3 database accepts json objects and returns an id and version number. Id assi
     curl -X POST localhost:8001/blog -d ‘{“title”:”kdb3 is great”}’
     {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd8","_version":1}
 
-One can view the document back as follows
+Document can be retrieved back as follows
 
     curl -X GET localhost:8001/blog/f7f7a5d6d8d4b8292b346c83fd5fbbd7
 
-A change tracking sequence number is also assigned on every document insertion and modification. With change tracking in place, one can ask what changed in the database from last time.
+On every document insert and update, change tracking sequence number assigned. "_changes" api works like timeline on the database. it can help to get document changes in sequence.
 
     curl -X GET localhost:8001/blog/_changes
     {
@@ -91,19 +50,13 @@ A change tracking sequence number is also assigned on every document insertion a
       ]
     }
 
-“_design/_views” is the default view definition, created on database creation. kdb3 materialized views uses change tracking sequence number to get latest data changes from its database and keep itself update to date. 
+ One can ask what changed in the database from last time.
+ 
+    curl -X GET localhost:8001/blog/_changes?since=<seq_number>
 
+“_design/_views” is the default view, created on database creation. kdb3 supports materialized view and uses change tracking sequence number to get the latest data changes from its database and keep itself update to date. 
 
-
-
-
-
-
-
-
-
-
-View engine, takes changed documents from databases and extract/compute data keep it update to date based on view definition. View definition is a bunch of sql statements, wrapped with json syntax.
+View engine, takes changed documents from the database and extract/compute data changes and keep the view, update to date based on view definition. View definition is a bunch of sql statements, wrapped with json syntax.
 
 Example view definition:
 
@@ -129,9 +82,9 @@ Example view definition:
 
 Note : POST following json document to same blog database.
 
-Above view definition has enough information to build and keep data update to date. Let’s discuss in detail about view definition. Each view in the “views” section has 3 sections. “setup”, “run” and “select”.
+Above view definition has necessary information to build and keep the data update to date. Let’s discuss in detail about view definition. Each view in the “views” list has 3 sections. “setup”, “run” and “select”.
 
-“setup”  - set of SQL scripts to create view’s tables and indexes and etc. this scripts runs, whenever a connection open to view’s sqlite3 database.
+“setup”  - set of SQL scripts to create view’s tables and indexes, etc. this scripts runs, whenever a connection open to view’s sqlite3 database.
 
 “run”    - set of SQL scripts keep data update to date. DELETE statement is to delete documents, which are deleted. INSERT OR REPLACE is to insert/replace rows.
 
