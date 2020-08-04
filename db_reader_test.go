@@ -17,19 +17,19 @@ func openTestDatabaseForReader() func() {
 	writer.ExecBuildScript()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
-	writer.PutDocument("seqID1", doc, nil)
+	writer.PutDocument("seqID1", doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
-	writer.PutDocument("seqID2", doc, nil)
+	writer.PutDocument("seqID2", doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
-	writer.PutDocument("seqID3", doc, nil)
+	writer.PutDocument("seqID3", doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
-	writer.PutDocument("seqID3", doc, nil)
+	writer.PutDocument("seqID3", doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
-	writer.PutDocument("seqID4", doc, nil)
+	writer.PutDocument("seqID4", doc)
 
 	writer.Commit()
 
