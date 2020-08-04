@@ -170,7 +170,7 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 
 	updateSeq := db.changeSeq.Next()
 
-	err = writer.PutDocument(updateSeq, doc, currentDoc)
+	err = writer.PutDocument(updateSeq, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +310,6 @@ func (db *DefaultDatabase) GetStat() *DatabaseStat {
 
 // Vacuum vacuum
 func (db *DefaultDatabase) Vacuum() error {
-	writer := <-db.writer
 	/*
 			1. Copy data (with max update seq) to new data file
 			2. Close Writer
@@ -323,10 +322,8 @@ func (db *DefaultDatabase) Vacuum() error {
 			9. Push writer and readers to its corresponding channels
 		   10. Delete old data file
 	*/
-	defer func() {
-		db.writer <- writer
-	}()
-	return writer.Vacuum()
+
+	return nil
 }
 
 // SelectView select view
