@@ -107,7 +107,7 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, ?, ?, ?, ?)", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
+	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
 		return err
 	}
 	return nil

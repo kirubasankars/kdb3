@@ -15,7 +15,7 @@ type ServiceLocator interface {
 	GetDatabaseReader(dbName string) DatabaseReader
 
 	GetViewManager(dbName string) ViewManager
-	GetViewReader(dbName, docID, viewName string, selectScripts map[string]Query) ViewReader
+	GetViewReader(dbName, docID, viewName string, scripts []Query, selectScripts map[string]Query) ViewReader
 	GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter
 }
 
@@ -66,7 +66,7 @@ func (serviceLocator *DefaultServiceLocator) GetViewManager(dbName string) ViewM
 }
 
 // GetViewReader resolve ViewReader instance
-func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewName string, selectScripts map[string]Query) ViewReader {
+func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewName string, scripts []Query, selectScripts map[string]Query) ViewReader {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
 	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
 
@@ -74,7 +74,7 @@ func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewNa
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
 	connectionString := viewFilePath + "?_journal=MEMORY&cache=shared&_mutex=no&mode=ro"
-	return NewViewReader(dbName, DBPath, connectionString, selectScripts)
+	return NewViewReader(dbName, DBPath, connectionString, scripts, selectScripts)
 }
 
 // GetViewWriter resolve ViewWriter instance
