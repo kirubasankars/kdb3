@@ -369,11 +369,11 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, 0, '{}' as data ;")
+	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec("CREATE VIEW documents (doc_id, version, deleted, data) AS select '' as doc_id, 1 as version, 0, '{}' as data ;")
+	_, err = tx.Exec("CREATE VIEW documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
 	if err != nil {
 		return err
 	}
@@ -471,7 +471,7 @@ func (view *View) ReInitialize() error {
 
 	readersCount := cap(view.viewReader)
 	for i := 0; i < readersCount; i++ {
-		viewReader := view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.selectScripts)
+		viewReader := view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.setupScripts, view.selectScripts)
 		viewReader.Open()
 		view.viewReader <- viewReader
 	}
@@ -606,7 +606,7 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 	view.viewWriter <- view.serviceLocator.GetViewWriter(view.DBName, view.name, view.designDocID, view.setupScripts, view.runScripts)
 	readersCount := cap(view.viewReader)
 	for i := 0; i < readersCount; i++ {
-		view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.selectScripts)
+		view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.setupScripts, view.selectScripts)
 	}
 
 	return view
@@ -620,8 +620,8 @@ func setupViewDatabase(db *sql.DB, absoluteDatabasePath string) error {
 
 	_, err = db.Exec(`
 		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, JSON(data) as data FROM docsdb.documents;
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents;
 	`)
 
 	if err != nil {
