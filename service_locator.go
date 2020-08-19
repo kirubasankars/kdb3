@@ -44,7 +44,7 @@ func (serviceLocator *DefaultServiceLocator) GetViewDirPath() string {
 // GetDatabaseWriter resolve DatabaseWriter instance
 func (serviceLocator *DefaultServiceLocator) GetDatabaseWriter(dbName string) DatabaseWriter {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	connectionString := filepath.Join(serviceLocator.dbDirPath, fileName+dbExt) + "?_journal=WAL&cache=shared&_mutex=no&mode=rwc"
+	connectionString := filepath.Join(serviceLocator.dbDirPath, fileName+dbExt) + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=rwc"
 	databaseWriter := new(DefaultDatabaseWriter)
 	databaseWriter.reader = new(DefaultDatabaseReader)
 	databaseWriter.connectionString = connectionString
@@ -54,7 +54,7 @@ func (serviceLocator *DefaultServiceLocator) GetDatabaseWriter(dbName string) Da
 // GetDatabaseReader resolve DatabaseReader instance
 func (serviceLocator *DefaultServiceLocator) GetDatabaseReader(dbName string) DatabaseReader {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	connectionString := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt) + "?_journal=WAL&cache=shared&_mutex=no&mode=ro"
+	connectionString := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt) + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
 	databaseReader := new(DefaultDatabaseReader)
 	databaseReader.connectionString = connectionString
 	return databaseReader
@@ -73,7 +73,7 @@ func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewNa
 	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
-	connectionString := viewFilePath + "?_journal=MEMORY&cache=shared&_mutex=no&mode=ro"
+	connectionString := viewFilePath + "?_journal=MEMORY&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
 	return NewViewReader(dbName, DBPath, connectionString, scripts, selectScripts)
 }
 
@@ -85,7 +85,7 @@ func (serviceLocator *DefaultServiceLocator) GetViewWriter(dbName, docID, viewNa
 	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
-	connectionString := viewFilePath + "?_journal=MEMORY&cache=shared&_mutex=no&mode=rwc"
+	connectionString := viewFilePath + "?_journal=MEMORY&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=rwc"
 	return NewViewWriter(dbName, DBPath, connectionString, setup, scripts)
 }
 
