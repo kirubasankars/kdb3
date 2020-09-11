@@ -89,7 +89,8 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	}
 
 	if createIfNotExists {
-		if err := kdb.localDB.CreateDatabase(name, name); err != nil {
+		fileName := name + "_" + NewSequenceUUIDGenarator().Next()
+		if err := kdb.localDB.CreateDatabase(name, fileName); err != nil {
 			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
 				return ErrDatabaseExists
 			}
@@ -235,8 +236,6 @@ func (kdb *KDB) Vacuum(name string) error {
 	if !ok {
 		return ErrDatabaseNotFound
 	}
-
-	db.GetViewManager().Vacuum()
 	return db.Vacuum()
 }
 

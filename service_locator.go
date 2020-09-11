@@ -17,6 +17,8 @@ type ServiceLocator interface {
 	GetViewManager(dbName string) ViewManager
 	GetViewReader(dbName, docID, viewName string, scripts []Query, selectScripts map[string]Query) ViewReader
 	GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter
+
+	GetVacuumManager(dbName string) VacuumManager
 }
 
 // DefaultServiceLocator default implementation of ServiceLocator
@@ -39,6 +41,11 @@ func (serviceLocator *DefaultServiceLocator) GetDBDirPath() string {
 
 func (serviceLocator *DefaultServiceLocator) GetViewDirPath() string {
 	return serviceLocator.viewDirPath
+}
+
+func (serviceLocator *DefaultServiceLocator) GetVacuumManager(dbName string) VacuumManager {
+	vacuumManager := new(DefaultVacuumManager)
+	return vacuumManager
 }
 
 // GetDatabaseWriter resolve DatabaseWriter instance

@@ -362,6 +362,13 @@ func (handler KDBHandler) GetUUIDs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(list)
 }
 
+func (handler KDBHandler) Vacuum(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
+	vars := mux.Vars(r)
+	db := vars["db"]
+	kdb.Vacuum(db)
+}
+
 func NewKDBHandler(kdb *KDB) KDBHandler {
 	handler := new(KDBHandler)
 	handler.kdb = kdb
