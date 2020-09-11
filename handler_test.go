@@ -81,7 +81,7 @@ func TestGetInfo(t *testing.T) {
 	version := v.GetObject("version").Get("sqlite_version").String()
 	if version != `"3.33.2"` {
 		t.Errorf(`expected version "3.33.2", got %s`, version)
-	}
+	} 
 
 	testExpectJSONContentType(t, rr)
 }
