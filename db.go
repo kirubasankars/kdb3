@@ -11,6 +11,7 @@ import (
 
 // Database interface
 type Database interface {
+	Initialize() error
 	Open(createIfNotExists bool) error
 	Close(closeChannel bool) error
 
@@ -50,6 +51,22 @@ type DefaultDatabase struct {
 	serviceLocator  ServiceLocator
 }
 
+func (db *DefaultDatabase) openReaders() {
+	readersCount := cap(db.reader)
+	readers := make([]DatabaseReader, readersCount)
+	for i := 0; i < readersCount; i++ {
+		reader := <-db.reader
+		err := reader.Open()
+		if err != nil {
+			reader.Close()
+			continue
+		}
+		readers[i] = reader
+	}
+	for _, reader := range readers {
+		db.reader <- reader
+	}
+}
 // Open open kdb database
 func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	writer := <-db.writer
@@ -59,22 +76,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	}
 
 	// open all readers
-	func() {
-		readersCount := cap(db.reader)
-		readers := make([]DatabaseReader, readersCount)
-		for i := 0; i < readersCount; i++ {
-			reader := <-db.reader
-			err := reader.Open()
-			if err != nil {
-				reader.Close()
-				continue
-			}
-			readers[i] = reader
-		}
-		for _, reader := range readers {
-			db.reader <- reader
-		}
-	}()
+	db.openReaders()
 
 	if createIfNotExists {
 		writer.Begin()
@@ -345,28 +347,11 @@ func (db *DefaultDatabase) Vacuum() error {
 	localDB := db.serviceLocator.GetLocalDB()
 	localDB.UpdateDatabaseFileName(db.Name, newFileName)
 
-	writer := db.serviceLocator.GetDatabaseWriter(db.Name)
-	writer.Open()
-	db.writer <- writer
-
+	db.Initialize()
 	// open all readers
-	func() {
-		readersCount := cap(db.reader)
-		readers := make([]DatabaseReader, readersCount)
-		for i := 0; i < readersCount; i++ {
-			reader := db.serviceLocator.GetDatabaseReader(db.Name)
-			err := reader.Open()
-			if err != nil {
-				reader.Close()
-				continue
-			}
-			readers[i] = reader
-		}
-		for _, reader := range readers {
-			db.reader <- reader
-		}
-	}()
-	db.viewManager.ReopenViews()
+	db.openReaders()
+
+	db.viewManager.ReinitializeViews()
 	
 	dbPath := db.serviceLocator.GetDBDirPath()
 	oldFile := currentFileName + dbExt
@@ -447,6 +432,14 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 	return nil
 }
 
+func (db *DefaultDatabase) Initialize() error {
+	db.writer <- db.serviceLocator.GetDatabaseWriter(db.Name)
+	readersCount := cap(db.reader)
+	for i := 0; i < readersCount; i++ {
+		db.reader <- db.serviceLocator.GetDatabaseReader(db.Name)
+	}
+	return nil
+}
 // NewDatabase create database instance
 func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) Database {
 	db := &DefaultDatabase{Name: name}
@@ -456,14 +449,11 @@ func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLoca
 	db.writer = make(chan DatabaseWriter, 1)
 	db.reader = make(chan DatabaseReader, 2)
 	db.vacuumManager = make(chan VacuumManager, 1)
-
-	db.writer <- serviceLocator.GetDatabaseWriter(name)
-	readersCount := cap(db.reader)
-	for i := 0; i < readersCount; i++ {
-		db.reader <- serviceLocator.GetDatabaseReader(name)
-	}
-	db.viewManager = serviceLocator.GetViewManager(name)
 	db.vacuumManager <- serviceLocator.GetVacuumManager(name)
+
+	db.viewManager = serviceLocator.GetViewManager(name)
+
+	db.Initialize()
 
 	err := db.Open(createIfNotExists)
 	if err != nil {
