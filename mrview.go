@@ -28,7 +28,7 @@ type ViewManager interface {
 	ParseQueryParams(query string) (string, []string)
 
 	Close(closeChannel bool) error
-	ReopenViews() error
+	ReinitializeViews() error
 	Vacuum() error
 }
 
@@ -244,7 +244,7 @@ func (mgr *DefaultViewManager) Close(closeChannel bool) error {
 	return nil
 }
 
-func (mgr *DefaultViewManager) ReopenViews() error {
+func (mgr *DefaultViewManager) ReinitializeViews() error {
 	mgr.rwMutex.Lock()
 	defer mgr.rwMutex.Unlock()
 	for _, v := range mgr.views {
