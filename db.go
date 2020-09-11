@@ -64,7 +64,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 		readers := make([]DatabaseReader, readersCount)
 		for i := 0; i < readersCount; i++ {
 			reader := <-db.reader
-			err = reader.Open()
+			err := reader.Open()
 			if err != nil {
 				reader.Close()
 				continue
@@ -333,31 +333,19 @@ func (db *DefaultDatabase) Vacuum() error {
 	vacuumManager.SetupDatabase()
 
 	maxUpdateSequence := db.UpdateSequence
-
 	vacuumManager.CopyData("", maxUpdateSequence)
 
-	writer, _ := <-db.writer
-	writer.Close()
+	db.Close(false)
 
 	minUpdateSequence := maxUpdateSequence
 	maxUpdateSequence = db.UpdateSequence
 
 	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
 
-	// close all readers
-	func() {
-		readersCount := cap(db.reader)
-		for i := 0; i < readersCount; i++ {
-			reader := <-db.reader
-			reader.Close()
-		}
-	}()
-	db.viewManager.Close(false)
-
 	localDB := db.serviceLocator.GetLocalDB()
 	localDB.UpdateDatabaseFileName(db.Name, newFileName)
 
-	writer = db.serviceLocator.GetDatabaseWriter(db.Name)
+	writer := db.serviceLocator.GetDatabaseWriter(db.Name)
 	writer.Open()
 	db.writer <- writer
 
@@ -378,11 +366,13 @@ func (db *DefaultDatabase) Vacuum() error {
 			db.reader <- reader
 		}
 	}()
-
+	db.viewManager.ReopenViews()
+	
 	dbPath := db.serviceLocator.GetDBDirPath()
-	os.Remove(filepath.Join(dbPath, currentFileName + dbExt +"-shm"))
-	os.Remove(filepath.Join(dbPath, currentFileName + dbExt +"-wal"))
-	os.Remove(filepath.Join(dbPath, currentFileName + dbExt))
+	oldFile := currentFileName + dbExt
+	os.Remove(filepath.Join(dbPath, oldFile +"-shm"))
+	os.Remove(filepath.Join(dbPath, oldFile +"-wal"))
+	os.Remove(filepath.Join(dbPath, oldFile ))
 
 	/*
 			1. Copy data (with max update seq) to new data file
