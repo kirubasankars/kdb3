@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -43,7 +45,9 @@ type DefaultDatabase struct {
 	reader chan DatabaseReader
 	writer chan DatabaseWriter
 
-	viewManager ViewManager
+	viewManager 	ViewManager
+	vacuumManager   chan VacuumManager
+	serviceLocator  ServiceLocator
 }
 
 // Open open kdb database
@@ -310,6 +314,76 @@ func (db *DefaultDatabase) GetStat() *DatabaseStat {
 
 // Vacuum vacuum
 func (db *DefaultDatabase) Vacuum() error {
+	vacuumManager := <- db.vacuumManager
+	defer func () {
+		db.vacuumManager <- vacuumManager
+	}()
+
+	currentFileName := db.serviceLocator.GetLocalDB().GetDatabaseFileName(db.Name)
+	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName + dbExt)
+	currentConnectionString := currentDBPath + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
+
+	id := NewSequenceUUIDGenarator().Next()
+	newFileName := db.Name + "_" + id
+	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName + dbExt) + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc"
+
+	vacuumManager.SetNewConnectionString(newConnectionString)
+	vacuumManager.SetCurrentConnectionString(currentDBPath, currentConnectionString)
+
+	vacuumManager.SetupDatabase()
+
+	maxUpdateSequence := db.UpdateSequence
+
+	vacuumManager.CopyData("", maxUpdateSequence)
+
+	writer, _ := <-db.writer
+	writer.Close()
+
+	minUpdateSequence := maxUpdateSequence
+	maxUpdateSequence = db.UpdateSequence
+
+	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
+
+	// close all readers
+	func() {
+		readersCount := cap(db.reader)
+		for i := 0; i < readersCount; i++ {
+			reader := <-db.reader
+			reader.Close()
+		}
+	}()
+	db.viewManager.Close(false)
+
+	localDB := db.serviceLocator.GetLocalDB()
+	localDB.UpdateDatabaseFileName(db.Name, newFileName)
+
+	writer = db.serviceLocator.GetDatabaseWriter(db.Name)
+	writer.Open()
+	db.writer <- writer
+
+	// open all readers
+	func() {
+		readersCount := cap(db.reader)
+		readers := make([]DatabaseReader, readersCount)
+		for i := 0; i < readersCount; i++ {
+			reader := db.serviceLocator.GetDatabaseReader(db.Name)
+			err := reader.Open()
+			if err != nil {
+				reader.Close()
+				continue
+			}
+			readers[i] = reader
+		}
+		for _, reader := range readers {
+			db.reader <- reader
+		}
+	}()
+
+	dbPath := db.serviceLocator.GetDBDirPath()
+	os.Remove(filepath.Join(dbPath, currentFileName + dbExt +"-shm"))
+	os.Remove(filepath.Join(dbPath, currentFileName + dbExt +"-wal"))
+	os.Remove(filepath.Join(dbPath, currentFileName + dbExt))
+
 	/*
 			1. Copy data (with max update seq) to new data file
 			2. Close Writer
@@ -320,7 +394,7 @@ func (db *DefaultDatabase) Vacuum() error {
 			7. Create writer and open it
 			8. Create Readers and open it all
 			9. Push writer and readers to its corresponding channels
-		   10. Delete old data file
+	       10. Delete old data file
 	*/
 
 	return nil
@@ -387,9 +461,11 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) Database {
 	db := &DefaultDatabase{Name: name}
 	db.idSeq = NewSequenceUUIDGenarator()
+	db.serviceLocator = serviceLocator
 
 	db.writer = make(chan DatabaseWriter, 1)
 	db.reader = make(chan DatabaseReader, 2)
+	db.vacuumManager = make(chan VacuumManager, 1)
 
 	db.writer <- serviceLocator.GetDatabaseWriter(name)
 	readersCount := cap(db.reader)
@@ -397,6 +473,7 @@ func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLoca
 		db.reader <- serviceLocator.GetDatabaseReader(name)
 	}
 	db.viewManager = serviceLocator.GetViewManager(name)
+	db.vacuumManager <- serviceLocator.GetVacuumManager(name)
 
 	err := db.Open(createIfNotExists)
 	if err != nil {

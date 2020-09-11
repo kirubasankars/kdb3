@@ -201,19 +201,21 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 
 // GetChanges get document changes
 func (reader *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
-	sqlGetChanges := `WITH all_changes(doc_id) as
-	(
-		SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id ASC LIMIT ?
-	),
-	all_changes_metadata (seq, doc_id, version, deleted) AS 
-	(
-		SELECT d.seq_id, d.doc_id, d.version, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id DESC
-	),
-	changes_object (obj) as
-	(
-		SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id) ELSE JSON_OBJECT('seq', seq, 'version', version, 'id', doc_id, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
-	)
-	SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object`
+	sqlGetChanges := `
+		WITH all_changes(doc_id) as
+		(
+			SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id ASC LIMIT ?
+		),
+		all_changes_metadata (seq, doc_id, version, deleted) AS 
+		(
+			SELECT d.seq_id, d.doc_id, d.version, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id DESC
+		),
+		changes_object (obj) as
+		(
+			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'id', doc_id, 'version', version) ELSE JSON_OBJECT('seq', seq, 'id', doc_id, 'version', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
+		)
+		SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object
+	`
 	row := reader.tx.QueryRow(sqlGetChanges, since, since, limit)
 	var (
 		changes []byte

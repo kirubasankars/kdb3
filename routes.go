@@ -163,6 +163,12 @@ func NewRouter(kdb *KDB) *mux.Router {
 			"/{db}/_design/{docid}/{view}/{select}",
 			kdbHandler.SelectView,
 		},
+		Route{
+			"VacuumDatabase",
+			"POST",
+			"/{db}/_vacuum",
+			kdbHandler.Vacuum,
+		},
 	}
 
 	for _, route := range routes {

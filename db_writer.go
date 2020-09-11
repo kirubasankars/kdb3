@@ -18,6 +18,30 @@ type DatabaseWriter interface {
 	PutDocument(updateSeqID string, newDoc *Document) error
 }
 
+func SetupDatabaseScript() string {
+	buildSQL := `
+		CREATE TABLE IF NOT EXISTS documents (
+			doc_id 		TEXT, 
+			version     INTEGER, 
+			kind	    TEXT,
+			deleted     BOOL,
+			data        TEXT,
+			seq_id 		TEXT,
+			PRIMARY KEY (doc_id)
+		) WITHOUT ROWID;
+		
+		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
+			(doc_id, version, kind, deleted);
+
+		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
+			(doc_id, seq_id, deleted);
+
+		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
+			(doc_id, kind) WHERE kind IS NOT NULL;
+		`
+	return buildSQL
+}
+
 type DefaultDatabaseWriter struct {
 	connectionString string
 
@@ -68,26 +92,8 @@ func (writer *DefaultDatabaseWriter) Rollback() error {
 func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 	tx := writer.tx
 
-	buildSQL := `
-		CREATE TABLE IF NOT EXISTS documents (
-			doc_id 		TEXT, 
-			version     INTEGER, 
-			kind	    TEXT,
-			deleted     BOOL,
-			data        TEXT,
-			seq_id 		TEXT,
-			PRIMARY KEY (doc_id)
-		) WITHOUT ROWID;
-		
-		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(doc_id, version, kind, deleted);
+	buildSQL := SetupDatabaseScript()
 
-		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
-			(doc_id, seq_id, deleted);
-
-		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
-			(doc_id, kind) WHERE kind IS NOT NULL;
-		`
 	if _, err := tx.Exec(buildSQL); err != nil {
 		return err
 	}

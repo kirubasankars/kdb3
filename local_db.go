@@ -14,6 +14,7 @@ type LocalDB interface {
 	DeleteDatabase(name string) error
 	GetDatabaseFileName(name string) string
 	ListDatabases() ([]string, error)
+	UpdateDatabaseFileName(name string, fileName string)
 
 	UpdateView(dbname, name, hash, filename string) error
 	GetViewFileName(dbname, name string) (string, string)
@@ -79,6 +80,13 @@ func (db *DefaultLocalDB) GetDatabaseFileName(name string) string {
 	row := db.con.QueryRow("SELECT filename FROM dbs WHERE name = ?", name)
 	row.Scan(&fileName)
 	return fileName
+}
+
+// GetDatabaseFileName get database file name
+func (db *DefaultLocalDB) UpdateDatabaseFileName(name string, fileName string) {
+	db.mux.RLock()
+	defer db.mux.RUnlock()
+	db.con.Exec("UPDATE dbs SET filename = ? WHERE name = ?", fileName, name)
 }
 
 // ListDatabases list all database names
