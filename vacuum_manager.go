@@ -38,7 +38,6 @@ func (vm DefaultVacuumManager) SetupDatabase() error {
 		return err
 	}
 	buildSQL := SetupDatabaseScript()
-
 	tx, err := con.Begin()
 	if err != nil {
 		return err
