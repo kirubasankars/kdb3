@@ -10,6 +10,7 @@ type VacuumManager interface {
 	SetCurrentConnectionString(currentDatabasePath, connectionString string)
 	SetupDatabase() error
 	CopyData(minUpdateSequence string, maxUpdateSequence string)
+	Vacuum()
 }
 
 type DefaultVacuumManager struct {
@@ -63,15 +64,26 @@ func (vm DefaultVacuumManager) SetupDatabase() error {
 
 func (vm DefaultVacuumManager) CopyData(minUpdateSequence string, maxUpdateSequence string) {
 	absoluteCurrentDatabasePath, _ := filepath.Abs(vm.currentDatabasePath)
+
 	con, _ := sql.Open("sqlite3", vm.newConnectionString)
+	defer con.Close()
+
 	con.Ping()
 	con.Exec("ATTACH DATABASE 'file://" + absoluteCurrentDatabasePath + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro' as currentdb;")
+
 	tx, _ := con.Begin()
+	defer tx.Commit()
+
 	if minUpdateSequence == "" {
 		tx.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id <= ?", maxUpdateSequence)
 	} else {
 		tx.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id > ? AND seq_id <= ?", minUpdateSequence, maxUpdateSequence)
 	}
-	tx.Commit()
-	con.Close()
+}
+
+func (vm DefaultVacuumManager) Vacuum() {
+	con, _ := sql.Open("sqlite3", vm.newConnectionString)
+	defer con.Close()
+	con.Ping()
+	con.Exec("VACUUM")
 }

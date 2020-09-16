@@ -12,6 +12,7 @@ import (
 // Database interface
 type Database interface {
 	Initialize() error
+	ReInitialize() error
 	Open(createIfNotExists bool) error
 	Close(closeChannel bool) error
 
@@ -344,12 +345,12 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
 
+//	vacuumManager.Vacuum()
+
 	localDB := db.serviceLocator.GetLocalDB()
 	localDB.UpdateDatabaseFileName(db.Name, newFileName)
 
-	db.Initialize()
-	// open all readers
-	db.openReaders()
+	db.ReInitialize()
 
 	db.viewManager.ReinitializeViews()
 	
@@ -440,6 +441,23 @@ func (db *DefaultDatabase) Initialize() error {
 	}
 	return nil
 }
+
+func (db *DefaultDatabase) ReInitialize() error {
+
+	writer := db.serviceLocator.GetDatabaseWriter(db.Name)
+	writer.Open()
+
+	db.writer <- writer
+
+	readersCount := cap(db.reader)
+	for i := 0; i < readersCount; i++ {
+		reader := db.serviceLocator.GetDatabaseReader(db.Name)
+		reader.Open()
+		db.reader <- reader
+	}
+	return nil
+}
+
 // NewDatabase create database instance
 func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) Database {
 	db := &DefaultDatabase{Name: name}
