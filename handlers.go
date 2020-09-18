@@ -366,7 +366,14 @@ func (handler KDBHandler) Vacuum(w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
-	kdb.Vacuum(db)
+	err := kdb.Vacuum(db)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"ok":true}`)
 }
 
 func NewKDBHandler(kdb *KDB) KDBHandler {
