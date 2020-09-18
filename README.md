@@ -15,17 +15,21 @@ Database can be created as follows.
     curl -X PUT localhost:8001/blog
     {“ok”:true}
 
-database accepts json object and returns an id and version number. ID assigned, if not present in the document. Version number used as optimistic concurrency locking, you always need the latest version, in order to update the document. 
+database accepts json object and returns an id and version number. ID assigned, if not present in the document. 
+Version number used as optimistic concurrency locking, you need the latest version, in order to update the document. if you omit it, database assign latest version number 
 
     curl -X POST localhost:8001/blog -d ‘{“title”:”getting started”}’
     {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd7","_version":1}
 
-    curl -X POST localhost:8001/blog -d ‘{“title”:”kdb3 is great”}’
-    {"_id":"f7f7a5d6d8d4b8292b346c83fd5fbbd8","_version":1}
+    curl -X POST localhost:8001/blog -d ‘{"_id", "1", “title”:”kdb3 is great”}’
+    {"_id":"1","_version":1}
+    
+    curl -X POST localhost:8001/blog -d ‘{"_id", "1", “title”:”kdb3 is great”}’
+    {"_id":"1","_version":2}
 
 Document can be retrieved back as follows
 
-    curl -X GET localhost:8001/blog/f7f7a5d6d8d4b8292b346c83fd5fbbd7
+    curl -X GET localhost:8001/blog/1
 
 On every document insert and update, change tracking sequence number assigned. "_changes" api works like timeline on the database. it can help to get document changes in sequence.
 
