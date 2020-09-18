@@ -47,9 +47,9 @@ type DefaultDatabase struct {
 	reader chan DatabaseReader
 	writer chan DatabaseWriter
 
-	viewManager 	ViewManager
-	vacuumManager   chan VacuumManager
-	serviceLocator  ServiceLocator
+	viewManager    ViewManager
+	vacuumManager  chan VacuumManager
+	serviceLocator ServiceLocator
 }
 
 func (db *DefaultDatabase) openReaders() {
@@ -68,6 +68,7 @@ func (db *DefaultDatabase) openReaders() {
 		db.reader <- reader
 	}
 }
+
 // Open open kdb database
 func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	writer := <-db.writer
@@ -167,8 +168,12 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 			}
 			doc.Version = currentDoc.Version
 		} else {
-			if currentDoc.Version != doc.Version {
-				return nil, ErrDocumentConflict
+			if doc.Version != 0 {
+				if currentDoc.Version != doc.Version {
+					return nil, ErrDocumentConflict
+				}
+			} else {
+				doc.Version = currentDoc.Version
 			}
 		}
 	}
@@ -317,18 +322,18 @@ func (db *DefaultDatabase) GetStat() *DatabaseStat {
 
 // Vacuum vacuum
 func (db *DefaultDatabase) Vacuum() error {
-	vacuumManager := <- db.vacuumManager
-	defer func () {
+	vacuumManager := <-db.vacuumManager
+	defer func() {
 		db.vacuumManager <- vacuumManager
 	}()
 
 	currentFileName := db.serviceLocator.GetLocalDB().GetDatabaseFileName(db.Name)
-	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName + dbExt)
+	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt)
 	currentConnectionString := currentDBPath + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
 
 	id := NewSequenceUUIDGenarator().Next()
 	newFileName := db.Name + "_" + id
-	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName + dbExt) + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc"
+	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName+dbExt) + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc"
 
 	vacuumManager.SetNewConnectionString(newConnectionString)
 	vacuumManager.SetCurrentConnectionString(currentDBPath, currentConnectionString)
@@ -345,7 +350,7 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
 
-//	vacuumManager.Vacuum()
+	//	vacuumManager.Vacuum()
 
 	localDB := db.serviceLocator.GetLocalDB()
 	localDB.UpdateDatabaseFileName(db.Name, newFileName)
@@ -353,24 +358,24 @@ func (db *DefaultDatabase) Vacuum() error {
 	db.ReInitialize()
 
 	db.viewManager.ReinitializeViews()
-	
+
 	dbPath := db.serviceLocator.GetDBDirPath()
 	oldFile := currentFileName + dbExt
-	os.Remove(filepath.Join(dbPath, oldFile +"-shm"))
-	os.Remove(filepath.Join(dbPath, oldFile +"-wal"))
-	os.Remove(filepath.Join(dbPath, oldFile ))
+	os.Remove(filepath.Join(dbPath, oldFile+"-shm"))
+	os.Remove(filepath.Join(dbPath, oldFile+"-wal"))
+	os.Remove(filepath.Join(dbPath, oldFile))
 
 	/*
-			1. Copy data (with max update seq) to new data file
-			2. Close Writer
-			3. Copy remaining data (with min (max from step 1) and max new update seq) to new data file
-			4. Close all readers
-			5. Close all views
-			6. Update localDB with new data file name
-			7. Create writer and open it
-			8. Create Readers and open it all
-			9. Push writer and readers to its corresponding channels
-	       10. Delete old data file
+				1. Copy data (with max update seq) to new data file
+				2. Close Writer
+				3. Copy remaining data (with min (max from step 1) and max new update seq) to new data file
+				4. Close all readers
+				5. Close all views
+				6. Update localDB with new data file name
+				7. Create writer and open it
+				8. Create Readers and open it all
+				9. Push writer and readers to its corresponding channels
+		       10. Delete old data file
 	*/
 
 	return nil
