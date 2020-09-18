@@ -7,7 +7,7 @@ Features
   3. Restful API
   4. Change tracking
   5. Incrementally updated Materialized View (with sqlite3)
-  6. Live Vacuum - InProgress
+  6. Live Vacuum
   7. UI - InProgress
 
 Database can be created as follows.
