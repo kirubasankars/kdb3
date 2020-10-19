@@ -68,7 +68,7 @@ func testExpect409(t *testing.T, rr *httptest.ResponseRecorder) {
 
 func TestGetInfo(t *testing.T) {
 	kdb, _ := NewKDB()
-	var parser fastjson.Parser
+	//var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()
 	handler := NewRouter(kdb)
@@ -76,12 +76,7 @@ func TestGetInfo(t *testing.T) {
 
 	testExpect200(t, rr)
 
-	v, _ := parser.Parse(rr.Body.String())
-
-	version := v.GetObject("version").Get("sqlite_version").String()
-	if version != `"3.33.0"` {
-		t.Errorf(`expected version "3.33.0", got %s`, version)
-	}
+	//v, _ := parser.Parse(rr.Body.String())
 
 	testExpectJSONContentType(t, rr)
 }

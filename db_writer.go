@@ -45,8 +45,9 @@ func SetupDatabaseScript() string {
 type DefaultDatabaseWriter struct {
 	connectionString string
 
-	reader *DefaultDatabaseReader
-	conn   *sqlite3.Conn
+	reader 			*DefaultDatabaseReader
+	conn   			*sqlite3.Conn
+	stmtPutDocument *sqlite3.Stmt
 }
 
 func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
@@ -65,6 +66,11 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 			return err
 		}
 		writer.Commit()
+	}
+
+	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))")
+	if err != nil {
+		return err
 	}
 
 	err = writer.reader.Prepare()
@@ -120,8 +126,11 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-	if err := writer.conn.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
+
+	defer writer.stmtPutDocument.Reset()
+	if err := writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
 		return err
 	}
+
 	return nil
 }

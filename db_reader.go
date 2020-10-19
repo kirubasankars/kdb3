@@ -174,7 +174,7 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 		return doc, nil
 	}
 
-	return nil, nil
+	return nil, ErrDocumentNotFound
 }
 
 // GetDocumentByID get document id
@@ -210,7 +210,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 		return doc, nil
 	}
 
-	return nil, nil
+	return nil, ErrDocumentNotFound
 }
 
 // GetDocumentByIDandVersion get document id and version
@@ -247,7 +247,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 		return doc, nil
 	}
 
-	return nil, nil
+	return nil, ErrDocumentNotFound
 }
 
 // GetAllDesignDocuments get all design documents
@@ -279,15 +279,15 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 		return docs, nil
 	}
 
-	return nil, nil
+	return nil, ErrDocumentNotFound
 }
 
 // GetChanges get document changes
 func (reader *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
 
 	reader.stmtChanges.Bind(since, since, limit)
-	hasRow, _ := reader.stmtAllDesignDocuments.Step()
-	defer reader.stmtAllDesignDocuments.Reset()
+	hasRow, _ := reader.stmtChanges.Step()
+	defer reader.stmtChanges.Reset()
 	var (
 		changes []byte
 	)
@@ -324,13 +324,13 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 
 	deleted, count, docCount, deletedDocCount := 0, 0, 0, 0
 	for hasRow {
-		reader.stmtLastUpdateSequence.Scan(&deleted, &count)
+		reader.stmtDocumentCount.Scan(&deleted, &count)
 		if deleted == 0 {
 			docCount = count
 		} else {
 			deletedDocCount = count
 		}
-		hasRow, _ = reader.stmtLastUpdateSequence.Step()
+		hasRow, _ = reader.stmtDocumentCount.Step()
 	}
 
 	return docCount, deletedDocCount

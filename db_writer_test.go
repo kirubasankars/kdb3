@@ -12,11 +12,9 @@ func openTestDatabaseForWriter() func() {
 	writer.connectionString = writerTestConnectionString
 	writer.reader = new(DefaultDatabaseReader)
 
-	writer.Open()
+	writer.Open(true)
 
 	writer.Begin()
-
-	writer.ExecBuildScript()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
 	writer.PutDocument("seqID1", doc)
@@ -43,7 +41,7 @@ func openTestDatabaseForWriter() func() {
 func TestWriterInvalidConnectionString(t *testing.T) {
 	var writer DefaultDatabaseWriter
 	writer.connectionString = "."
-	err := writer.Open()
+	err := writer.Open(false)
 	if err == nil {
 		t.Errorf("expected error invalid db name")
 	}
@@ -56,7 +54,7 @@ func TestWriterPutDocument(t *testing.T) {
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
 	writer.reader = new(DefaultDatabaseReader)
-	writer.Open()
+	writer.Open(true)
 
 	writer.Begin()
 
@@ -111,7 +109,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
 	writer.reader = new(DefaultDatabaseReader)
-	writer.Open()
+	writer.Open(true)
 
 	writer.Begin()
 
@@ -149,7 +147,7 @@ func TestWriterDocNotFound(t *testing.T) {
 	var writer DefaultDatabaseWriter
 	writer.connectionString = writerTestConnectionString
 	writer.reader = new(DefaultDatabaseReader)
-	writer.Open()
+	writer.Open(true)
 
 	writer.Begin()
 
