@@ -1,10 +1,10 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -368,32 +368,34 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		panic("invalid_design_document " + doc.ID)
 	}
 
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sqlite3.Open(":memory:")
 	if err != nil {
 		return err
 	}
 
-	tx, _ := db.Begin()
-	defer tx.Rollback()
-	defer db.Close()
+	err = db.WithTx(func() error {
+		err = db.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '', 0 as doc_id;")
+		if err != nil {
+			return err
+		}
+		err = db.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
+		if err != nil {
+			return err
+		}
+		err = db.Exec("CREATE VIEW documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 
-	_, err = tx.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '', 0 as doc_id;")
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec("CREATE VIEW documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
-	if err != nil {
-		return err
-	}
 	var sqlErr = ""
-
 	for _, v := range newDDoc.Views {
 		for _, x := range v.Setup {
-			_, err := tx.Exec(x)
+			err := db.Exec(x)
 			if err != nil {
 				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
 			}
@@ -404,7 +406,7 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		}
 
 		for _, x := range v.Run {
-			_, err := tx.Exec(x)
+			err := db.Exec(x)
 			if err != nil {
 				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
 			}
@@ -415,15 +417,15 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		}
 	}
 
-	_, err = tx.Exec("SELECT * FROM latest_changes WHERE 1 = 2")
+	err = db.Exec("SELECT * FROM latest_changes WHERE 1 = 2")
 	if err != nil {
 		return errors.New("your script can't drop latest_changes")
 	}
-	_, err = tx.Exec("SELECT * FROM latest_documents WHERE 1 = 2")
+	err = db.Exec("SELECT * FROM latest_documents WHERE 1 = 2")
 	if err != nil {
 		return errors.New("your script can't drop latest_documents")
 	}
-	_, err = tx.Exec("SELECT * FROM documents WHERE 1 = 2")
+	err = db.Exec("SELECT * FROM documents WHERE 1 = 2")
 	if err != nil {
 		return errors.New("your script can't drop documents")
 	}
@@ -624,13 +626,13 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 	return view
 }
 
-func setupViewDatabase(db *sql.DB, absoluteDatabasePath string) error {
-	_, err := db.Exec("ATTACH DATABASE 'file://" + absoluteDatabasePath + "?mode=ro' as docsdb;")
+func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
+	err := db.Exec("ATTACH DATABASE 'file://" + absoluteDatabasePath + "?cache=shared&mode=ro' as docsdb;")
 	if err != nil {
 		return err
 	}
 
-	_, err = db.Exec(`
+	err = db.Exec(`
 		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
 		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
 		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents;

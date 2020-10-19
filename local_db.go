@@ -1,8 +1,9 @@
 package main
 
 import (
-	"database/sql"
 	"sync"
+
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 // LocalDB interface
@@ -25,26 +26,26 @@ type LocalDB interface {
 
 // DefaultLocalDB Default implementatio of LocalDB
 type DefaultLocalDB struct {
-	con *sql.DB
+	con *sqlite3.Conn
 	mux *sync.RWMutex
 }
 
 // Open localDB
 func (db *DefaultLocalDB) Open(dbPath string) error {
-	con, err := sql.Open("sqlite3", dbPath+"/_local.db")
+	con, err := sqlite3.Open(dbPath + "/_local.db")
 	if err != nil {
 		return err
 	}
 
-	tx, _ := con.Begin()
+	con.Begin()
 
-	tx.Exec(`
+	con.Exec(`
 		CREATE TABLE IF NOT EXISTS dbs (name TEXT, filename TEXT, PRIMARY KEY(name));
 		CREATE TABLE IF NOT EXISTS views (db TEXT, name TEXT, hash TEXT, filename TEXT, PRIMARY KEY(name, db));
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_filename ON dbs (filename);
 	`)
 
-	tx.Commit()
+	con.Commit()
 
 	db.con = con
 
@@ -60,7 +61,7 @@ func (db *DefaultLocalDB) Close() error {
 func (db *DefaultLocalDB) CreateDatabase(name, filename string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	_, err := db.con.Exec("INSERT INTO dbs (name, filename) VALUES(?, ?)", name, filename)
+	err := db.con.Exec("INSERT INTO dbs (name, filename) VALUES(?, ?)", name, filename)
 	return err
 }
 
@@ -68,7 +69,7 @@ func (db *DefaultLocalDB) CreateDatabase(name, filename string) error {
 func (db *DefaultLocalDB) DeleteDatabase(name string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	_, err := db.con.Exec("DELETE FROM dbs WHERE name = ?", name)
+	err := db.con.Exec("DELETE FROM dbs WHERE name = ?", name)
 	return err
 }
 
@@ -77,8 +78,10 @@ func (db *DefaultLocalDB) GetDatabaseFileName(name string) string {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
 	var fileName string
-	row := db.con.QueryRow("SELECT filename FROM dbs WHERE name = ?", name)
-	row.Scan(&fileName)
+	stmt, _ := db.con.Prepare("SELECT filename FROM dbs WHERE name = ?", name)
+	stmt.Step()
+	stmt.Scan(&fileName)
+	stmt.Close()
 	return fileName
 }
 
@@ -93,15 +96,21 @@ func (db *DefaultLocalDB) UpdateDatabaseFileName(name string, fileName string) {
 func (db *DefaultLocalDB) ListDatabases() ([]string, error) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
+
 	var dbs []string
-	rows, err := db.con.Query("SELECT name FROM dbs")
+	stmt, err := db.con.Prepare("SELECT name FROM dbs")
 	if err != nil {
 		return nil, err
 	}
-	for rows.Next() {
+
+	defer stmt.Close()
+
+	hasRows, _ := stmt.Step()
+	for hasRows {
 		var name string
-		rows.Scan(&name)
+		stmt.Scan(&name)
 		dbs = append(dbs, name)
+		hasRows, _ = stmt.Step()
 	}
 	return dbs, nil
 }
@@ -110,7 +119,7 @@ func (db *DefaultLocalDB) ListDatabases() ([]string, error) {
 func (db *DefaultLocalDB) UpdateView(dbname, name, hash, filename string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	_, err := db.con.Exec("INSERT OR REPLACE INTO views (db, name, hash, filename) VALUES(?, ?, ?, ?)", dbname, name, hash, filename)
+	err := db.con.Exec("INSERT OR REPLACE INTO views (db, name, hash, filename) VALUES(?, ?, ?, ?)", dbname, name, hash, filename)
 	return err
 }
 
@@ -118,7 +127,7 @@ func (db *DefaultLocalDB) UpdateView(dbname, name, hash, filename string) error 
 func (db *DefaultLocalDB) DeleteViews(dbname string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	_, err := db.con.Exec("DELETE FROM views WHERE db = ?", dbname)
+	err := db.con.Exec("DELETE FROM views WHERE db = ?", dbname)
 	return err
 }
 
@@ -126,7 +135,7 @@ func (db *DefaultLocalDB) DeleteViews(dbname string) error {
 func (db *DefaultLocalDB) DeleteView(dbname, name string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	_, err := db.con.Exec("DELETE FROM views WHERE db = ? and name = ?", dbname, name)
+	err := db.con.Exec("DELETE FROM views WHERE db = ? and name = ?", dbname, name)
 	return err
 }
 
@@ -134,9 +143,16 @@ func (db *DefaultLocalDB) DeleteView(dbname, name string) error {
 func (db *DefaultLocalDB) GetViewFileName(dbname, name string) (string, string) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
+
 	var hash, fileName string
-	row := db.con.QueryRow("SELECT hash, filename FROM views WHERE db = ? and name = ?", dbname, name)
-	row.Scan(&hash, &fileName)
+	stmt, _ := db.con.Prepare("SELECT hash, filename FROM views WHERE db = ? and name = ?", dbname, name)
+	defer stmt.Close()
+
+	hasRows, _ := stmt.Step()
+	if hasRows {
+		stmt.Scan(&hash, &fileName)
+	}
+
 	return hash, fileName
 }
 
@@ -144,15 +160,20 @@ func (db *DefaultLocalDB) GetViewFileName(dbname, name string) (string, string) 
 func (db *DefaultLocalDB) ListViewFiles(dbname string) ([]string, error) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
+
 	var views []string
-	rows, err := db.con.Query("SELECT filename FROM views where db = ? ", dbname)
+	stmt, err := db.con.Prepare("SELECT filename FROM views where db = ?", dbname)
 	if err != nil {
 		return nil, err
 	}
-	for rows.Next() {
+	defer stmt.Close()
+
+	hasRows, _ := stmt.Step()
+	for hasRows {
 		var name string
-		rows.Scan(&name)
+		stmt.Scan(&name)
 		views = append(views, name)
+		hasRows, _ = stmt.Step()
 	}
 	return views, nil
 }

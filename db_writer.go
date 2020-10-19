@@ -1,11 +1,11 @@
 package main
 
 import (
-	"database/sql"
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 type DatabaseWriter interface {
-	Open() error
+	Open(createIfNotExists bool) error
 	Close() error
 
 	Begin() error
@@ -46,21 +46,32 @@ type DefaultDatabaseWriter struct {
 	connectionString string
 
 	reader *DefaultDatabaseReader
-	conn   *sql.DB
-	tx     *sql.Tx
+	conn   *sqlite3.Conn
 }
 
-func (writer *DefaultDatabaseWriter) Open() error {
-	con, err := sql.Open("sqlite3", writer.connectionString)
+func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
+	con, err := sqlite3.Open(writer.connectionString)
 	if err != nil {
 		return err
 	}
-	err = con.Ping()
-	if err != nil {
-		return err
-	}
+	con.Exec("PRAGMA journal_mode=WAL;")
+
 	writer.conn = con
 	writer.reader.conn = con
+
+	if createIfNotExists {
+		writer.Begin()
+		if err := writer.ExecBuildScript(); err != nil {
+			return err
+		}
+		writer.Commit()
+	}
+
+	err = writer.reader.Prepare()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -73,28 +84,25 @@ func (writer *DefaultDatabaseWriter) Close() error {
 // Begin begin transaction
 func (writer *DefaultDatabaseWriter) Begin() error {
 	var err error
-	writer.tx, err = writer.conn.Begin()
-	writer.reader.tx = writer.tx
+	err = writer.conn.Begin()
 	return err
 }
 
 // Commit commit transaction
 func (writer *DefaultDatabaseWriter) Commit() error {
-	return writer.tx.Commit()
+	return writer.conn.Commit()
 }
 
 // Rollback rollback transaction
 func (writer *DefaultDatabaseWriter) Rollback() error {
-	return writer.tx.Rollback()
+	return writer.conn.Rollback()
 }
 
 // ExecBuildScript build tables
 func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
-	tx := writer.tx
-
 	buildSQL := SetupDatabaseScript()
 
-	if _, err := tx.Exec(buildSQL); err != nil {
+	if err := writer.conn.Exec(buildSQL); err != nil {
 		return err
 	}
 
@@ -108,12 +116,11 @@ func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Doc
 
 // PutDocument put document
 func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document) error {
-	tx := writer.tx
 	var kind []byte
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-	if _, err := tx.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
+	if err := writer.conn.Exec("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))", newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
 		return err
 	}
 	return nil
