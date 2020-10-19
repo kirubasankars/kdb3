@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
@@ -10,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"github.com/valyala/fastjson"
 )
 
@@ -91,7 +90,7 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 	if createIfNotExists {
 		fileName := name + "_" + NewSequenceUUIDGenarator().Next()
 		if err := kdb.localDB.CreateDatabase(name, fileName); err != nil {
-			if strings.HasPrefix(err.Error(), "UNIQUE constraint failed") {
+			if strings.HasPrefix(err.Error(), "sqlite3: constraint failed [1555]") {
 				return ErrDatabaseExists
 			}
 			return err
@@ -273,10 +272,11 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 // Info get kdb info
 func (kdb *KDB) Info() []byte {
 	var version, sqliteSourceID string
-	con, _ := sql.Open("sqlite3", ":memory:")
-	row := con.QueryRow("SELECT sqlite_version(), sqlite_source_id()")
-	row.Scan(&version, &sqliteSourceID)
-	con.Close()
+	conn, _ := sqlite3.Open(":memory:")
+	defer conn.Close()
+	stmt, _ := conn.Prepare("SELECT sqlite_version(), sqlite_source_id()")
+	stmt.Step()
+	stmt.Scan(&version, &sqliteSourceID)
 	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
 }
 

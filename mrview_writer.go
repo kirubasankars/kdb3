@@ -1,8 +1,9 @@
 package main
 
 import (
-	"database/sql"
 	"path/filepath"
+
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 type ViewWriter interface {
@@ -12,23 +13,20 @@ type ViewWriter interface {
 }
 
 type DefaultViewWriter struct {
-	connectionString     string
-	con 				 *sql.DB
+	connectionString string
+	con              *sqlite3.Conn
+
 	absoluteDatabasePath string
 	setupScripts         []Query
 	scripts              []Query
 }
 
 func (vw *DefaultViewWriter) Open() error {
-	db, err := sql.Open("sqlite3", vw.connectionString)
+	db, err := sqlite3.Open(vw.connectionString)
 	if err != nil {
 		return err
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS view_meta (
 			Id						INTEGER PRIMARY KEY,
@@ -40,34 +38,30 @@ func (vw *DefaultViewWriter) Open() error {
 			SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	`
 
-	if _, err = tx.Exec(buildSQL); err != nil {
-		return err
-	}
-
-	err = tx.Commit()
+	err = db.WithTx(func() error {
+		return db.Exec(buildSQL)
+	})
 	if err != nil {
 		return err
 	}
+
 	err = setupViewDatabase(db, vw.absoluteDatabasePath)
 	if err != nil {
 		return err
 	}
 
-	tx, err = db.Begin()
-	if err != nil {
-		return err
-	}
-
-	for _, x := range vw.setupScripts {
-		if _, err = tx.Exec(x.text); err != nil {
-			return err
+	err = db.WithTx(func() error {
+		for _, x := range vw.setupScripts {
+			if err = db.Exec(x.text); err != nil {
+				return err
+			}
 		}
-	}
-
-	err = tx.Commit()
+		return nil
+	})
 	if err != nil {
 		return err
 	}
+
 	vw.con = db
 
 	return nil
@@ -79,24 +73,24 @@ func (vw *DefaultViewWriter) Close() error {
 
 func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 	db := vw.con
-	tx, err := db.Begin()
-	defer tx.Rollback()
-	if err != nil {
-		panic(err)
-	}
 
-	sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
-	if _, err := tx.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
-		panic(err)
-	}
-
-	for _, x := range vw.scripts {
-		if _, err = tx.Exec(x.text); err != nil {
+	err := db.WithTx(func() error {
+		sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
+		if err := db.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
 			return err
 		}
+		for _, x := range vw.scripts {
+			if err := db.Exec(x.text); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func NewViewWriter(DBName, DBPath, connectionString string, setupScripts, scripts []Query) *DefaultViewWriter {

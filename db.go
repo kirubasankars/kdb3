@@ -72,22 +72,14 @@ func (db *DefaultDatabase) openReaders() {
 // Open open kdb database
 func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	writer := <-db.writer
-	err := writer.Open()
+	err := writer.Open(createIfNotExists)
 	if err != nil {
 		panic(err)
 	}
+	db.writer <- writer
 
 	// open all readers
 	db.openReaders()
-
-	if createIfNotExists {
-		writer.Begin()
-		if err := writer.ExecBuildScript(); err != nil {
-			return err
-		}
-		writer.Commit()
-	}
-	db.writer <- writer
 
 	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
 	db.UpdateSequence = db.GetLastUpdateSequence()
@@ -329,7 +321,7 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	currentFileName := db.serviceLocator.GetLocalDB().GetDatabaseFileName(db.Name)
 	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt)
-	currentConnectionString := currentDBPath + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
+	currentConnectionString := currentDBPath //+ "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
 
 	id := NewSequenceUUIDGenarator().Next()
 	newFileName := db.Name + "_" + id
@@ -418,8 +410,8 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, (CASE WHEN kind IS NULL THEN JSON_OBJECT('version', version) ELSE JSON_OBJECT('version', version, 'kind', kind) END) as value, doc_id FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
-						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL or key = ${key})",
-						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key})"
+						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL OR key = ${key}) AND (${next} IS NULL OR key > ${next})",
+						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key}) AND (${next} IS NULL OR key > ${next})"
 					}
 				}
 			}
@@ -450,7 +442,7 @@ func (db *DefaultDatabase) Initialize() error {
 func (db *DefaultDatabase) ReInitialize() error {
 
 	writer := db.serviceLocator.GetDatabaseWriter(db.Name)
-	writer.Open()
+	writer.Open(false)
 
 	db.writer <- writer
 
