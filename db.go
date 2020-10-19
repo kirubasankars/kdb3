@@ -86,19 +86,17 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSequence)
 
 	if createIfNotExists {
-		err = db.SetupAllDocsViews()
-		if err != nil {
+		if err = db.SetupAllDocsViews(); err != nil {
 			return err
 		}
 	}
 
-	designDocs, _ := db.GetAllDesignDocuments()
-	err = db.viewManager.Initialize(designDocs)
+	designDocs, err := db.GetAllDesignDocuments()
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return db.viewManager.Initialize(designDocs)
 }
 
 // Close close the kdb database
@@ -138,9 +136,8 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 		db.writer <- writer
 	}()
 
-	err := writer.Begin()
 	defer writer.Rollback()
-	if err != nil {
+	if err := writer.Begin(); err != nil {
 		return nil, err
 	}
 
@@ -171,11 +168,9 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	}
 
 	doc.CalculateNextVersion()
-
 	updateSeq := db.changeSeq.Next()
 
-	err = writer.PutDocument(updateSeq, doc)
-	if err != nil {
+	if err = writer.PutDocument(updateSeq, doc); err != nil {
 		return nil, err
 	}
 
@@ -219,8 +214,8 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 		db.reader <- reader
 	}()
 
-	reader.Begin()
 	defer reader.Commit()
+	reader.Begin()
 
 	if includeData {
 		if doc.Version > 0 {
@@ -261,8 +256,8 @@ func (db *DefaultDatabase) GetLastUpdateSequence() string {
 		db.reader <- reader
 	}()
 
-	reader.Begin()
 	defer reader.Commit()
+	reader.Begin()
 
 	return reader.GetLastUpdateSequence()
 }
@@ -277,8 +272,8 @@ func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
 		db.reader <- reader
 	}()
 
-	reader.Begin()
 	defer reader.Commit()
+	reader.Begin()
 
 	return reader.GetChanges(since, limit)
 }
@@ -293,8 +288,8 @@ func (db *DefaultDatabase) GetDocumentCount() (int, int) {
 		db.reader <- reader
 	}()
 
-	reader.Begin()
 	defer reader.Commit()
+	reader.Begin()
 
 	return reader.GetDocumentCount()
 }
@@ -309,6 +304,7 @@ func (db *DefaultDatabase) GetStat() *DatabaseStat {
 	stat.UpdateSeq = db.UpdateSequence
 	stat.DocCount = db.DocumentCount
 	stat.DeletedDocCount = db.DeletedDocumentCount
+
 	return stat
 }
 
@@ -449,7 +445,9 @@ func (db *DefaultDatabase) ReInitialize() error {
 	readersCount := cap(db.reader)
 	for i := 0; i < readersCount; i++ {
 		reader := db.serviceLocator.GetDatabaseReader(db.Name)
-		reader.Open()
+		if err := reader.Open(); err != nil {
+			return err
+		}
 		db.reader <- reader
 	}
 	return nil

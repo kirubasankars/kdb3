@@ -19,33 +19,36 @@ type DefaultViewReader struct {
 	absoluteDatabasePath string
 	selectScripts        map[string]Query
 	setupScripts         []Query
-
+	dbName 				 string
 	con *sqlite3.Conn
 }
 
 func (vr *DefaultViewReader) Open() error {
 	var err error
-	vr.con, err = sqlite3.Open(vr.connectionString)
-	if err != nil {
+	if vr.con, err = sqlite3.Open(vr.connectionString); err != nil {
+		return err
+	}
+	db := vr.con
+
+	if err = db.Exec("PRAGMA journal_mode=MEMORY;"); err != nil {
 		return err
 	}
 
-	//vr.con.Exec("PRAGMA journal_mode=WAL;")
-
-	db := vr.con
 	err = db.WithTx(func() error {
+		if err = setupViewDatabase(vr.con, vr.absoluteDatabasePath); err != nil {
+			return err
+		}
+
 		for _, x := range vr.setupScripts {
 			if err = db.Exec(x.text); err != nil {
 				return err
 			}
 		}
+
 		return nil
 	})
-	if err != nil {
-		return err
-	}
 
-	return setupViewDatabase(vr.con, vr.absoluteDatabasePath)
+	return err
 }
 
 func (vr *DefaultViewReader) Close() error {
@@ -63,6 +66,7 @@ func (vr *DefaultViewReader) Select(name string, values url.Values) ([]byte, err
 		}
 	}
 
+	//TODO: use complied stmt
 	stmt, err := vr.con.Prepare(selectStmt.text, pValues...)
 	if err != nil {
 		return nil, err
@@ -94,6 +98,7 @@ func NewViewReader(DBName string, DBPath string, connectionString string, script
 	viewReader.connectionString = connectionString
 	viewReader.selectScripts = selectScripts
 	viewReader.setupScripts = scripts
+	viewReader.dbName = DBName
 
 	absoluteDBPath, err := filepath.Abs(DBPath)
 	if err != nil {

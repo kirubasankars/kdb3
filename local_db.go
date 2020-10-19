@@ -36,20 +36,17 @@ func (db *DefaultLocalDB) Open(dbPath string) error {
 	if err != nil {
 		return err
 	}
-
-	con.Begin()
-
-	con.Exec(`
-		CREATE TABLE IF NOT EXISTS dbs (name TEXT, filename TEXT, PRIMARY KEY(name));
-		CREATE TABLE IF NOT EXISTS views (db TEXT, name TEXT, hash TEXT, filename TEXT, PRIMARY KEY(name, db));
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_filename ON dbs (filename);
-	`)
-
-	con.Commit()
-
 	db.con = con
 
-	return nil
+	err = con.WithTx(func() error {
+		return con.Exec(`
+			CREATE TABLE IF NOT EXISTS dbs (name TEXT, filename TEXT, PRIMARY KEY(name));
+			CREATE TABLE IF NOT EXISTS views (db TEXT, name TEXT, hash TEXT, filename TEXT, PRIMARY KEY(name, db));
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_filename ON dbs (filename);
+		`)
+	})
+
+	return err
 }
 
 // Close localDB
@@ -61,27 +58,27 @@ func (db *DefaultLocalDB) Close() error {
 func (db *DefaultLocalDB) CreateDatabase(name, filename string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	err := db.con.Exec("INSERT INTO dbs (name, filename) VALUES(?, ?)", name, filename)
-	return err
+	return db.con.Exec("INSERT INTO dbs (name, filename) VALUES(?, ?)", name, filename)
 }
 
 // DeleteDatabase delete database
 func (db *DefaultLocalDB) DeleteDatabase(name string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	err := db.con.Exec("DELETE FROM dbs WHERE name = ?", name)
-	return err
+	return db.con.Exec("DELETE FROM dbs WHERE name = ?", name)
 }
 
 // GetDatabaseFileName get database file name
 func (db *DefaultLocalDB) GetDatabaseFileName(name string) string {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
-	var fileName string
+
 	stmt, _ := db.con.Prepare("SELECT filename FROM dbs WHERE name = ?", name)
+	defer stmt.Close()
+
 	stmt.Step()
+	var fileName string
 	stmt.Scan(&fileName)
-	stmt.Close()
 	return fileName
 }
 
@@ -102,16 +99,23 @@ func (db *DefaultLocalDB) ListDatabases() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	defer stmt.Close()
 
-	hasRows, _ := stmt.Step()
+	hasRows, err := stmt.Step()
+	if err != nil {
+		return nil, err
+	}
 	for hasRows {
 		var name string
 		stmt.Scan(&name)
 		dbs = append(dbs, name)
-		hasRows, _ = stmt.Step()
+
+		hasRows, err = stmt.Step()
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return dbs, nil
 }
 
@@ -119,24 +123,21 @@ func (db *DefaultLocalDB) ListDatabases() ([]string, error) {
 func (db *DefaultLocalDB) UpdateView(dbname, name, hash, filename string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	err := db.con.Exec("INSERT OR REPLACE INTO views (db, name, hash, filename) VALUES(?, ?, ?, ?)", dbname, name, hash, filename)
-	return err
+	return db.con.Exec("INSERT OR REPLACE INTO views (db, name, hash, filename) VALUES(?, ?, ?, ?)", dbname, name, hash, filename)
 }
 
 // DeleteViews delete all views for a databases
 func (db *DefaultLocalDB) DeleteViews(dbname string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	err := db.con.Exec("DELETE FROM views WHERE db = ?", dbname)
-	return err
+	return db.con.Exec("DELETE FROM views WHERE db = ?", dbname)
 }
 
 // DeleteView delete a view
 func (db *DefaultLocalDB) DeleteView(dbname, name string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	err := db.con.Exec("DELETE FROM views WHERE db = ? and name = ?", dbname, name)
-	return err
+	return db.con.Exec("DELETE FROM views WHERE db = ? and name = ?", dbname, name)
 }
 
 // GetViewFileName get view file name
@@ -144,11 +145,11 @@ func (db *DefaultLocalDB) GetViewFileName(dbname, name string) (string, string) 
 	db.mux.RLock()
 	defer db.mux.RUnlock()
 
-	var hash, fileName string
 	stmt, _ := db.con.Prepare("SELECT hash, filename FROM views WHERE db = ? and name = ?", dbname, name)
 	defer stmt.Close()
 
 	hasRows, _ := stmt.Step()
+	var hash, fileName string
 	if hasRows {
 		stmt.Scan(&hash, &fileName)
 	}
@@ -161,13 +162,14 @@ func (db *DefaultLocalDB) ListViewFiles(dbname string) ([]string, error) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
 
-	var views []string
+
 	stmt, err := db.con.Prepare("SELECT filename FROM views where db = ?", dbname)
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
+	var views []string
 	hasRows, _ := stmt.Step()
 	for hasRows {
 		var name string

@@ -465,7 +465,6 @@ type View struct {
 	name         string
 	DBName       string
 	designDocID  string
-	mutex        sync.Mutex
 	currentSeqID string
 
 	viewReader chan ViewReader
@@ -498,7 +497,9 @@ func (view *View) Open() error {
 	defer func() {
 		view.viewWriter <- viewWriter
 	}()
-	viewWriter.Open()
+	if err := viewWriter.Open(); err != nil {
+		return err
+	}
 
 	// open all readers
 	func() {
@@ -547,13 +548,6 @@ func (view *View) Build(nextSeqID string) error {
 		return nil
 	}
 
-	view.mutex.Lock()
-	defer view.mutex.Unlock()
-
-	if view.currentSeqID >= nextSeqID {
-		return nil
-	}
-
 	viewWriter, ok := <-view.viewWriter
 	if !ok {
 		return ErrViewNotFound
@@ -561,6 +555,10 @@ func (view *View) Build(nextSeqID string) error {
 	defer func() {
 		view.viewWriter <- viewWriter
 	}()
+
+	if view.currentSeqID >= nextSeqID {
+		return nil
+	}
 
 	err := viewWriter.Build(nextSeqID)
 	if err != nil {
@@ -638,8 +636,5 @@ func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
 		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents;
 	`)
 
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }

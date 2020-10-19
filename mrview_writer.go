@@ -14,15 +14,24 @@ type ViewWriter interface {
 
 type DefaultViewWriter struct {
 	connectionString string
+	dbName 			 string
 	con              *sqlite3.Conn
 
 	absoluteDatabasePath string
 	setupScripts         []Query
 	scripts              []Query
+
+	stmtUpdateViewMeta   *sqlite3.Stmt
 }
 
 func (vw *DefaultViewWriter) Open() error {
 	db, err := sqlite3.Open(vw.connectionString)
+	if err != nil {
+		return err
+	}
+	vw.con = db
+
+	err = db.Exec("PRAGMA journal_mode=MEMORY;")
 	if err != nil {
 		return err
 	}
@@ -39,32 +48,24 @@ func (vw *DefaultViewWriter) Open() error {
 	`
 
 	err = db.WithTx(func() error {
-		return db.Exec(buildSQL)
-	})
-	if err != nil {
-		return err
-	}
-
-	err = setupViewDatabase(db, vw.absoluteDatabasePath)
-	if err != nil {
-		return err
-	}
-
-	err = db.WithTx(func() error {
+		if err := db.Exec(buildSQL); err != nil {
+			return err
+		}
+		if err = setupViewDatabase(db, vw.absoluteDatabasePath); err != nil {
+			return err
+		}
 		for _, x := range vw.setupScripts {
 			if err = db.Exec(x.text); err != nil {
 				return err
 			}
 		}
-		return nil
-	})
-	if err != nil {
+
+		vw.stmtUpdateViewMeta, err = db.Prepare("UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ?")
+
 		return err
-	}
+	})
 
-	vw.con = db
-
-	return nil
+	return err
 }
 
 func (vw *DefaultViewWriter) Close() error {
@@ -75,10 +76,11 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 	db := vw.con
 
 	err := db.WithTx(func() error {
-		sqlUpdateViewMeta := "UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ? "
-		if err := db.Exec(sqlUpdateViewMeta, nextSeqID); err != nil {
+		defer vw.stmtUpdateViewMeta.Reset()
+		if err := vw.stmtUpdateViewMeta.Exec(nextSeqID); err != nil {
 			return err
 		}
+		//TODO: use complied stmt
 		for _, x := range vw.scripts {
 			if err := db.Exec(x.text); err != nil {
 				return err
@@ -86,16 +88,14 @@ func (vw *DefaultViewWriter) Build(nextSeqID string) error {
 		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 func NewViewWriter(DBName, DBPath, connectionString string, setupScripts, scripts []Query) *DefaultViewWriter {
 	viewWriter := new(DefaultViewWriter)
 	viewWriter.connectionString = connectionString
+	viewWriter.dbName = DBName
 	viewWriter.setupScripts = setupScripts
 	viewWriter.scripts = scripts
 

@@ -55,10 +55,12 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 	if err != nil {
 		return err
 	}
-	con.Exec("PRAGMA journal_mode=WAL;")
-
 	writer.conn = con
 	writer.reader.conn = con
+
+	if err = con.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		return err
+	}
 
 	if createIfNotExists {
 		writer.Begin()
@@ -83,15 +85,12 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 
 // Close connection
 func (writer *DefaultDatabaseWriter) Close() error {
-	err := writer.conn.Close()
-	return err
+	return writer.conn.Close()
 }
 
 // Begin begin transaction
 func (writer *DefaultDatabaseWriter) Begin() error {
-	var err error
-	err = writer.conn.Begin()
-	return err
+	return writer.conn.Begin()
 }
 
 // Commit commit transaction
@@ -106,13 +105,7 @@ func (writer *DefaultDatabaseWriter) Rollback() error {
 
 // ExecBuildScript build tables
 func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
-	buildSQL := SetupDatabaseScript()
-
-	if err := writer.conn.Exec(buildSQL); err != nil {
-		return err
-	}
-
-	return nil
+	return writer.conn.Exec(SetupDatabaseScript())
 }
 
 // GetDocumentRevisionByID get document revision by id
@@ -126,11 +119,6 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 	if newDoc.Kind != "" {
 		kind = []byte(newDoc.Kind)
 	}
-
 	defer writer.stmtPutDocument.Reset()
-	if err := writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data); err != nil {
-		return err
-	}
-
-	return nil
+	return  writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data)
 }
