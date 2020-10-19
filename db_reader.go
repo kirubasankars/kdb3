@@ -49,15 +49,9 @@ func (reader *DefaultDatabaseReader) Open() error {
 	if err != nil {
 		return err
 	}
-
 	reader.conn = con
 
-	err = reader.Prepare()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return reader.Prepare()
 }
 
 func (reader *DefaultDatabaseReader) Prepare() error {
@@ -114,9 +108,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 
 // Begin begin transaction
 func (reader *DefaultDatabaseReader) Begin() error {
-	var err error
-	err = reader.conn.Begin()
-	return err
+	return reader.conn.Begin()
 }
 
 // Commit commit transaction
@@ -127,21 +119,23 @@ func (reader *DefaultDatabaseReader) Commit() error {
 // GetDocumentRevisionByIDandVersion get document info with id and version
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
 
-	reader.stmtDocumentRevisionByIDandVersion.Bind(ID, Version)
-	hasRow, _ := reader.stmtDocumentRevisionByIDandVersion.Step()
 	defer reader.stmtDocumentRevisionByIDandVersion.Reset()
+	if err := reader.stmtDocumentRevisionByIDandVersion.Bind(ID, Version); err != nil {
+		return nil, err
+	}
+	hasRow, err := reader.stmtDocumentRevisionByIDandVersion.Step()
+	if err != nil {
+		return nil, err
+	}
 
 	if hasRow {
 		doc := &Document{}
-		err := reader.stmtDocumentRevisionByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
-		if err != nil {
+		if err := reader.stmtDocumentRevisionByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted); err != nil {
 			return nil, err
 		}
-
 		if doc.Deleted == true {
 			return doc, ErrDocumentNotFound
 		}
-
 		return doc, nil
 	}
 
@@ -151,26 +145,24 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 // GetDocumentRevisionByID get document info with id
 func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
 
-	err := reader.stmtDocumentRevisionByID.Bind(ID)
-	if err != nil {
+	defer reader.stmtDocumentRevisionByID.Reset()
+	if err := reader.stmtDocumentRevisionByID.Bind(ID); err != nil {
 		return nil, err
 	}
+
 	hasRow, err := reader.stmtDocumentRevisionByID.Step()
 	if err != nil {
 		return nil, err
 	}
-	defer reader.stmtDocumentRevisionByID.Reset()
 
 	if hasRow {
 		doc := &Document{}
-		err := reader.stmtDocumentRevisionByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted)
-		if err != nil {
+		if err := reader.stmtDocumentRevisionByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted); err != nil {
 			return nil, err
 		}
 		if doc.Deleted == true {
 			return doc, ErrDocumentNotFound
 		}
-
 		return doc, nil
 	}
 
@@ -179,24 +171,31 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 
 // GetDocumentByID get document id
 func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
-	reader.stmtDocumentByID.Bind(ID)
-	hasRow, _ := reader.stmtDocumentByID.Step()
+
 	defer reader.stmtDocumentByID.Reset()
+	if err := reader.stmtDocumentByID.Bind(ID); err != nil {
+		return nil, err
+	}
+
+	hasRow, err := reader.stmtDocumentByID.Step()
+	if err != nil {
+		return nil, err
+	}
 
 	if hasRow {
 		doc := &Document{}
-		err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
-		if err != nil {
+		if err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data); err != nil {
 			return nil, err
 		}
 
-		var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+		var meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
 		if doc.Kind != "" {
 			meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
 		}
 		if len(doc.Data) != 2 {
 			meta = meta + ","
 		}
+
 		data := make([]byte, len(meta))
 		copy(data, meta)
 		if len(doc.Data) > 0 {
@@ -207,6 +206,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 		if doc.Deleted == true {
 			return doc, ErrDocumentNotFound
 		}
+
 		return doc, nil
 	}
 
@@ -215,9 +215,16 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 
 // GetDocumentByIDandVersion get document id and version
 func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
-	reader.stmtDocumentByIDandVersion.Bind(ID, Version)
-	hasRow, _ := reader.stmtDocumentByIDandVersion.Step()
+
 	defer reader.stmtDocumentByIDandVersion.Reset()
+	if err := reader.stmtDocumentByIDandVersion.Bind(ID, Version); err != nil {
+		return nil, err
+	}
+
+	hasRow, err := reader.stmtDocumentByIDandVersion.Step()
+	if err != nil {
+		return nil, err
+	}
 
 	if hasRow {
 		doc := &Document{}
@@ -226,13 +233,14 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 			return nil, err
 		}
 
-		var meta string = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+		var meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
 		if doc.Kind != "" {
 			meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
 		}
 		if len(doc.Data) != 2 {
 			meta = meta + ","
 		}
+
 		data := make([]byte, len(meta))
 		copy(data, meta)
 		if len(doc.Data) > 0 {
@@ -253,17 +261,18 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 // GetAllDesignDocuments get all design documents
 func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error) {
 
-	hasRows, _ := reader.stmtAllDesignDocuments.Step()
 	defer reader.stmtAllDesignDocuments.Reset()
+	hasRows, err := reader.stmtAllDesignDocuments.Step()
+	if err != nil {
+		return nil, err
+	}
 
 	if hasRows {
 		var docs []Document
 
 		for hasRows {
-
 			var id string
-			err := reader.stmtAllDesignDocuments.Scan(&id)
-			if err != nil {
+			if err := reader.stmtAllDesignDocuments.Scan(&id); err != nil {
 				return nil, err
 			}
 
@@ -273,7 +282,10 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 			}
 			docs = append(docs, *doc)
 
-			hasRows, _ = reader.stmtAllDesignDocuments.Step()
+			hasRows, err = reader.stmtAllDesignDocuments.Step()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return docs, nil
@@ -285,9 +297,16 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 // GetChanges get document changes
 func (reader *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
 
-	reader.stmtChanges.Bind(since, since, limit)
-	hasRow, _ := reader.stmtChanges.Step()
 	defer reader.stmtChanges.Reset()
+	if err := reader.stmtChanges.Bind(since, since, limit); err != nil {
+		return nil, err
+	}
+
+	hasRow, err := reader.stmtChanges.Step()
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		changes []byte
 	)
@@ -305,8 +324,12 @@ func (reader *DefaultDatabaseReader) GetChanges(since string, limit int) ([]byte
 // GetLastUpdateSequence get document changes
 func (reader *DefaultDatabaseReader) GetLastUpdateSequence() string {
 
-	hasRow, _ := reader.stmtLastUpdateSequence.Step()
 	defer reader.stmtLastUpdateSequence.Reset()
+	hasRow, err := reader.stmtLastUpdateSequence.Step()
+	if err != nil {
+		panic(err)
+	}
+
 	if hasRow {
 		var maxUpdateSeq string
 		reader.stmtLastUpdateSequence.Scan(&maxUpdateSeq)
@@ -319,8 +342,11 @@ func (reader *DefaultDatabaseReader) GetLastUpdateSequence() string {
 // GetDocumentCount get document count
 func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 
-	hasRow, _ := reader.stmtDocumentCount.Step()
 	defer reader.stmtDocumentCount.Reset()
+	hasRow, err := reader.stmtDocumentCount.Step()
+	if err != nil {
+		panic(err)
+	}
 
 	deleted, count, docCount, deletedDocCount := 0, 0, 0, 0
 	for hasRow {
@@ -330,7 +356,10 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 		} else {
 			deletedDocCount = count
 		}
-		hasRow, _ = reader.stmtDocumentCount.Step()
+		hasRow, err = reader.stmtDocumentCount.Step()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	return docCount, deletedDocCount
