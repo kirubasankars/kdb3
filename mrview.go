@@ -362,6 +362,9 @@ func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string)
 }
 
 func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
+	var invalidKeywords = []string{
+		"PRAGMA", "ALTER", "ATTACH", "TRANSACTION", "DETACH", "DROP", "EXPLAIN", "REINDEX", "SAVEPOINT", "CONFLICT", "UPDATE", "VACUUM",
+	}
 	newDDoc := &DesignDocument{}
 	err := json.Unmarshal(doc.Data, newDDoc)
 	if err != nil {
@@ -395,6 +398,12 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 	var sqlErr = ""
 	for _, v := range newDDoc.Views {
 		for _, x := range v.Setup {
+			for _, invalidKeyword := range invalidKeywords {
+				query := strings.ToLower(x)
+				if strings.Contains(query, strings.ToLower(invalidKeyword)) {
+					sqlErr += fmt.Sprintf("%s: %s", invalidKeyword, "invalid keyword")
+				}
+			}
 			err := db.Exec(x)
 			if err != nil {
 				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
@@ -406,6 +415,12 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		}
 
 		for _, x := range v.Run {
+			for _, invalidKeyword := range invalidKeywords {
+				query := strings.ToLower(x)
+				if strings.Contains(query, " " + strings.ToLower(invalidKeyword) + " ") {
+					sqlErr += fmt.Sprintf("%s: %s", invalidKeyword, "invalid keyword")
+				}
+			}
 			err := db.Exec(x)
 			if err != nil {
 				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
