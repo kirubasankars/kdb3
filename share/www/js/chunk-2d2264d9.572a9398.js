@@ -1,1 +1,0 @@
-(window["webpackJsonp"]=window["webpackJsonp"]||[]).push([["chunk-2d2264d9"],{e7a2:function(a,e,n){"use strict";n.r(e);n("d3b7");var t=[{path:"/appy/list/databases",name:"appy.ListDatabases",component:function(){return n.e("appy").then(n.bind(null,"efe6"))}}],p={namespaced:!0};e["default"]={routes:t,store:p}}}]);

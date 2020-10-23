@@ -401,12 +401,17 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 			for _, invalidKeyword := range invalidKeywords {
 				query := strings.ToLower(x)
 				if strings.Contains(query, strings.ToLower(invalidKeyword)) {
-					sqlErr += fmt.Sprintf("%s: %s", invalidKeyword, "invalid keyword")
+					sqlErr += fmt.Sprintf("%s: %s; ", invalidKeyword, "invalid keyword")
 				}
 			}
+
+			if sqlErr != "" {
+				return errors.New(sqlErr)
+			}
+
 			err := db.Exec(x)
 			if err != nil {
-				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
+				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
 			}
 		}
 
@@ -418,12 +423,17 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 			for _, invalidKeyword := range invalidKeywords {
 				query := strings.ToLower(x)
 				if strings.Contains(query, " " + strings.ToLower(invalidKeyword) + " ") {
-					sqlErr += fmt.Sprintf("%s: %s", invalidKeyword, "invalid keyword")
+					sqlErr += fmt.Sprintf("%s: %s; ", invalidKeyword, "invalid keyword")
 				}
 			}
+
+			if sqlErr != "" {
+				return errors.New(sqlErr)
+			}
+
 			err := db.Exec(x)
 			if err != nil {
-				sqlErr += fmt.Sprintf("%s: %s ;", x, err.Error())
+				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
 			}
 		}
 
