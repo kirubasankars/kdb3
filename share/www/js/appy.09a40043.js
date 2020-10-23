@@ -1,1 +1,0 @@
-(window["webpackJsonp"]=window["webpackJsonp"]||[]).push([["appy"],{efe6:function(e,n,t){"use strict";t.r(n);var u=function(){var e=this,n=e.$createElement,t=e._self._c||n;return t("div",[e._v("test vue")])},l=[],s=t("2877"),a={},c=Object(s["a"])(a,u,l,!1,null,null,null);n["default"]=c.exports}}]);
