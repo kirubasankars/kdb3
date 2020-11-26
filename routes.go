@@ -152,6 +152,12 @@ func NewRouter(kdb *KDB) *mux.Router {
 			kdbHandler.DeleteDDocument,
 		},
 		Route{
+			"SQL",
+			"GET",
+			"/{db}/_design/{docid}/{view}/_changeset",
+			kdbHandler.SQL,
+		},
+		Route{
 			"SelectView",
 			"GET",
 			"/{db}/_design/{docid}/{view}",

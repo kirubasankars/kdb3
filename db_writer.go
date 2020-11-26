@@ -23,6 +23,7 @@ func SetupDatabaseScript() string {
 		CREATE TABLE IF NOT EXISTS documents (
 			doc_id 		TEXT, 
 			version     INTEGER, 
+			hash 		TEXT,
 			kind	    TEXT,
 			deleted     BOOL,
 			data        TEXT,
@@ -31,7 +32,7 @@ func SetupDatabaseScript() string {
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(doc_id, version, kind, deleted);
+			(doc_id, version, hash, kind, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
 			(doc_id, seq_id, deleted);
@@ -70,7 +71,7 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 		writer.Commit()
 	}
 
-	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, kind, deleted, seq_id, data) VALUES(?, ?, CAST(? as TEXT), ?, ?, JSON(?))")
+	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, hash, kind, deleted, seq_id, data) VALUES(?, ?, ?, CAST(? as TEXT), ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -120,5 +121,5 @@ func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Doc
 		kind = []byte(newDoc.Kind)
 	}
 	defer writer.stmtPutDocument.Reset()
-	return  writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, kind, newDoc.Deleted, updateSeqID, newDoc.Data)
+	return  writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Hash, kind, newDoc.Deleted, updateSeqID, newDoc.Data)
 }

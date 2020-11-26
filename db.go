@@ -26,6 +26,7 @@ type Database interface {
 
 	GetStat() *DatabaseStat
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SQL(fromSeqID, designDocID, viewName string) ([]byte, error)
 	ValidateDesignDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
@@ -331,14 +332,14 @@ func (db *DefaultDatabase) Vacuum() error {
 	maxUpdateSequence := db.UpdateSequence
 	vacuumManager.CopyData("", maxUpdateSequence)
 
+	vacuumManager.Vacuum()
+
 	db.Close(false)
 
 	minUpdateSequence := maxUpdateSequence
 	maxUpdateSequence = db.UpdateSequence
 
 	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
-
-	//	vacuumManager.Vacuum()
 
 	localDB := db.serviceLocator.GetLocalDB()
 	localDB.UpdateDatabaseFileName(db.Name, newFileName)
@@ -378,6 +379,19 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 	}
 
 	return db.viewManager.SelectView(db.UpdateSequence, *outputDoc, viewName, selectName, values, stale)
+}
+
+// SQL build sql
+func (db *DefaultDatabase) SQL(fromSeqID, designDocID, viewName string) ([]byte, error) {
+	inputDoc := &Document{ID: designDocID}
+	outputDoc, err := db.GetDocument(inputDoc, true)
+	if err != nil {
+		return nil, err
+	}
+	if fromSeqID == db.UpdateSequence {
+		return nil, nil
+	}
+	return db.viewManager.SQL(fromSeqID, *outputDoc, viewName)
 }
 
 // ValidateDesignDocument validate design document
