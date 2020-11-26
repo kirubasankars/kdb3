@@ -21,6 +21,7 @@ type ViewManager interface {
 	OpenView(docID, viewName string, designDocumentView DesignDocumentView) error
 	GetView(viewName string) (*View, bool)
 	SelectView(updateSeqID string, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SQL(updateSeqID string, doc Document, viewName string) ([]byte, error)
 
 	DeleteViewsIfRemoved(doc Document)
 	ValidateDesignDocument(doc Document) error
@@ -65,14 +66,20 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 			}
 		}
 		if !found {
-			os.Remove(path.Join(mgr.viewDirPath, diskViewFile+dbExt))
+			err = os.Remove(path.Join(mgr.viewDirPath, diskViewFile+dbExt))
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 
 	//load all design docs into memory
 	for _, x := range designDocs {
 		designDoc := &DesignDocument{}
-		err := json.Unmarshal(x.Data, designDoc)
+		doc, _ := ParseDocument(x.Data)
+		err := json.Unmarshal(doc.Data, designDoc)
+		designDoc.Hash = doc.Hash
+		designDoc.Version = doc.Version
 		if err != nil {
 			return err
 		}
@@ -178,6 +185,9 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 		}
 
 		designDocView := designDoc.Views[viewName]
+		if designDocView == nil {
+			return nil, ErrViewNotFound
+		}
 		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
 		mgr.designDocs[doc.ID] = designDoc
 		if err != nil {
@@ -228,6 +238,62 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 	}
 
 	return view.Select(selectName, values)
+}
+
+func (mgr *DefaultViewManager) SQL(fromSeqID string, doc Document, viewName string) ([]byte, error) {
+	designDocID := doc.ID
+	qualifiedViewName := designDocID + "$" + viewName
+
+	mgr.rwMutex.RLock()
+	defer mgr.rwMutex.RUnlock()
+
+	update := func() (*View, error) {
+		mgr.rwMutex.RUnlock() // remove read lock, if any
+		mgr.rwMutex.Lock()    // put write lock
+
+		// in the end
+		defer mgr.rwMutex.RLock()  // put read lock back on.
+		defer mgr.rwMutex.Unlock() // remove write lock
+		// in the end
+
+		designDoc := &DesignDocument{}
+		err := json.Unmarshal(doc.Data, designDoc)
+		if err != nil {
+			panic("invalid_design_document " + doc.ID)
+		}
+		if _, ok := mgr.designDocs[doc.ID]; !ok {
+			// document is new
+			mgr.designDocs[doc.ID] = designDoc
+		}
+
+		designDocView := designDoc.Views[viewName]
+		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
+		mgr.designDocs[doc.ID] = designDoc
+		if err != nil {
+			return nil, err
+		}
+
+		view := mgr.views[qualifiedViewName]
+		return view, nil
+	}
+
+	var err error
+	view, ok := mgr.views[qualifiedViewName]
+	if !ok {
+		// if view not found. try to find and open
+		// new doc handled here
+		view, err = update()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if view == nil {
+		// no view found
+		return nil, ErrViewNotFound
+	}
+
+	return view.SQL(fromSeqID)
 }
 
 func (mgr *DefaultViewManager) Close(closeChannel bool) error {
@@ -304,7 +370,7 @@ func (mgr *DefaultViewManager) DeleteViewsIfRemoved(doc Document) {
 	if doc.Deleted {
 		if designDoc, ok := mgr.designDocs[doc.ID]; ok {
 			var views []string
-			for viewName, _ := range designDoc.Views {
+			for viewName := range designDoc.Views {
 				qualifiedViewName := doc.ID + "$" + viewName
 				views = append(views, qualifiedViewName)
 			}
@@ -321,7 +387,7 @@ func (mgr *DefaultViewManager) DeleteViewsIfRemoved(doc Document) {
 		}
 
 		var deletedViews []string
-		for viewName, _ := range currentDesignDoc.Views {
+		for viewName := range currentDesignDoc.Views {
 			if _, ok := newDesignDoc.Views[viewName]; !ok {
 				qualifiedViewName := doc.ID + "$" + viewName
 				deletedViews = append(deletedViews, qualifiedViewName)
@@ -351,7 +417,7 @@ func (mgr *DefaultViewManager) CalculateSignature(designDocumentView DesignDocum
 }
 
 func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string) {
-	re := regexp.MustCompile(`\$\{(.*?)\}`)
+	re := regexp.MustCompile(`\${(.*?)}`)
 	o := re.FindAllStringSubmatch(query, -1)
 	var params []string
 	for _, x := range o {
@@ -606,6 +672,12 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 	return viewReader.Select(name, values)
 }
 
+func (view *View) SQL(fromSeqID string) ([]byte, error) {
+	vs := view.serviceLocator.GetViewSQLBuilder(view.DBName, view.designDocID, view.name, view.setupScripts, view.runScripts)
+	vs.Open()
+	return vs.SQL(fromSeqID)
+}
+
 func (view *View) Vacuum() error {
 	return nil
 }
@@ -656,9 +728,9 @@ func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
 	}
 
 	err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data FROM docsdb.documents;
+		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted, seq_id FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, data as data, seq_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data, seq_id FROM docsdb.documents
 	`)
 
 	return err

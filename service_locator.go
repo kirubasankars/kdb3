@@ -17,6 +17,7 @@ type ServiceLocator interface {
 	GetViewManager(dbName string) ViewManager
 	GetViewReader(dbName, docID, viewName string, scripts []Query, selectScripts map[string]Query) ViewReader
 	GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter
+	GetViewSQLBuilder(dbName, docID, viewName string, setup, scripts []Query) *ViewSQLChangeSet
 
 	GetVacuumManager(dbName string) VacuumManager
 }
@@ -82,6 +83,14 @@ func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewNa
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
 	connectionString := "file:" + viewFilePath + "?cache=shared&mode=rw"
 	return NewViewReader(dbName, DBPath, connectionString, scripts, selectScripts)
+}
+
+// GetViewSQL resolve ViewSQLChangeSet instance
+func (serviceLocator *DefaultServiceLocator) GetViewSQLBuilder(dbName, docID, viewName string, setup, scripts []Query) *ViewSQLChangeSet {
+	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
+	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
+	qualifiedViewName := docID + "$" + viewName
+	return NewViewSQL(dbName, DBPath, qualifiedViewName, setup, scripts)
 }
 
 // GetViewWriter resolve ViewWriter instance

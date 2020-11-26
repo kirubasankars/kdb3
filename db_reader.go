@@ -61,19 +61,19 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentRevisionByIDandVersion, err = con.Prepare("SELECT doc_id, version, IFNULL(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? LIMIT 1")
+	reader.stmtDocumentRevisionByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, IFNULL(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? LIMIT 1")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentRevisionByID, err = con.Prepare("SELECT doc_id, version, IFNULL(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?")
+	reader.stmtDocumentRevisionByID, err = con.Prepare("SELECT doc_id, version, hash, IFNULL(kind, '') as kind, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentByID, err = con.Prepare("SELECT doc_id, version, IFNULL(kind, '') as kind, deleted, data as data FROM documents WHERE doc_id = ?")
+	reader.stmtDocumentByID, err = con.Prepare("SELECT doc_id, version, hash, IFNULL(kind, '') as kind, deleted, data as data FROM documents WHERE doc_id = ?")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, IFNULL(kind, '') as kind, deleted, data FROM documents WHERE doc_id = ? AND version = ?")
+	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, IFNULL(kind, '') as kind, deleted, data FROM documents WHERE doc_id = ? AND version = ?")
 	if err != nil {
 		return err
 	}
@@ -86,13 +86,13 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 		(
 			SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id ASC LIMIT ?
 		),
-		all_changes_metadata (seq, doc_id, version, deleted) AS 
+		all_changes_metadata (seq, doc_id, version, hash, deleted) AS 
 		(
-			SELECT d.seq_id, d.doc_id, d.version, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id DESC
+			SELECT d.seq_id, d.doc_id, d.version, d.hash, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id DESC
 		),
 		changes_object (obj) as
 		(
-			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'id', doc_id, 'version', version) ELSE JSON_OBJECT('seq', seq, 'id', doc_id, 'version', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
+			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'id', doc_id, 'changes', JSON_GROUP_ARRAY(JSON_OBJECT('rev', printf('%d-%s', version, hash)))) ELSE JSON_OBJECT('seq', seq, 'id', doc_id, 'version', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata GROUP BY doc_id
 		)
 		SELECT JSON_OBJECT('results',JSON_GROUP_ARRAY(obj)) FROM changes_object
 	`)
@@ -130,7 +130,7 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByIDandVersion(ID string
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentRevisionByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted); err != nil {
+		if err := reader.stmtDocumentRevisionByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Kind, &doc.Deleted); err != nil {
 			return nil, err
 		}
 		if doc.Deleted == true {
@@ -157,7 +157,7 @@ func (reader *DefaultDatabaseReader) GetDocumentRevisionByID(ID string) (*Docume
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentRevisionByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted); err != nil {
+		if err := reader.stmtDocumentRevisionByID.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Kind, &doc.Deleted); err != nil {
 			return nil, err
 		}
 		if doc.Deleted == true {
@@ -184,11 +184,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data); err != nil {
+		if err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Kind, &doc.Deleted, &doc.Data); err != nil {
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+		var meta = fmt.Sprintf(`{"_id":"%s","_rev":"%d-%s"`, doc.ID, doc.Version, doc.Hash)
 		if doc.Kind != "" {
 			meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
 		}
@@ -228,12 +228,12 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 
 	if hasRow {
 		doc := &Document{}
-		err := reader.stmtDocumentByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Kind, &doc.Deleted, &doc.Data)
+		err := reader.stmtDocumentByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Kind, &doc.Deleted, &doc.Data)
 		if err != nil {
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_version":%d`, doc.ID, doc.Version)
+		var meta = fmt.Sprintf(`{"_id":"%s","_rev":"%d-%s"`, doc.ID, doc.Version, doc.Hash)
 		if doc.Kind != "" {
 			meta = fmt.Sprintf(`%s,"_kind":"%s"`, meta, doc.Kind)
 		}

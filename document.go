@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ var parserPool fastjson.ParserPool
 type Document struct {
 	ID      string
 	Version int
+	Hash    string
 	Kind    string
 	Deleted bool
 	Data    []byte
@@ -38,6 +40,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	var (
 		id      string
 		version int = 0
+		hash    string
 		deleted bool
 		kind    string
 	)
@@ -47,9 +50,23 @@ func ParseDocument(value []byte) (*Document, error) {
 		v.Del("_id")
 	}
 
-	if v.Exists("_version") {
-		version, _ = strconv.Atoi(v.Get("_version").String())
-		v.Del("_version")
+	if v.Exists("_rev") {
+		rev := strings.ReplaceAll(v.Get("_rev").String(), "\"", "")
+		v.Del("_rev")
+
+		segments := strings.Split(rev, "-")
+		if len(segments) == 2 {
+			version, err = strconv.Atoi(segments[0])
+			if err != nil {
+				return nil, fmt.Errorf("%s", "invalid _rev")
+			}
+			hash = segments[1]
+			if len(hash) != 32 {
+				return nil, fmt.Errorf("%s", "invalid _rev")
+			}
+		} else {
+			return nil, fmt.Errorf("%s", "invalid _rev")
+		}
 	}
 
 	if v.Exists("_kind") {
@@ -64,8 +81,8 @@ func ParseDocument(value []byte) (*Document, error) {
 		deleted = false
 	}
 
-	if id == "" && version != 0 {
-		return nil, fmt.Errorf("%s: %w", "document can't have version without _id", ErrDocumentInvalidInput)
+	if id == "" && (version != 0 || hash != ""){
+		return nil, fmt.Errorf("%s: %w", "document can't have _rev without _id", ErrDocumentInvalidInput)
 	}
 
 	var b []byte
@@ -74,6 +91,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
+	doc.Hash = fmt.Sprintf("%x",md5.Sum(value))
 	doc.Kind = kind
 	doc.Deleted = deleted
 	doc.Data = value

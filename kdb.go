@@ -185,7 +185,7 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
-			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
@@ -262,6 +262,23 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 	}
 
 	rs, err := db.SelectView(designDocID, viewName, selectName, values, stale)
+	if err != nil {
+		return nil, err
+	}
+
+	return rs, nil
+}
+
+// SQL build sql the kdb view
+func (kdb *KDB) SQL(dbName, designDocID, viewName, fromSeqID string) ([]byte, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
+	db, ok := kdb.dbs[dbName]
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+
+	rs, err := db.SQL(fromSeqID, designDocID, viewName)
 	if err != nil {
 		return nil, err
 	}

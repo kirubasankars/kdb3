@@ -152,7 +152,7 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 		NotOK(err, w)
 		return
 	}
-	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)
+	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -205,7 +205,7 @@ func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
 }
 
 func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -327,13 +327,30 @@ func (handler KDBHandler) SelectView(w http.ResponseWriter, r *http.Request) {
 	if includeDocs {
 		selectName = selectName + "_with_docs"
 	}
-	r.ParseForm()
+
 	stale, _ := strconv.ParseBool(r.FormValue("stale"))
 	rs, err := kdb.SelectView(db, ddocID, view, selectName, r.Form, stale)
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(rs)
+}
+
+func (handler KDBHandler) SQL(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
+	vars := mux.Vars(r)
+
+	db := vars["db"]
+	ddocID := "_design/" + vars["docid"]
+	view := vars["view"]
+
+	r.ParseForm()
+	fromSeqID := r.FormValue("from")
+	rs, _ := kdb.SQL(db, ddocID, view, fromSeqID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
