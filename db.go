@@ -417,7 +417,7 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 					],
 					"run" : [
 						"DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, (CASE WHEN kind IS NULL THEN JSON_OBJECT('version', version) ELSE JSON_OBJECT('version', version, 'kind', kind) END) as value, doc_id FROM latest_documents WHERE deleted = 0"
+						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, (CASE WHEN kind IS NULL THEN JSON_OBJECT('rev', rev) ELSE JSON_OBJECT('rev', rev, 'kind', kind) END) as value, doc_id FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
 						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL OR key = ${key}) AND (${next} IS NULL OR key > ${next})",

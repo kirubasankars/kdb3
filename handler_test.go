@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,7 +107,9 @@ func TestHandlerPutDocument(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
+	fmt.Println(string(rr.Body.Bytes()))
 	doc, _ := ParseDocument(rr.Body.Bytes())
+	fmt.Println(doc)
 	if doc.Version != 1 || doc.ID == "" {
 		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
 	}

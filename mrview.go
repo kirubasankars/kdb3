@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"hash/crc32"
 	"io/ioutil"
 	"net/url"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 type ViewManager interface {
@@ -447,11 +448,11 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		if err != nil {
 			return err
 		}
-		err = db.Exec("CREATE VIEW latest_documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
+		err = db.Exec("CREATE VIEW latest_documents (doc_id, rev, deleted, data, kind) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data, '' as kind ;")
 		if err != nil {
 			return err
 		}
-		err = db.Exec("CREATE VIEW documents (doc_id, version, deleted, data, kind) AS select '' as doc_id, 1 as version, 0, '{}' as data, '' as kind ;")
+		err = db.Exec("CREATE VIEW documents (doc_id, rev, deleted, data, kind) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data, '' as kind ;")
 		if err != nil {
 			return err
 		}
@@ -488,7 +489,7 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		for _, x := range v.Run {
 			for _, invalidKeyword := range invalidKeywords {
 				query := strings.ToLower(x)
-				if strings.Contains(query, " " + strings.ToLower(invalidKeyword) + " ") {
+				if strings.Contains(query, " "+strings.ToLower(invalidKeyword)+" ") {
 					sqlErr += fmt.Sprintf("%s: %s; ", invalidKeyword, "invalid keyword")
 				}
 			}
@@ -729,8 +730,8 @@ func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
 
 	err = db.Exec(`
 		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted, seq_id FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version, kind, deleted, data as data, seq_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW documents AS SELECT doc_id, version, kind, deleted, data as data, seq_id FROM docsdb.documents
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, printf('%d-%r', version, hash) as rev, kind, deleted, data as data, seq_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, printf('%d-%r', version, hash) as rev, kind, deleted, data as data, seq_id FROM docsdb.documents
 	`)
 
 	return err
