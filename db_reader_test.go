@@ -14,19 +14,19 @@ func openTestDatabaseForReader() func() {
 	writer.Open(true)
 
 	writer.Begin()
-	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id":1, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
 	writer.PutDocument("seqID1", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
 	writer.PutDocument("seqID2", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705", "_deleted":true}`))
 	writer.PutDocument("seqID3", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
 	writer.PutDocument("seqID3", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705", "_kind": "design", "test":"test"}`))
 	writer.PutDocument("seqID4", doc)
 
 	writer.Commit()
@@ -305,7 +305,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID4","id":"_design/_views","version":1},{"seq":"seqID3","id":"2","version":2,"deleted":true},{"seq":"seqID3","id":"invalid","version":1},{"seq":"seqID1","id":"1","version":1}]}`
+	expected := `{"results":[{"seq":"seqID1","id":"1","changes":[{"rev":"1-99914b932bd37a50b983c5e7c90ae93b"}]},{"seq":"seqID3","id":"2","version":2,"deleted":true},{"seq":"seqID4","id":"_design/_views","changes":[{"rev":"1-828bcef8763c1bc616e25a06be4b90ff"}]},{"seq":"seqID3","id":"invalid","changes":[{"rev":"1-99914b932bd37a50b983c5e7c90ae93b"}]}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))

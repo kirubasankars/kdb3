@@ -10,7 +10,7 @@ func formatDocString(id string, version int, hash string, deleted bool) string {
 	var item []string
 	item = append(item, fmt.Sprintf(`"_id":"%s"`, id))
 	if version != 0 {
-		item = append(item, fmt.Sprintf(`"_rev":%d-%s`, version, hash))
+		item = append(item, fmt.Sprintf(`"_rev":"%d-%s"`, version, hash))
 	}
 	if deleted {
 		item = append(item, fmt.Sprintf(`"_deleted":true`))

@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestFormatDocString1(t *testing.T) {
-	o := formatDocString("1", 1, false)
+	o := formatDocString("1", 1, "", false)
 	expected := `{"_id":"1","_version":1}`
 
 	if o != expected {
@@ -12,7 +12,7 @@ func TestFormatDocString1(t *testing.T) {
 }
 
 func TestFormatDocString2(t *testing.T) {
-	o := formatDocString("1", 0, false)
+	o := formatDocString("1", 0, "", false)
 	expected := `{"_id":"1"}`
 
 	if o != expected {
@@ -21,7 +21,7 @@ func TestFormatDocString2(t *testing.T) {
 }
 
 func TestFormatDocString3(t *testing.T) {
-	o := formatDocString("1", 0, true)
+	o := formatDocString("1", 0, "", true)
 	expected := `{"_id":"1","_deleted":true}`
 
 	if o != expected {
@@ -30,7 +30,7 @@ func TestFormatDocString3(t *testing.T) {
 }
 
 func TestFormatDocString4(t *testing.T) {
-	o := formatDocString("1", 2, true)
+	o := formatDocString("1", 2, "", true)
 	expected := `{"_id":"1","_version":2,"_deleted":true}`
 
 	if o != expected {
@@ -39,7 +39,7 @@ func TestFormatDocString4(t *testing.T) {
 }
 
 func TestOKTrue(t *testing.T) {
-	o := OK(true, formatDocString("1", 2, true))
+	o := OK(true, formatDocString("1", 2, "", true))
 	expected := `{"ok":true,"_id":"1","_version":2,"_deleted":true}`
 
 	if o != expected {
@@ -48,7 +48,7 @@ func TestOKTrue(t *testing.T) {
 }
 
 func TestOKFalse(t *testing.T) {
-	o := OK(false, formatDocString("1", 2, true))
+	o := OK(false, formatDocString("1", 2, "", true))
 	expected := `{"ok":false,"_id":"1","_version":2,"_deleted":true}`
 
 	if o != expected {
