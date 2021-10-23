@@ -722,7 +722,7 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 }
 
 func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
-	err := db.Exec("ATTACH DATABASE 'file://" + absoluteDatabasePath + "?cache=shared&mode=ro' as docsdb;")
+	err := db.Exec("ATTACH DATABASE 'file:" + absoluteDatabasePath + "?cache=shared&mode=ro' as docsdb;")
 	if err != nil {
 		return err
 	}
