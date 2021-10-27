@@ -25,6 +25,6 @@ jobs:
         fi
 
     - name: Build
-      run: go build -tags "json1" -v .
+      run: go build -v .
     - name: Test
-      run: go test -tags "json1"
+      run: go test
