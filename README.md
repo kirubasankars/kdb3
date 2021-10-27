@@ -66,8 +66,7 @@ Example view definition:
 
     {
       "_id": "_design/posts",
-      "_version": 1,
-      "_kind": "design",
+      "_rev": "1-",
       "views": {
         "_all_posts": {
           "setup": [
@@ -197,7 +196,6 @@ View can be executed with followings
     {
       "_id": "_design/_views",
       "_version": 1,
-      "_kind": "design",
       "views": {
         "_all_docs": {
           "setup": [

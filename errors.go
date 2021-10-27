@@ -18,6 +18,8 @@ var (
 	ErrDatabaseInvalidName = errors.New("invalid_db_name")
 	// ErrDocumentInvalidID invalid_doc_id
 	ErrDocumentInvalidID = errors.New("invalid_doc_id")
+	// ErrDocumentInvalidID invalid_doc_id
+	ErrDocumentInvalidRev = errors.New("invalid_rev_id")
 	// ErrDocumentConflict doc_conflict
 	ErrDocumentConflict = errors.New("doc_conflict")
 	// ErrDocumentNotFound doc_not_found
@@ -83,6 +85,8 @@ func errorString(err error) (string, string) {
 		return ErrViewResult.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrInvalidSQLStmt):
 		return ErrInvalidSQLStmt.Error(), getErrorDescription(err)
+	case errors.Is(err, ErrDocumentInvalidRev):
+		return ErrDocumentInvalidRev.Error(), getErrorDescription(err)
 	default:
 		return ErrInternalError.Error(), getErrorDescription(err)
 	}
@@ -96,7 +100,7 @@ func NotOK(err error, w http.ResponseWriter) {
 	)
 
 	switch {
-	case errors.Is(err, ErrDatabaseExists) || errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrInvalidSQLStmt):
+	case errors.Is(err, ErrDatabaseExists) || errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrDocumentInvalidRev):
 		statusCode = http.StatusPreconditionFailed
 	case errors.Is(err, ErrDocumentConflict):
 		statusCode = http.StatusConflict

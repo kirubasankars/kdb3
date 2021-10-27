@@ -105,19 +105,33 @@ func (db *DefaultDatabase) Close(closeChannel bool) error {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
-	writer := <-db.writer
-	writer.Close()
+	err := db.viewManager.Close(closeChannel)
+	if err != nil {
+		return err
+	}
 
+	writer := <-db.writer
+	err = writer.Close()
+	if err != nil {
+		return err
+	}
+
+	var foundError error
 	// close all readers
 	func() {
 		readersCount := cap(db.reader)
 		for i := 0; i < readersCount; i++ {
 			reader := <-db.reader
-			reader.Close()
+			err = reader.Close()
+			if err != nil {
+				foundError = err
+			}
 		}
 	}()
 
-	db.viewManager.Close(closeChannel)
+	if foundError != nil {
+		return foundError
+	}
 
 	if closeChannel {
 		close(db.writer)
@@ -146,7 +160,7 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 		doc.ID = db.idSeq.Next()
 	}
 
-	currentDoc, err := writer.GetDocumentRevisionByID(doc.ID)
+	currentDoc, err := writer.GetDocumentMetadataByID(doc.ID)
 	if err != nil && err != ErrDocumentNotFound {
 		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
@@ -163,8 +177,12 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 					return nil, ErrDocumentConflict
 				}
 			} else {
-				doc.Version = currentDoc.Version
+				return nil, ErrDocumentConflict
 			}
+		}
+	} else {
+		if doc.Version > 0 {
+			return nil, ErrDocumentConflict
 		}
 	}
 
@@ -226,9 +244,9 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 	}
 
 	if doc.Version > 0 {
-		return reader.GetDocumentRevisionByIDandVersion(doc.ID, doc.Version)
+		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)
 	}
-	return reader.GetDocumentRevisionByID(doc.ID)
+	return reader.GetDocumentMetadataByID(doc.ID)
 }
 
 // GetAllDesignDocuments get all design document
@@ -409,7 +427,6 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 	doc := `
 		{
 			"_id" : "_design/_views",
-			"_kind" : "design",
 			"views" : {
 				"_all_docs" : {
 					"setup" : [
@@ -417,7 +434,7 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 					],
 					"run" : [
 						"DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, (CASE WHEN kind IS NULL THEN JSON_OBJECT('version', version) ELSE JSON_OBJECT('version', version, 'kind', kind) END) as value, doc_id FROM latest_documents WHERE deleted = 0"
+						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('rev', rev) as value, doc_id FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
 						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL OR key = ${key}) AND (${next} IS NULL OR key > ${next})",

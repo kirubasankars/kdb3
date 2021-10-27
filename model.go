@@ -19,9 +19,8 @@ type DesignDocumentView struct {
 type DesignDocument struct {
 	ID      string                         `json:"_id"`
 	Version int                            `json:"-"`
-	Hash    string 						   `json:"-"`
-	Rev     string						   `json:"_rev"`
-	Kind    string                         `json:"_kind"`
+	Hash    string                         `json:"-"`
+	Rev     string                         `json:"_rev"`
 	Views   map[string]*DesignDocumentView `json:"views"`
 }
 

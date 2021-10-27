@@ -3,17 +3,16 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-func formatDocString(id string, version int, hash string, deleted bool) string {
+func formatDocumentString(id string, version int, hash string, deleted bool) string {
 	var item []string
 	item = append(item, fmt.Sprintf(`"_id":"%s"`, id))
-	if version != 0 {
-		item = append(item, fmt.Sprintf(`"_rev":%d-%s`, version, hash))
-	}
+	item = append(item, fmt.Sprintf(`"_rev":"%d-%s"`, version, hash))
 	if deleted {
-		item = append(item, fmt.Sprintf(`"_deleted":true`))
+		item = append(item, `"_deleted":true`)
 	}
 	return fmt.Sprintf(`{%s}`, strings.Join(item, ","))
 }
@@ -29,4 +28,22 @@ func randomBytes(n int) []byte {
 	bytes := make([]byte, n)
 	_, _ = rand.Read(bytes)
 	return bytes
+}
+
+func SplitRev(rev string) (int, string, error) {
+	if rev != "" {
+		segments := strings.Split(rev, "-")
+		if len(segments) == 2 {
+			version, err := strconv.Atoi(segments[0])
+			if err != nil {
+				return 0, "", fmt.Errorf("%s", "invalid _rev")
+			}
+			hash := segments[1]
+			if len(hash) != 32 {
+				return 0, "", fmt.Errorf("%s", "invalid _rev")
+			}
+			return version, hash, nil
+		}
+	}
+	return 0, "", fmt.Errorf("%s", "invalid _rev")
 }

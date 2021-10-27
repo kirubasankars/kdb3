@@ -14,7 +14,7 @@ type DatabaseWriter interface {
 
 	ExecBuildScript() error
 
-	GetDocumentRevisionByID(docID string) (*Document, error)
+	GetDocumentMetadataByID(docID string) (*Document, error)
 	PutDocument(updateSeqID string, newDoc *Document) error
 }
 
@@ -24,7 +24,6 @@ func SetupDatabaseScript() string {
 			doc_id 		TEXT, 
 			version     INTEGER, 
 			hash 		TEXT,
-			kind	    TEXT,
 			deleted     BOOL,
 			data        TEXT,
 			seq_id 		TEXT,
@@ -32,13 +31,10 @@ func SetupDatabaseScript() string {
 		) WITHOUT ROWID;
 		
 		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(doc_id, version, hash, kind, deleted);
+			(doc_id, version, hash, deleted);
 
 		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
 			(doc_id, seq_id, deleted);
-
-		CREATE INDEX IF NOT EXISTS idx_kind ON documents 
-			(doc_id, kind) WHERE kind IS NOT NULL;
 		`
 	return buildSQL
 }
@@ -46,8 +42,8 @@ func SetupDatabaseScript() string {
 type DefaultDatabaseWriter struct {
 	connectionString string
 
-	reader 			*DefaultDatabaseReader
-	conn   			*sqlite3.Conn
+	reader          *DefaultDatabaseReader
+	conn            *sqlite3.Conn
 	stmtPutDocument *sqlite3.Stmt
 }
 
@@ -71,7 +67,7 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 		writer.Commit()
 	}
 
-	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, hash, kind, deleted, seq_id, data) VALUES(?, ?, ?, CAST(? as TEXT), ?, ?, ?)")
+	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, hash, deleted, seq_id, data) VALUES(?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -86,7 +82,8 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 
 // Close connection
 func (writer *DefaultDatabaseWriter) Close() error {
-	return writer.conn.Close()
+	writer.stmtPutDocument.Close()
+	return writer.reader.Close()
 }
 
 // Begin begin transaction
@@ -110,16 +107,12 @@ func (writer *DefaultDatabaseWriter) ExecBuildScript() error {
 }
 
 // GetDocumentRevisionByID get document revision by id
-func (writer *DefaultDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
-	return writer.reader.GetDocumentRevisionByID(docID)
+func (writer *DefaultDatabaseWriter) GetDocumentMetadataByID(docID string) (*Document, error) {
+	return writer.reader.GetDocumentMetadataByID(docID)
 }
 
 // PutDocument put document
 func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document) error {
-	var kind []byte
-	if newDoc.Kind != "" {
-		kind = []byte(newDoc.Kind)
-	}
 	defer writer.stmtPutDocument.Reset()
-	return  writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Hash, kind, newDoc.Deleted, updateSeqID, newDoc.Data)
+	return writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Hash, newDoc.Deleted, updateSeqID, newDoc.Data)
 }
