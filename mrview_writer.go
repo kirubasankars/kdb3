@@ -14,14 +14,14 @@ type ViewWriter interface {
 
 type DefaultViewWriter struct {
 	connectionString string
-	dbName 			 string
+	dbName           string
 	con              *sqlite3.Conn
 
 	absoluteDatabasePath string
 	setupScripts         []Query
 	scripts              []Query
 
-	stmtUpdateViewMeta   *sqlite3.Stmt
+	stmtUpdateViewMeta *sqlite3.Stmt
 }
 
 func (vw *DefaultViewWriter) Open() error {
@@ -69,6 +69,7 @@ func (vw *DefaultViewWriter) Open() error {
 }
 
 func (vw *DefaultViewWriter) Close() error {
+	vw.stmtUpdateViewMeta.Close()
 	return vw.con.Close()
 }
 

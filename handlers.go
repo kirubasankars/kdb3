@@ -52,7 +52,7 @@ func (handler KDBHandler) PutDatabase(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"ok":true}`)
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 func (handler KDBHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +66,7 @@ func (handler KDBHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"ok":true}`)
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 func (handler KDBHandler) DatabaseAllDocs(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func (handler KDBHandler) DatabaseCompact(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"ok":true}`)
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -152,7 +152,7 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 		NotOK(err, w)
 		return
 	}
-	output := formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted)
+	output := formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -161,16 +161,17 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 
 func (handler KDBHandler) getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
-	ver := r.FormValue("version")
-	var inputDoc = &Document{}
-	if ver != "" {
-		version, _ := strconv.Atoi(ver)
-		inputDoc.ID = docid
-		inputDoc.Version = version
-	} else {
-		inputDoc.ID = docid
+	rev := r.FormValue("rev")
+	version, hash := 0, ""
+	if rev != "" {
+		var err error
+		version, hash, err = SplitRev(rev)
+		if err != nil {
+			NotOK(err, w)
+			return
+		}
 	}
-
+	var inputDoc = &Document{ID: docid, Version: version, Hash: hash}
 	outputDoc, err := kdb.GetDocument(db, inputDoc, includeDocs)
 	if err != nil {
 		NotOK(err, w)
@@ -186,17 +187,13 @@ func (handler KDBHandler) getDocument(db, docid string, includeDocs bool, w http
 
 func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
-	ver := r.FormValue("version")
-
-	if ver == "" {
-		ver = r.Header.Get("If-Match")
-	}
-	if ver == "" {
-		NotOK(errors.New("version_missing"), w)
+	rev := r.FormValue("rev")
+	version, hash, err := SplitRev(rev)
+	if err != nil {
+		NotOK(err, w)
 		return
 	}
-	version, _ := strconv.Atoi(ver)
-	inputDoc := &Document{ID: docid, Version: version, Deleted: true}
+	inputDoc := &Document{ID: docid, Version: version, Hash: hash, Deleted: true}
 	outputDoc, err := kdb.DeleteDocument(db, inputDoc)
 	if err != nil {
 		NotOK(err, w)
@@ -205,7 +202,7 @@ func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
+	fmt.Fprint(w, formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
 }
 
 func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -390,7 +387,7 @@ func (handler KDBHandler) Vacuum(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"ok":true}`)
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 func NewKDBHandler(kdb *KDB) KDBHandler {

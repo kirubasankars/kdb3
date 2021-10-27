@@ -14,20 +14,20 @@ func openTestDatabaseForReader() func() {
 	writer.Open(true)
 
 	writer.Begin()
-	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
+	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705", "test":"test"}`))
 	writer.PutDocument("seqID1", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
 	writer.PutDocument("seqID2", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
 	writer.PutDocument("seqID3", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
-	writer.PutDocument("seqID3", doc)
-
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705", "_deleted":true}`))
 	writer.PutDocument("seqID4", doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
+	writer.PutDocument("seqID5", doc)
 
 	writer.Commit()
 
@@ -61,7 +61,7 @@ func TestReaderGetDocumentByID(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -70,7 +70,7 @@ func TestReaderGetDocumentByID(t *testing.T) {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
-	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -79,7 +79,7 @@ func TestReaderGetDocumentByID(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -88,7 +88,7 @@ func TestReaderGetDocumentByID(t *testing.T) {
 	//	t.Errorf("expected error %s", ErrDocumentNotFound)
 	//}
 
-	doc, err = reader.GetDocumentByID("nothing")
+	_, err = reader.GetDocumentByID("nothing")
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -97,7 +97,7 @@ func TestReaderGetDocumentByID(t *testing.T) {
 	reader.Close()
 }
 
-func TestReaderGetDocumentRevisionByID(t *testing.T) {
+func TestReaderGetDocumentMetadataByID(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
 
@@ -107,30 +107,30 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 
 	reader.Begin()
 
-	doc, err := reader.GetDocumentRevisionByID("1")
+	doc, err := reader.GetDocumentMetadataByID("1")
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentRevisionByID("2")
+	doc, err = reader.GetDocumentMetadataByID("2")
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
-	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentRevisionByID("_design/_views")
+	doc, err = reader.GetDocumentMetadataByID("_design/_views")
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -139,7 +139,7 @@ func TestReaderGetDocumentRevisionByID(t *testing.T) {
 	//	t.Errorf("expected error %s", ErrDocumentNotFound)
 	//}
 
-	doc, err = reader.GetDocumentRevisionByID("nothing")
+	_, err = reader.GetDocumentMetadataByID("nothing")
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -167,7 +167,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -176,7 +176,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
-	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -185,7 +185,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
@@ -194,7 +194,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 	//	t.Errorf("expected error %s", ErrDocumentNotFound)
 	//}
 
-	doc, err = reader.GetDocumentByIDandVersion("nothing", 1)
+	_, err = reader.GetDocumentByIDandVersion("nothing", 1)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -203,7 +203,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 	reader.Close()
 }
 
-func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
+func TestReaderGetDocumentMetadataByIDandVersion(t *testing.T) {
 	dbHandle := openTestDatabaseForReader()
 	defer dbHandle()
 
@@ -213,43 +213,43 @@ func TestReaderGetDocumentRevisionByIDandVersion(t *testing.T) {
 
 	reader.Begin()
 
-	if _, err := reader.GetDocumentRevisionByIDandVersion("1", 1); err != nil {
+	if _, err := reader.GetDocumentMetadataByIDandVersion("1", 1); err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	doc, err := reader.GetDocumentRevisionByIDandVersion("1", 1)
+	doc, err := reader.GetDocumentMetadataByIDandVersion("1", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "") {
+	if !(doc.ID == "1" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentRevisionByIDandVersion("2", 2)
+	doc, err = reader.GetDocumentMetadataByIDandVersion("2", 2)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
-	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true && doc.Kind == "") {
+	if !(doc.ID == "2" && doc.Version == 2 && doc.Deleted == true) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentRevisionByIDandVersion("_design/_views", 1)
+	doc, err = reader.GetDocumentMetadataByIDandVersion("_design/_views", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false && doc.Kind == "design") {
+	if !(doc.ID == "_design/_views" && doc.Version == 1 && doc.Deleted == false) {
 		t.Errorf("unexpected doc values")
 	}
 
-	//doc, err = reader.GetDocumentRevisionByIDandVersion("invalid", 1)
-	//if err == nil {
-	//	t.Errorf("expected error %s", ErrDocumentNotFound)
-	//}
+	_, err = reader.GetDocumentMetadataByIDandVersion("invalid", 1)
+	if err != nil {
+		t.Errorf("expected error %s", ErrDocumentNotFound)
+	}
 
-	doc, err = reader.GetDocumentRevisionByIDandVersion("nothing", 1)
+	_, err = reader.GetDocumentMetadataByIDandVersion("nothing", 1)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -288,8 +288,8 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 	reader.Begin()
 
 	seqID := reader.GetLastUpdateSequence()
-	if seqID != "seqID4" {
-		t.Errorf("expected last seqID as %s, got %s", "seqID4", seqID)
+	if seqID != "seqID5" {
+		t.Errorf("expected last seqID as %s, got %s", "seqID5", seqID)
 	}
 
 	reader.Commit()
@@ -305,7 +305,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID4","id":"_design/_views","version":1},{"seq":"seqID3","id":"2","version":2,"deleted":true},{"seq":"seqID3","id":"invalid","version":1},{"seq":"seqID1","id":"1","version":1}]}`
+	expected := `{"results":[{"seq":"seqID5","id":"invalid","rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"seq":"seqID4","id":"2","rev":"2-99914b932bd37a50b983c5e7c90ae93b","deleted":true},{"seq":"seqID2","id":"1","rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"seq":"seqID1","id":"_design/_views","rev":"1-828bcef8763c1bc616e25a06be4b90ff"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))

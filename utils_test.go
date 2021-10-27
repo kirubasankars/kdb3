@@ -3,26 +3,8 @@ package main
 import "testing"
 
 func TestFormatDocString1(t *testing.T) {
-	o := formatDocString("1", 1, false)
-	expected := `{"_id":"1","_version":1}`
-
-	if o != expected {
-		t.Errorf("expected %s, got %s", expected, o)
-	}
-}
-
-func TestFormatDocString2(t *testing.T) {
-	o := formatDocString("1", 0, false)
-	expected := `{"_id":"1"}`
-
-	if o != expected {
-		t.Errorf("expected %s, got %s", expected, o)
-	}
-}
-
-func TestFormatDocString3(t *testing.T) {
-	o := formatDocString("1", 0, true)
-	expected := `{"_id":"1","_deleted":true}`
+	o := formatDocumentString("1", 1, "4dd69f96755b8be0c5d6a4c4d875e705", false)
+	expected := `{"_id":"1","_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`
 
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
@@ -30,8 +12,8 @@ func TestFormatDocString3(t *testing.T) {
 }
 
 func TestFormatDocString4(t *testing.T) {
-	o := formatDocString("1", 2, true)
-	expected := `{"_id":"1","_version":2,"_deleted":true}`
+	o := formatDocumentString("1", 2, "4dd69f96755b8be0c5d6a4c4d875e705", true)
+	expected := `{"_id":"1","_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705","_deleted":true}`
 
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
@@ -39,8 +21,8 @@ func TestFormatDocString4(t *testing.T) {
 }
 
 func TestOKTrue(t *testing.T) {
-	o := OK(true, formatDocString("1", 2, true))
-	expected := `{"ok":true,"_id":"1","_version":2,"_deleted":true}`
+	o := OK(true, formatDocumentString("1", 2, "4dd69f96755b8be0c5d6a4c4d875e705", true))
+	expected := `{"ok":true,"_id":"1","_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705","_deleted":true}`
 
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
@@ -48,8 +30,8 @@ func TestOKTrue(t *testing.T) {
 }
 
 func TestOKFalse(t *testing.T) {
-	o := OK(false, formatDocString("1", 2, true))
-	expected := `{"ok":false,"_id":"1","_version":2,"_deleted":true}`
+	o := OK(false, formatDocumentString("1", 2, "4dd69f96755b8be0c5d6a4c4d875e705", true))
+	expected := `{"ok":false,"_id":"1","_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705","_deleted":true}`
 
 	if o != expected {
 		t.Errorf("expected %s, got %s", expected, o)
