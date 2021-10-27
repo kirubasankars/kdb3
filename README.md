@@ -3,7 +3,7 @@ database written in Go with sqlite3 as storage and query/view engine. documentat
 
 Features
   1. Document Database
-  2. Optimistic Concurrency (optional)
+  2. Optimistic Concurrency
   3. Restful API
   4. Change tracking
   5. Incrementally updated Materialized View (with sqlite3)
