@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -142,7 +143,6 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") {
-		newDoc.Kind = "design"
 		err := db.ValidateDesignDocument(*newDoc)
 		if err != nil {
 			return nil, err
@@ -185,7 +185,7 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
 		} else {
-			jsonb = []byte(formatDocString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
+			jsonb = []byte(formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
 		}
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
@@ -305,14 +305,13 @@ func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 		os.Remove(filepath.Join(viewPath, vf+dbExt))
 	}
 	fileName := dbname + dbExt
-	os.Remove(filepath.Join(dbPath, fileName+"-shm"))
-	os.Remove(filepath.Join(dbPath, fileName+"-wal"))
 	os.Remove(filepath.Join(dbPath, fileName))
 }
 
 // ValidateDatabaseName validate correctness of the name
 func ValidateDatabaseName(name string) bool {
-	if len(name) <= 0 || strings.Contains(name, "$") || name[0] == '_' {
+	re := regexp.MustCompile(`^([a-z]+([0-9-]+)?)$`)
+	if len(name) <= 0 || !re.Match([]byte(name)) {
 		return false
 	}
 	return true

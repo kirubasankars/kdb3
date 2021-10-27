@@ -19,8 +19,8 @@ type DefaultViewReader struct {
 	absoluteDatabasePath string
 	selectScripts        map[string]Query
 	setupScripts         []Query
-	dbName 				 string
-	con *sqlite3.Conn
+	dbName               string
+	con                  *sqlite3.Conn
 }
 
 func (vr *DefaultViewReader) Open() error {
@@ -89,7 +89,6 @@ func (vr *DefaultViewReader) Select(name string, values url.Values) ([]byte, err
 		}
 		return []byte(rs), nil
 	}
-
 	return nil, nil
 }
 

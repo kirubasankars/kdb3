@@ -1,9 +1,7 @@
 package main
 
 import (
-	"expvar"
 	"net/http"
-	"net/http/pprof"
 	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
@@ -21,17 +19,6 @@ type Routes []Route
 func NewRouter(kdb *KDB) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 	kdbHandler := NewKDBHandler(kdb)
-	router.Handle("/_debug/vars", expvar.Handler())
-	router.HandleFunc("/_debug/pprof", pprof.Index)
-	router.Handle("/_debug/allocs", pprof.Handler("allocs"))
-	router.Handle("/_debug/block", pprof.Handler("block"))
-	router.Handle("/_debug/cmdline", pprof.Handler("cmdline"))
-	router.Handle("/_debug/goroutine", pprof.Handler("goroutine"))
-	router.Handle("/_debug/heap", pprof.Handler("heap"))
-	router.Handle("/_debug/mutex", pprof.Handler("mutex"))
-	router.Handle("/_debug/profile", pprof.Handler("profile"))
-	router.Handle("/_debug/threadcreate", pprof.Handler("threadcreate"))
-	router.Handle("/_debug/trace", pprof.Handler("trace"))
 
 	router.PathPrefix("/_utils").
 		Handler(http.StripPrefix("/_utils", http.FileServer(http.Dir("./share/www/"))))
@@ -138,6 +125,12 @@ func NewRouter(kdb *KDB) *mux.Router {
 			"GET",
 			"/{db}/_design/{docid}",
 			kdbHandler.GetDDocument,
+		},
+		Route{
+			"PostDDocument",
+			"POST",
+			"/{db}/_design/{docid}",
+			kdbHandler.PutDDocument,
 		},
 		Route{
 			"PutDDocument",

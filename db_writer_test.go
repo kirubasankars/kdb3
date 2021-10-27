@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -28,7 +27,7 @@ func openTestDatabaseForWriter() func() {
 	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
 	writer.PutDocument("seqID3", doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "_kind": "design", "test":"test"}`))
+	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
 	writer.PutDocument("seqID4", doc)
 
 	writer.Commit()
@@ -63,12 +62,7 @@ func TestWriterPutDocument(t *testing.T) {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
-	doc, _ = ParseDocument([]byte(`{"_id":1, "_kind":"design"}`))
-	if err := writer.PutDocument("seqID", doc); err != nil {
-		t.Errorf("unable to put document, error %s", err.Error())
-	}
-
-	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
+	if _, err := writer.GetDocumentMetadataByID("1"); err != nil {
 		t.Errorf("unable to get document, error %s", err.Error())
 	}
 
@@ -76,7 +70,7 @@ func TestWriterPutDocument(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err != nil {
+	if _, err := writer.GetDocumentMetadataByID("1"); err != nil {
 		t.Errorf("unable to get document, error %s", err.Error())
 	}
 
@@ -93,7 +87,7 @@ func TestWriterPutDocument(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("new"); err == nil {
+	if _, err := writer.GetDocumentMetadataByID("new"); err == nil {
 		t.Errorf("unable to get document, error %s", err.Error())
 	}
 
@@ -131,7 +125,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("1"); err == nil || err != ErrDocumentNotFound {
+	if _, err := writer.GetDocumentMetadataByID("1"); err == nil || err != ErrDocumentNotFound {
 		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
 	}
 
@@ -151,9 +145,8 @@ func TestWriterDocNotFound(t *testing.T) {
 
 	writer.Begin()
 
-	if _, err := writer.GetDocumentRevisionByID("4"); err == nil || err != ErrDocumentNotFound {
+	if _, err := writer.GetDocumentMetadataByID("4"); err == nil || err != ErrDocumentNotFound {
 		t.Errorf("expected %s, got doc or err %s", ErrDocumentNotFound, err)
-		fmt.Println(err)
 	}
 
 	writer.Commit()
