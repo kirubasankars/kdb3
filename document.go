@@ -79,6 +79,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	doc.Version = version
 
 	var buf bytes.Buffer
+	buf.Write([]byte(hash))
 	buf.Write(value)
 	doc.Hash = fmt.Sprintf("%x", md5.Sum(buf.Bytes()))
 
