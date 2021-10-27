@@ -305,7 +305,7 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID5","id":"invalid","rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"seq":"seqID4","id":"2","rev":"2-99914b932bd37a50b983c5e7c90ae93b","deleted":true},{"seq":"seqID2","id":"1","rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"seq":"seqID1","id":"_design/_views","rev":"1-828bcef8763c1bc616e25a06be4b90ff"}]}`
+	expected := `{"results":[{"seq":"seqID5","id":"invalid","rev":"1-eb42be79fe2732f71292f958eb6aee4a"},{"seq":"seqID4","id":"2","rev":"2-eb42be79fe2732f71292f958eb6aee4a","deleted":true},{"seq":"seqID2","id":"1","rev":"1-eb42be79fe2732f71292f958eb6aee4a"},{"seq":"seqID1","id":"_design/_views","rev":"1-61da76158acbbf5214b2fdefb10ec8aa"}]}`
 	changes, _ := reader.GetChanges("", 999)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
