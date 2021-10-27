@@ -33,7 +33,7 @@ func NewRouter(kdb *KDB) *mux.Router {
 		Route{
 			"AllDatabases",
 			"GET",
-			"/_all_dbs",
+			"/_cat/dbs",
 			kdbHandler.AllDatabases,
 		},
 		Route{
@@ -53,12 +53,6 @@ func NewRouter(kdb *KDB) *mux.Router {
 			"PUT",
 			"/{db}",
 			kdbHandler.PutDatabase,
-		},
-		Route{
-			"PostDatabase",
-			"POST",
-			"/{db}",
-			kdbHandler.PutDocument,
 		},
 		Route{
 			"DeleteDatabase",
@@ -91,12 +85,6 @@ func NewRouter(kdb *KDB) *mux.Router {
 			kdbHandler.DatabaseChanges,
 		},
 		Route{
-			"DatabaseCompact",
-			"POST",
-			"/{db}/_compact",
-			kdbHandler.DatabaseCompact,
-		},
-		Route{
 			"GetDocument",
 			"GET",
 			"/{db}/{docid}",
@@ -107,6 +95,12 @@ func NewRouter(kdb *KDB) *mux.Router {
 			"HEAD",
 			"/{db}/{docid}",
 			kdbHandler.HeadDocument,
+		},
+		Route{
+			"PostDocument",
+			"POST",
+			"/{db}",
+			kdbHandler.PutDocument,
 		},
 		Route{
 			"PutDocument",
@@ -145,19 +139,13 @@ func NewRouter(kdb *KDB) *mux.Router {
 			kdbHandler.DeleteDDocument,
 		},
 		Route{
-			"SQL",
-			"GET",
-			"/{db}/_design/{docid}/{view}/_changeset",
-			kdbHandler.SQL,
-		},
-		Route{
 			"SelectView",
 			"GET",
 			"/{db}/_design/{docid}/{view}",
 			kdbHandler.SelectView,
 		},
 		Route{
-			"SelectView",
+			"SelectViewSelect",
 			"GET",
 			"/{db}/_design/{docid}/{view}/{select}",
 			kdbHandler.SelectView,

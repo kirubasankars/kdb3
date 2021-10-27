@@ -368,8 +368,6 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	dbPath := db.serviceLocator.GetDBDirPath()
 	oldFile := currentFileName + dbExt
-	os.Remove(filepath.Join(dbPath, oldFile+"-shm"))
-	os.Remove(filepath.Join(dbPath, oldFile+"-wal"))
 	os.Remove(filepath.Join(dbPath, oldFile))
 
 	/*

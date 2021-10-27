@@ -108,21 +108,6 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 	w.Write(rs)
 }
 
-func (handler KDBHandler) DatabaseCompact(w http.ResponseWriter, r *http.Request) {
-	kdb := handler.kdb
-	vars := mux.Vars(r)
-	db := vars["db"]
-	err := kdb.Vacuum(db)
-	if err != nil {
-		NotOK(err, w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `{"ok":true}`)
-}
-
 func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
