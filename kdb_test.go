@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -234,137 +235,137 @@ func TestDeleteDocument(t *testing.T) {
 // 	}
 // }
 
-// func TestDatabaseStat(t *testing.T) {
-// 	kdb, _ := NewKDB()
-// 	err := kdb.Open("testdb", true)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+func TestDatabaseStat(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	stat, err := kdb.DBStat("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	stat, err := kdb.DBStat("testdb")
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	if stat.DocCount != 1 || stat.DBName != "testdb" || stat.UpdateSeq == "" {
-// 		t.Error("db stat err")
-// 	}
+	if stat.DocCount != 1 || stat.DBName != "testdb" || stat.UpdateSeq == "" {
+		t.Error("db stat err")
+	}
 
-// 	err = kdb.Delete("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// }
+	err = kdb.Delete("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+}
 
-// func TestGetDesignDocumentAllViews(t *testing.T) {
-// 	kdb, _ := NewKDB()
-// 	err := kdb.Open("testdb", true)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+func TestGetDesignDocumentAllViews(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	stat, err := kdb.DBStat("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	stat, err := kdb.DBStat("testdb")
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	if stat.DocCount != 1 {
-// 		t.Error("db creation err")
-// 	}
+	if stat.DocCount != 1 {
+		t.Error("db creation err")
+	}
 
-// 	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views"}`))
-// 	ddoc, _ := kdb.GetDocument("testdb", doc, true)
+	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views"}`))
+	ddoc, _ := kdb.GetDocument("testdb", doc, true)
 
-// 	if ddoc.ID != "_design/_views" {
-// 		t.Error("build in view missing")
-// 	}
+	if ddoc.ID != "_design/_views" {
+		t.Error("build in view missing")
+	}
 
-// 	err = kdb.Delete("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// }
+	err = kdb.Delete("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+}
 
-//type AllDocsViewResult struct {
-//	Offset int `json:"offset"`
-//	Rows   []struct {
-//		Key   string `json:"key"`
-//		Value struct {
-//			Rev string
-//		} `json:"value"`
-//		DocID string `json:"doc_id"`
-//	} `json:"rows"`
-//	TotalRows int `json:"total_rows"`
-//}
-//
-//func TestBuildView(t *testing.T) {
-//	kdb, _ := NewKDB()
-//	err := kdb.Open("testdb", true)
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	if _, ok := kdb.dbs["testdb"].GetViewManager().GetView("_design/_views$_all_docs"); ok {
-//		t.Error("view failed")
-//	}
-//
-//	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
-//	r := AllDocsViewResult{}
-//	json.Unmarshal(rs, &r)
-//
-//	if _, ok := kdb.dbs["testdb"].GetViewManager().GetView("_design/_views$_all_docs"); !ok {
-//		t.Error("view failed")
-//	}
-//
-//	if len(r.Rows) != 1 {
-//		t.Error("row count failed", r.Rows)
-//	}
-//
-//	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
-//	_, err = kdb.PutDocument("testdb", inputDoc)
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
-//	r = AllDocsViewResult{}
-//	json.Unmarshal(rs, &r)
-//
-//	if len(r.Rows) != 2 {
-//		t.Error("row count failed")
-//	}
-//
-//	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
-//	_, err = kdb.PutDocument("testdb", inputDoc)
-//	if err != nil {
-//		t.Error(err)
-//	}
-//
-//	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
-//	r = AllDocsViewResult{}
-//	json.Unmarshal(rs, &r)
-//
-//	if len(r.Rows) != 3 {
-//		t.Error("row count failed")
-//	}
-//
-//	kdb.Delete("testdb")
-//}
-//
-//func BenchmarkPutDocument(b *testing.B) {
-//	kdb, _ := NewKDB()
-//	kdb.Open("testdb", true)
-//	inputDoc, _ := ParseDocument([]byte(`{"test":1}`))
-//
-//	for x := 0; x < b.N; x++ {
-//		kdb.PutDocument("testdb", inputDoc)
-//	}
-//
-//	kdb.Delete("testdb")
-//}
-//
-//func BenchmarkParseDocument(b *testing.B) {
-//	for x := 0; x < b.N; x++ {
-//		ParseDocument([]byte(`{"test":1}`))
-//	}
-//}
+type AllDocsViewResult struct {
+	Offset int `json:"offset"`
+	Rows   []struct {
+		Key   string `json:"key"`
+		Value struct {
+			Rev string
+		} `json:"value"`
+		DocID string `json:"doc_id"`
+	} `json:"rows"`
+	TotalRows int `json:"total_rows"`
+}
+
+func TestBuildView(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if _, ok := kdb.dbs["testdb"].GetViewManager().GetView("_design/_views$_all_docs"); ok {
+		t.Error("view failed")
+	}
+
+	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r := AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if _, ok := kdb.dbs["testdb"].GetViewManager().GetView("_design/_views$_all_docs"); !ok {
+		t.Error("view failed")
+	}
+
+	if len(r.Rows) != 1 {
+		t.Error("row count failed", r.Rows)
+	}
+
+	inputDoc, _ := ParseDocument([]byte(`{"_id":"1","test":1}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r = AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if len(r.Rows) != 2 {
+		t.Error("row count failed")
+	}
+
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":1}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	r = AllDocsViewResult{}
+	json.Unmarshal(rs, &r)
+
+	if len(r.Rows) != 3 {
+		t.Error("row count failed")
+	}
+
+	kdb.Delete("testdb")
+}
+
+func BenchmarkPutDocument(b *testing.B) {
+	kdb, _ := NewKDB()
+	kdb.Open("testdb", true)
+	inputDoc, _ := ParseDocument([]byte(`{"test":1}`))
+
+	for x := 0; x < b.N; x++ {
+		kdb.PutDocument("testdb", inputDoc)
+	}
+
+	kdb.Delete("testdb")
+}
+
+func BenchmarkParseDocument(b *testing.B) {
+	for x := 0; x < b.N; x++ {
+		ParseDocument([]byte(`{"test":1}`))
+	}
+}
