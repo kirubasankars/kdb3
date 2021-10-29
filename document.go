@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/md5"
 	"fmt"
 	"strings"
@@ -77,12 +76,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
-
-	var buf bytes.Buffer
-	buf.Write([]byte(hash))
-	buf.Write(value)
-	doc.Hash = fmt.Sprintf("%x", md5.Sum(buf.Bytes()))
-
+	doc.Hash = fmt.Sprintf("%x", md5.Sum(value))
 	doc.Deleted = deleted
 	doc.Data = value
 

@@ -167,11 +167,16 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 
 	if currentDoc != nil {
 		if currentDoc.Deleted {
+			// delete document
 			if doc.Version > 0 && currentDoc.Version > doc.Version {
+				return nil, ErrDocumentConflict
+			}
+			if doc.Hash != "" {
 				return nil, ErrDocumentConflict
 			}
 			doc.Version = currentDoc.Version
 		} else {
+			// update document
 			if doc.Version != 0 {
 				if currentDoc.Version != doc.Version {
 					return nil, ErrDocumentConflict
@@ -181,6 +186,7 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 			}
 		}
 	} else {
+		// insert document
 		if doc.Version > 0 {
 			return nil, ErrDocumentConflict
 		}
@@ -336,11 +342,11 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	currentFileName := db.serviceLocator.GetLocalDB().GetDatabaseFileName(db.Name)
 	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt)
-	currentConnectionString := currentDBPath //+ "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro"
+	currentConnectionString := currentDBPath
 
 	id := NewSequenceUUIDGenarator().Next()
 	newFileName := db.Name + "_" + id
-	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName+dbExt) + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc"
+	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName+dbExt)
 
 	vacuumManager.SetNewConnectionString(newConnectionString)
 	vacuumManager.SetCurrentConnectionString(currentDBPath, currentConnectionString)
@@ -350,7 +356,8 @@ func (db *DefaultDatabase) Vacuum() error {
 	maxUpdateSequence := db.UpdateSequence
 	vacuumManager.CopyData("", maxUpdateSequence)
 
-	vacuumManager.Vacuum()
+	err := vacuumManager.Vacuum()
+	fmt.Println(err)
 
 	db.Close(false)
 
@@ -368,7 +375,8 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	dbPath := db.serviceLocator.GetDBDirPath()
 	oldFile := currentFileName + dbExt
-	os.Remove(filepath.Join(dbPath, oldFile))
+	err = os.Remove(filepath.Join(dbPath, oldFile))
+	fmt.Println(err)
 
 	/*
 				1. Copy data (with max update seq) to new data file

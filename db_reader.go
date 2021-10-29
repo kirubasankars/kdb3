@@ -101,7 +101,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 		),
 		all_changes_metadata (seq, doc_id, version, hash, deleted) AS 
 		(
-			SELECT d.seq_id, d.doc_id, d.version, d.hash, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id DESC
+			SELECT d.seq_id, d.doc_id, d.version, d.hash, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id
 		),
 		changes_object (obj) as
 		(
