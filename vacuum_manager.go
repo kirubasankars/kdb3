@@ -1,55 +1,55 @@
 package main
 
 import (
-	"database/sql"
 	"path/filepath"
+
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 type VacuumManager interface {
 	SetNewConnectionString(connectionString string)
 	SetCurrentConnectionString(currentDatabasePath, connectionString string)
 	SetupDatabase() error
-	CopyData(minUpdateSequence string, maxUpdateSequence string)
-	Vacuum()
+	CopyData(minUpdateSequence string, maxUpdateSequence string) error
+	Vacuum() error
 }
 
 type DefaultVacuumManager struct {
-	currentDatabasePath 			string
-	currentConnectionString 		string
+	currentDatabasePath     string
+	currentConnectionString string
 
-	newConnectionString 			string
+	newConnectionString string
 }
 
 func (vm *DefaultVacuumManager) SetNewConnectionString(connectionString string) {
-	vm.newConnectionString = connectionString
+	absoluteNewDatabasePath, _ := filepath.Abs(connectionString)
+	vm.newConnectionString = absoluteNewDatabasePath
 }
 
 func (vm *DefaultVacuumManager) SetCurrentConnectionString(currentDatabasePath, connectionString string) {
 	vm.currentDatabasePath = currentDatabasePath
-	vm.currentConnectionString = connectionString
+	absoluteCurrentDatabasePath, _ := filepath.Abs(currentDatabasePath)
+	vm.currentConnectionString = absoluteCurrentDatabasePath
 }
 
 func (vm DefaultVacuumManager) SetupDatabase() error {
-	con, err := sql.Open("sqlite3", vm.newConnectionString)
-	if err != nil {
-		return err
-	}
-	err = con.Ping()
+	absoluteNewDatabasePath, _ := filepath.Abs(vm.newConnectionString)
+	con, err := sqlite3.Open("file:" + absoluteNewDatabasePath + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc")
 	if err != nil {
 		return err
 	}
 	buildSQL := SetupDatabaseScript()
-	tx, err := con.Begin()
+	err = con.Begin()
 	if err != nil {
 		return err
 	}
 
-	_, err = tx.Exec(buildSQL)
+	err = con.Exec(buildSQL)
 	if err != nil {
 		return err
 	}
 
-	err = tx.Commit()
+	err = con.Commit()
 	if err != nil {
 		return err
 	}
@@ -62,28 +62,47 @@ func (vm DefaultVacuumManager) SetupDatabase() error {
 	return nil
 }
 
-func (vm DefaultVacuumManager) CopyData(minUpdateSequence string, maxUpdateSequence string) {
+func (vm DefaultVacuumManager) CopyData(minUpdateSequence string, maxUpdateSequence string) error {
 	absoluteCurrentDatabasePath, _ := filepath.Abs(vm.currentDatabasePath)
 
-	con, _ := sql.Open("sqlite3", vm.newConnectionString)
+	con, err := sqlite3.Open("file:" + vm.newConnectionString + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc")
+	if err != nil {
+		return err
+	}
 	defer con.Close()
 
-	con.Ping()
-	con.Exec("ATTACH DATABASE 'file://" + absoluteCurrentDatabasePath + "?_journal=WAL&_locking_mode=EXCLUSIVE&cache=shared&_mutex=no&mode=ro' as currentdb;")
+	con.Exec("ATTACH DATABASE 'file:" + absoluteCurrentDatabasePath + "' as currentdb;")
 
-	tx, _ := con.Begin()
-	defer tx.Commit()
+	err = con.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		con.Rollback()
+		con.Close()
+	}()
 
 	if minUpdateSequence == "" {
-		tx.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id <= ?", maxUpdateSequence)
+		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id <= ?", maxUpdateSequence)
+		if err != nil {
+			return err
+		}
+		con.Commit()
 	} else {
-		tx.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id > ? AND seq_id <= ?", minUpdateSequence, maxUpdateSequence)
+		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id > ? AND seq_id <= ?", minUpdateSequence, maxUpdateSequence)
+		if err != nil {
+			return err
+		}
+		con.Commit()
 	}
+	return nil
 }
 
-func (vm DefaultVacuumManager) Vacuum() {
-	con, _ := sql.Open("sqlite3", vm.newConnectionString)
+func (vm DefaultVacuumManager) Vacuum() error {
+	con, err := sqlite3.Open("file:" + vm.newConnectionString)
+	if err != nil {
+		return err
+	}
 	defer con.Close()
-	con.Ping()
-	con.Exec("VACUUM")
+	return con.Exec("VACUUM")
 }

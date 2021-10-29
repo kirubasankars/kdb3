@@ -218,22 +218,22 @@ func TestDeleteDocument(t *testing.T) {
 	kdb.Delete("testdb")
 }
 
-// func TestDatabaseVaccum(t *testing.T) {
-// 	kdb, _ := NewKDB()
-// 	err := kdb.Open("testdb", true)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+func TestDatabaseVaccum(t *testing.T) {
+	kdb, _ := NewKDB()
+	err := kdb.Open("testdb", true)
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	err = kdb.Vacuum("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	err = kdb.Delete("testdb")
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// }
+	err = kdb.Vacuum("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+	err = kdb.Delete("testdb")
+	if err != nil {
+		t.Error(err)
+	}
+}
 
 func TestDatabaseStat(t *testing.T) {
 	kdb, _ := NewKDB()

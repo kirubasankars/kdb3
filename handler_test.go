@@ -375,7 +375,7 @@ func TestHandlerGetChanges(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &a)
 
 	a0 := a.Results[0]
-	if a0.ID != "4" || a0.Rev != "1-99914b932bd37a50b983c5e7c90ae93b" {
+	if a0.ID != "_design/_views" || a0.Rev != "1-f38aa71bff6932ac429407f05553eb78" {
 		t.Errorf(`failed`)
 	}
 
@@ -385,7 +385,7 @@ func TestHandlerGetChanges(t *testing.T) {
 	}
 
 	a4 := a.Results[2]
-	if a4.ID != "_design/_views" || a4.Rev != "1-f38aa71bff6932ac429407f05553eb78" {
+	if a4.ID != "4" || a4.Rev != "1-99914b932bd37a50b983c5e7c90ae93b" {
 		t.Errorf(`failed`)
 	}
 
