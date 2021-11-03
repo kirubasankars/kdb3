@@ -177,6 +177,9 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 
 		designDoc := &DesignDocument{}
 		err := json.Unmarshal(doc.Data, designDoc)
+		version, hash, _ := SplitRev(designDoc.Rev)
+		designDoc.Version = version
+		designDoc.Hash = hash
 		if err != nil {
 			panic("invalid_design_document " + doc.ID)
 		}
@@ -191,11 +194,21 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 		}
 		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
 		mgr.designDocs[doc.ID] = designDoc
+
 		if err != nil {
 			return nil, err
 		}
 
 		view := mgr.views[qualifiedViewName]
+
+		//TODO: duplicate code
+		selectScripts := make(map[string]Query)
+		for k, v := range designDocView.Select {
+			text, params := mgr.ParseQueryParams(v)
+			selectScripts[k] = Query{text: text, params: params}
+		}
+		view.selectScripts = selectScripts
+
 		return view, nil
 	}
 
