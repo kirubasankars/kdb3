@@ -288,13 +288,13 @@ func (kdb *KDB) SQL(dbName, designDocID, viewName, fromSeqID string) ([]byte, er
 
 // Info get kdb info
 func (kdb *KDB) Info() []byte {
-	var version, sqliteSourceID string
+	var version string
 	conn, _ := sqlite3.Open(":memory:")
 	defer conn.Close()
-	stmt, _ := conn.Prepare("SELECT sqlite_version(), sqlite_source_id()")
+	stmt, _ := conn.Prepare("SELECT sqlite_version()")
 	stmt.Step()
-	stmt.Scan(&version, &sqliteSourceID)
-	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite_version":"%s","sqlite_source_id":"%s"}}`, version, sqliteSourceID))
+	stmt.Scan(&version)
+	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite":"%s"}}`, version))
 }
 
 func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
