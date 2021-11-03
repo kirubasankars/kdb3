@@ -436,15 +436,15 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 			"views" : {
 				"_all_docs" : {
 					"setup" : [
-						"CREATE TABLE IF NOT EXISTS all_docs (key, value, doc_id,  PRIMARY KEY(key)) WITHOUT ROWID"
+						"CREATE TABLE IF NOT EXISTS all_docs (doc_id, rev, PRIMARY KEY(doc_id)) WITHOUT ROWID"
 					],
 					"run" : [
 						"DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-						"INSERT OR REPLACE INTO all_docs (key, value, doc_id) SELECT doc_id, JSON_OBJECT('rev', rev) as value, doc_id FROM latest_documents WHERE deleted = 0"
+						"INSERT OR REPLACE INTO all_docs (doc_id, rev) SELECT doc_id, rev FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
-						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('key', key, 'value', JSON(value), 'id', doc_id)),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) WHERE (${key} IS NULL OR key = ${key}) AND (${next} IS NULL OR key > ${next})",
-						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset),'rows',JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'key', key, 'value', JSON(value), 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows',(SELECT COUNT(1) FROM all_docs)) FROM (SELECT (ROW_NUMBER() OVER(ORDER BY key) - 1) as offset, * FROM all_docs ORDER BY key) o WHERE (${key} IS NULL or key = ${key}) AND (${next} IS NULL OR key > ${next})"
+						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'rev', rev)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs ORDER BY doc_id) WHERE (${next} IS NULL OR doc_id > ${next})",
+						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs ORDER BY doc_id) o WHERE (${next} IS NULL OR doc_id > ${next})"						
 					}
 				}
 			}
