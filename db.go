@@ -436,15 +436,15 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 			"views" : {
 				"_all_docs" : {
 					"setup" : [
-						"CREATE TABLE IF NOT EXISTS all_docs (doc_id, rev, PRIMARY KEY(doc_id)) WITHOUT ROWID"
+						"CREATE TABLE IF NOT EXISTS all_docs (key, rev, doc_id, PRIMARY KEY(doc_id)) WITHOUT ROWID"
 					],
 					"run" : [
 						"DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-						"INSERT OR REPLACE INTO all_docs (doc_id, rev) SELECT doc_id, rev FROM latest_documents WHERE deleted = 0"
+						"INSERT OR REPLACE INTO all_docs (key, rev, doc_id) SELECT doc_id, rev, doc_id FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
-						"default" : "SELECT JSON_OBJECT('offset', min(offset),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'rev', rev)),'total_rows',(SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs ORDER BY doc_id) WHERE (${next} IS NULL OR doc_id > ${next})",
-						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs ORDER BY doc_id) o WHERE (${next} IS NULL OR doc_id > ${next})"						
+						"default" : "SELECT JSON_OBJECT('offset', min(offset) + 1,'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT COUNT(1) FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}))) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
+						"with_docs" : "SELECT JSON_OBJECT('offset', min(offset) + 1,'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}))) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"						
 					}
 				}
 			}

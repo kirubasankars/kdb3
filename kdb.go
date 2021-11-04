@@ -311,7 +311,7 @@ func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 // ValidateDatabaseName validate correctness of the name
 func ValidateDatabaseName(name string) bool {
 	re := regexp.MustCompile(`^([a-z]+([0-9-]+)?)$`)
-	if len(name) <= 0 || !re.Match([]byte(name)) {
+	if len(name) <= 0 || !re.Match([]byte(name)) || len(name) > 50 {
 		return false
 	}
 	return true
@@ -320,7 +320,8 @@ func ValidateDatabaseName(name string) bool {
 // ValidateDocumentID validate correctness of the document id
 func ValidateDocumentID(id string) bool {
 	id = strings.Trim(id, " ")
-	if len(id) > 0 && !strings.HasPrefix(id, "_design/") && id[0] == '_' {
+	re := regexp.MustCompile(`^([a-z]+([0-9-]+)?)$`)
+	if len(id) > 0 && ((id[0] == '_' && !strings.HasPrefix(id, "_design/")) || len(id) > 50 || !re.Match([]byte(id))) {
 		return false
 	}
 	return true

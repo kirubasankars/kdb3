@@ -51,7 +51,7 @@ func (handler KDBHandler) PutDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusCreated)
 	fmt.Fprint(w, `{"ok":true}`)
 }
 
@@ -73,12 +73,35 @@ func (handler KDBHandler) DatabaseAllDocs(w http.ResponseWriter, r *http.Request
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
+
 	r.ParseForm()
-	includeDocs, _ := strconv.ParseBool(r.FormValue("include_docs"))
+
 	selectName := "default"
+
+	includeDocs, _ := strconv.ParseBool(r.FormValue("include_docs"))
 	if includeDocs {
 		selectName = "with_docs"
 	}
+
+	page := 1
+	limit := 10
+
+	if !r.Form.Has("limit") {
+		r.Form.Set("limit", "10")
+	} else {
+		limit, _ = strconv.Atoi(r.FormValue("limit"))
+		r.Form.Set("limit", strconv.Itoa(limit))
+	}
+
+	if !r.Form.Has("page") {
+		r.Form.Set("page", "1")
+	} else {
+		page, _ = strconv.Atoi(r.FormValue("page"))
+		r.Form.Set("page", strconv.Itoa(page))
+	}
+
+	r.Form.Add("offset", strconv.Itoa((page-1)*limit))
+
 	rs, err := kdb.SelectView(db, "_design/_views", "_all_docs", selectName, r.Form, false)
 	if err != nil {
 		NotOK(err, w)
@@ -198,14 +221,32 @@ func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 	handler.getDocument(db, docid, true, w, r)
 }
 
+func ValidateRequestJSON(w http.ResponseWriter, r *http.Request) error {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusNotAcceptable)
+		return ErrInternalError
+	}
+	return nil
+}
+
 func (handler KDBHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
+
+	kdb := handler.kdb
+	_, err := kdb.DBStat(db)
+	if err != nil {
+		NotOK(err, w)
+	}
+
 	handler.deleteDocument(db, docid, w, r)
 }
 
 func (handler KDBHandler) PutDocument(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
@@ -213,6 +254,10 @@ func (handler KDBHandler) PutDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (handler KDBHandler) BulkPutDocuments(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
+
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
@@ -233,6 +278,10 @@ func (handler KDBHandler) BulkPutDocuments(w http.ResponseWriter, r *http.Reques
 }
 
 func (handler KDBHandler) BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
+
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
@@ -267,6 +316,9 @@ func (handler KDBHandler) DeleteDDocument(w http.ResponseWriter, r *http.Request
 }
 
 func (handler KDBHandler) PutDDocument(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := "_design/" + vars["docid"]
