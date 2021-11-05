@@ -3,14 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"testing"
 )
 
 func TestNewKDBEngine(t *testing.T) {
-	kdb, err := NewKDB()
+	kdb, _ := NewKDB()
 	if kdb.dbs == nil {
-		fmt.Println(err)
 		t.Failed()
 	}
 }
@@ -199,6 +199,7 @@ func TestDeleteDocument(t *testing.T) {
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","test":2}`))
+	inputDoc.Hash = ""
 	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil && doc.Version != 3 {
 		t.Error(err)
@@ -309,7 +310,7 @@ func TestBuildView(t *testing.T) {
 		t.Error("view failed")
 	}
 
-	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	rs, _ := kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", url.Values{}, false)
 	r := AllDocsViewResult{}
 	json.Unmarshal(rs, &r)
 
@@ -327,7 +328,7 @@ func TestBuildView(t *testing.T) {
 		t.Error(err)
 	}
 
-	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", url.Values{}, false)
 	r = AllDocsViewResult{}
 	json.Unmarshal(rs, &r)
 
@@ -341,7 +342,7 @@ func TestBuildView(t *testing.T) {
 		t.Error(err)
 	}
 
-	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", nil, false)
+	rs, _ = kdb.SelectView("testdb", "_design/_views", "_all_docs", "default", url.Values{}, false)
 	r = AllDocsViewResult{}
 	json.Unmarshal(rs, &r)
 
