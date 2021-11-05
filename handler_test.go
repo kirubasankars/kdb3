@@ -60,6 +60,13 @@ func testExpect200(t *testing.T, rr *httptest.ResponseRecorder) {
 	}
 }
 
+func testExpect201(t *testing.T, rr *httptest.ResponseRecorder) {
+	if status := rr.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+}
+
 func testExpect404(t *testing.T, rr *httptest.ResponseRecorder) {
 	if status := rr.Code; status != http.StatusNotFound {
 		t.Errorf("handler returned wrong status code: got %v want %v",
@@ -98,7 +105,7 @@ func TestHandlerPutDatabase(t *testing.T) {
 	req, _ = http.NewRequest("PUT", "/testdb", nil)
 	handler.ServeHTTP(rr, req)
 
-	testExpect200(t, rr)
+	testExpect201(t, rr)
 	testExpectJSONContentType(t, rr)
 
 	expected := `{"ok":true}`
@@ -117,15 +124,18 @@ func TestHandlerPutDocument(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	rr = httptest.NewRecorder()
 	req, _ = http.NewRequest("PUT", "/testdb", nil)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString("{}")
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -159,6 +169,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"_id":1}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -172,6 +183,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 
 	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version, doc.Hash, false))
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -185,6 +197,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 
 	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version-1, doc.Hash, false))
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -209,6 +222,7 @@ func TestHandlerDeleteDocument(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"_id":1}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -247,6 +261,7 @@ func TestHandlerPutDeleteDocument(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"_id":1, "_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705"}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -255,6 +270,7 @@ func TestHandlerPutDeleteDocument(t *testing.T) {
 
 	body = bytes.NewBufferString(`{"_id":1}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -287,6 +303,7 @@ func TestHandlerBulkDocuments(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -317,11 +334,13 @@ func TestHandlerBulkGetDocuments(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	rr = httptest.NewRecorder()
 	body = bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_gets", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -362,6 +381,7 @@ func TestHandlerGetChanges(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	req, _ = http.NewRequest("GET", "/testdb/_changes", nil)
@@ -375,7 +395,7 @@ func TestHandlerGetChanges(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &a)
 
 	a0 := a.Results[0]
-	if a0.ID != "_design/_views" || a0.Rev != "1-f38aa71bff6932ac429407f05553eb78" {
+	if a0.ID != "_design/_views" || a0.Rev != "1-45bc99b3beac2d38c1336f34abc777a3" {
 		t.Errorf(`failed`)
 	}
 
@@ -416,6 +436,7 @@ func TestHandlerGetDocument(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_id":1}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	doc, _ := ParseDocument(rr.Body.Bytes())
@@ -467,6 +488,7 @@ func TestHandlerGetDatabase(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	rr = httptest.NewRecorder()
@@ -550,6 +572,7 @@ func TestHandlerPutDDatabase(t *testing.T) {
 
 	req, _ = http.NewRequest("PUT", "/testdb/_design/_views", rr.Body)
 	rr = httptest.NewRecorder()
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -567,6 +590,7 @@ func TestHandlerPutDDatabase(t *testing.T) {
 	viewDoc := rr.Body.Bytes()
 	doc, _ = ParseDocument(viewDoc)
 	req, _ = http.NewRequest("POST", "/testdb/_design/_views1", bytes.NewBuffer(doc.Data))
+	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -588,6 +612,7 @@ func TestHandlerPutDDatabase(t *testing.T) {
 	rr = httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"_docs":[{"_id":3},{"_id":4}]}`)
 	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
 	handler.ServeHTTP(rr, req)
 
 	req, _ = http.NewRequest("GET", "/testdb/_design/_views1/_all_docs", nil)

@@ -320,9 +320,13 @@ func ValidateDatabaseName(name string) bool {
 // ValidateDocumentID validate correctness of the document id
 func ValidateDocumentID(id string) bool {
 	id = strings.Trim(id, " ")
-	re := regexp.MustCompile(`^([a-z]+([0-9-]+)?)$`)
-	if len(id) > 0 && ((id[0] == '_' && !strings.HasPrefix(id, "_design/")) || len(id) > 50 || !re.Match([]byte(id))) {
-		return false
+	re := regexp.MustCompile(`^([a-z]*[0-9-]*)$`)
+
+	if !strings.HasPrefix(id, "_design/") {
+		if len(id) > 50 || !re.Match([]byte(id)) {
+			return false
+		}
 	}
+
 	return true
 }

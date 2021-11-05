@@ -171,9 +171,6 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 			if doc.Version > 0 && currentDoc.Version > doc.Version {
 				return nil, ErrDocumentConflict
 			}
-			if doc.Hash != "" {
-				return nil, ErrDocumentConflict
-			}
 			doc.Version = currentDoc.Version
 		} else {
 			// update document
@@ -356,8 +353,7 @@ func (db *DefaultDatabase) Vacuum() error {
 	maxUpdateSequence := db.UpdateSequence
 	vacuumManager.CopyData("", maxUpdateSequence)
 
-	err := vacuumManager.Vacuum()
-	fmt.Println(err)
+	vacuumManager.Vacuum()
 
 	db.Close(false)
 
@@ -375,8 +371,7 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	dbPath := db.serviceLocator.GetDBDirPath()
 	oldFile := currentFileName + dbExt
-	err = os.Remove(filepath.Join(dbPath, oldFile))
-	fmt.Println(err)
+	os.Remove(filepath.Join(dbPath, oldFile))
 
 	/*
 				1. Copy data (with max update seq) to new data file
@@ -400,6 +395,14 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err
+	}
+
+	if !values.Has("limit") {
+		values.Set("limit", "10")
+	}
+
+	if !values.Has("offset") {
+		values.Set("offset", "0")
 	}
 
 	return db.viewManager.SelectView(db.UpdateSequence, *outputDoc, viewName, selectName, values, stale)
