@@ -15,8 +15,8 @@ Database can be created as follows.
     curl -X PUT localhost:8001/blog
     {“ok”:true}
 
-database accepts json object and returns an id and version number. ID assigned, if not present in the document. 
-Version number used as optimistic concurrency locking, you need the latest version, in order to update the document. if you omit it, database assign latest version number 
+database accepts json object and returns an id and revision. ID assigned, if not present in the document. 
+revision used as optimistic concurrency locking, you need the latest version, in order to update the document.
 
     curl -X POST localhost:8001/blog -d '{"title":"getting started"}'
     {"_id":"d64b73f378ed9dd1c3f9a4b3485fbbd7","_rev":"1-01e7d11edebeb23a9b9df7e2a56f1ad3"}
@@ -127,10 +127,6 @@ View can be executed with followings
 
     curl localhost:8001/testdb -X DELETE
     {"ok":true}
-
-## basic ui
-
-  http://localhost:8001/_utils
 
 ## database information
 
@@ -250,5 +246,3 @@ View can be executed with followings
       ],
       "total_rows": 3
     }
-
-[![asciicast](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX.svg)](https://asciinema.org/a/GwSJcYRffxpTph59CLeTKYkmX)
