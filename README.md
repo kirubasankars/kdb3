@@ -131,8 +131,7 @@ View can be executed with followings
 ## database information
 
     curl localhost:8001/testdb -X GET
-    {"db_name":"testdb","update_seq":"iKgHtVTpywed9yo4O25ZK76l64vYfA86NUvQbVh5aulEGuHGACT6YZte39fZXGsFQR3TdXm3Mn2ZccypZVTnoFzNrnMceWjlQCyLjMaGX_HFL5vDdKRkZDkSpof1ONoT6T7WVr6eZw
-","doc_count":1,"deleted_doc_count":0}
+    {"db_name":"testdb","update_seq":"iKgHtVTpywed9yo4O25ZK76l64vYfA86NUvQbVh5aulEGuHGACT6YZte39fZXGsFQR3TdXm3Mn2ZccypZVTnoFzNrnMceWjlQCyLjMaGX_HFL5vDdKRkZDkSpof1ONoT6T7WVr6eZw","doc_count":1,"deleted_doc_count":0}
 
 ## put documents
 
