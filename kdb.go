@@ -176,6 +176,10 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
 	}
+	docs := fValues.GetArray("_docs")
+	if docs == nil {
+		return nil, fmt.Errorf("%s:%w", "_docs can't be empty", ErrBadJSON)
+	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
 	for idx, item := range fValues.GetArray("_docs") {
 		inputDoc, _ := ParseDocument([]byte(item.String()))
@@ -199,17 +203,32 @@ func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
 	}
+	docs := fValues.GetArray("_docs")
+	if docs == nil {
+		return nil, fmt.Errorf("%s:%w", "_docs can't be empty", ErrDocumentInvalidInput)
+	}
+
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
 	for idx, item := range fValues.GetArray("_docs") {
-		inputDoc, _ := ParseDocument([]byte(item.String()))
 		var jsonb []byte
-		outputDoc, err := kdb.GetDocument(name, inputDoc, true)
+		var outputDoc *Document
+
+		inputDoc, err := ParseDocument([]byte(item.String()))
+		if inputDoc == nil || inputDoc.ID == "" {
+			err = fmt.Errorf("%s:%w", "id can't be empty", ErrDocumentInvalidInput)
+		}
+
+		if err == nil {
+			outputDoc, err = kdb.GetDocument(name, inputDoc, true)
+		}
+
 		if err != nil {
 			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
+			jsonb = []byte(fmt.Sprintf(`{"_id":"%s", "error":"%s","reason":"%s"}`, inputDoc.ID, code, reason))
 		} else {
 			jsonb = outputDoc.Data
 		}
+
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
 	}
@@ -320,7 +339,7 @@ func ValidateDatabaseName(name string) bool {
 // ValidateDocumentID validate correctness of the document id
 func ValidateDocumentID(id string) bool {
 	id = strings.Trim(id, " ")
-	re := regexp.MustCompile(`^([a-z]*[0-9-]*)$`)
+	re := regexp.MustCompile(`^([a-z0-9-]*)$`)
 
 	if !strings.HasPrefix(id, "_design/") {
 		if len(id) > 50 || !re.Match([]byte(id)) {

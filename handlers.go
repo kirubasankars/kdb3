@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -28,13 +27,10 @@ func (handler KDBHandler) GetDatabase(w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
-	if err := kdb.Open(db, false); err != nil {
-		NotOK(err, w)
-		return
-	}
 	stat, err := kdb.DBStat(db)
 	if err != nil {
 		NotOK(err, w)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -152,7 +148,7 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 	}
 
 	if docid != inputDoc.ID {
-		NotOK(errors.New("mismatch_id"), w)
+		NotOK(ErrDocumentInvalidInput, w)
 		return
 	}
 	outputDoc, err := kdb.PutDocument(db, inputDoc)
