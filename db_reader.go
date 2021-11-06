@@ -14,11 +14,11 @@ type DatabaseReader interface {
 	Begin() error
 	Commit() error
 
-	GetDocumentMetadataByIDandVersion(ID string, Version int) (*Document, error)
+	GetDocumentMetadataByIDandVersion(ID string, Version int, Hash string) (*Document, error)
 	GetDocumentMetadataByID(ID string) (*Document, error)
 
 	GetDocumentByID(ID string) (*Document, error)
-	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
+	GetDocumentByIDandVersion(ID string, Version int, Hash string) (*Document, error)
 
 	GetAllDesignDocuments() ([]Document, error)
 	GetChanges(since string, limit int) ([]byte, error)
@@ -74,7 +74,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentMetadataByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? LIMIT 1")
+	reader.stmtDocumentMetadataByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? AND hash = ? LIMIT 1")
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted, data FROM documents WHERE doc_id = ? AND version = ?")
+	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted, data FROM documents WHERE doc_id = ? AND version = ? AND hash = ?")
 	if err != nil {
 		return err
 	}
@@ -130,10 +130,10 @@ func (reader *DefaultDatabaseReader) Commit() error {
 }
 
 // GetDocumentRevisionByIDandVersion get document info with id and version
-func (reader *DefaultDatabaseReader) GetDocumentMetadataByIDandVersion(ID string, Version int) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentMetadataByIDandVersion(ID string, Version int, Hash string) (*Document, error) {
 
 	defer reader.stmtDocumentMetadataByIDandVersion.Reset()
-	if err := reader.stmtDocumentMetadataByIDandVersion.Bind(ID, Version); err != nil {
+	if err := reader.stmtDocumentMetadataByIDandVersion.Bind(ID, Version, Hash); err != nil {
 		return nil, err
 	}
 	hasRow, err := reader.stmtDocumentMetadataByIDandVersion.Step()
@@ -224,10 +224,10 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 }
 
 // GetDocumentByIDandVersion get document id and version
-func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int, Hash string) (*Document, error) {
 
 	defer reader.stmtDocumentByIDandVersion.Reset()
-	if err := reader.stmtDocumentByIDandVersion.Bind(ID, Version); err != nil {
+	if err := reader.stmtDocumentByIDandVersion.Bind(ID, Version, Hash); err != nil {
 		return nil, err
 	}
 

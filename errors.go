@@ -100,16 +100,14 @@ func NotOK(err error, w http.ResponseWriter) {
 	)
 
 	switch {
-	case errors.Is(err, ErrDatabaseExists) || errors.Is(err, ErrInvalidSQLStmt):
+	case errors.Is(err, ErrDatabaseExists):
 		statusCode = http.StatusPreconditionFailed
-	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev):
+	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev) || errors.Is(err, ErrDocumentInvalidInput) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrBadJSON):
 		statusCode = http.StatusBadRequest
 	case errors.Is(err, ErrDocumentConflict):
 		statusCode = http.StatusConflict
 	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound):
 		statusCode = http.StatusNotFound
-	case errors.Is(err, ErrBadJSON):
-		statusCode = http.StatusBadRequest
 	}
 
 	if statusCode == 0 {

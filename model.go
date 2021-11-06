@@ -2,7 +2,7 @@ package main
 
 // DatabaseStat stat
 type DatabaseStat struct {
-	DBName          string `json:"db_name"`
+	DBName          string `json:"name"`
 	UpdateSeq       string `json:"update_seq"`
 	DocCount        int    `json:"doc_count"`
 	DeletedDocCount int    `json:"deleted_doc_count"`

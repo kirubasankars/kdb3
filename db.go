@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
 	"net/url"
 	"os"
@@ -192,6 +193,8 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	doc.CalculateNextVersion()
 	updateSeq := db.changeSeq.Next()
 
+	doc.Hash = fmt.Sprintf("%x", md5.Sum(doc.Data))
+
 	if err = writer.PutDocument(updateSeq, doc); err != nil {
 		return nil, err
 	}
@@ -241,13 +244,13 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 
 	if includeData {
 		if doc.Version > 0 {
-			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
+			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version, doc.Hash)
 		}
 		return reader.GetDocumentByID(doc.ID)
 	}
 
 	if doc.Version > 0 {
-		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)
+		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version, doc.Hash)
 	}
 	return reader.GetDocumentMetadataByID(doc.ID)
 }
@@ -446,8 +449,8 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 						"INSERT OR REPLACE INTO all_docs (key, rev, doc_id) SELECT doc_id, rev, doc_id FROM latest_documents WHERE deleted = 0"
 					],
 					"select" : {
-						"default" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT COUNT(1) FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}))) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
-						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}))) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"						
+						"default" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
+						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"						
 					}
 				}
 			}
