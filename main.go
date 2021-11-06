@@ -21,7 +21,7 @@ func main() {
 		ReadTimeout:  1 * time.Hour,
 	}
 
-	log.Fatal(srv.ListenAndServe())
+	fmt.Println("Listening on port 8001")
 
-	fmt.Println("Started")
+	log.Fatal(srv.ListenAndServe())
 }
