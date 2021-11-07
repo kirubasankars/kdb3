@@ -35,7 +35,7 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	obj := v.GetObject()
 	if obj == nil {
-		return nil, fmt.Errorf("%s: %w", "payload expected as json object", ErrDocumentInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "json object is only allowed", ErrDocumentInvalidInput)
 	}
 
 	var (
@@ -66,8 +66,8 @@ func ParseDocument(value []byte) (*Document, error) {
 		deleted = false
 	}
 
-	if id == "" && (version != 0 || hash != "") {
-		return nil, fmt.Errorf("%s: %w", "document can't have _rev without _id", ErrDocumentInvalidInput)
+	if id == "" && (version != 0 || hash != "" || deleted) {
+		return &Document{ID: id}, fmt.Errorf("%s: %w", "document missing _id", ErrDocumentInvalidInput)
 	}
 
 	var b []byte
