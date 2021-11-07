@@ -178,19 +178,25 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 	}
 	docs := fValues.GetArray("_docs")
 	if docs == nil {
-		return nil, fmt.Errorf("%s:%w", "_docs can't be empty", ErrBadJSON)
+		return nil, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
 	}
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
 	for idx, item := range fValues.GetArray("_docs") {
-		inputDoc, _ := ParseDocument([]byte(item.String()))
 		var jsonb []byte
-		outputDoc, err := kdb.PutDocument(name, inputDoc)
+		var outputDoc *Document
+
+		inputDoc, err := ParseDocument([]byte(item.String()))
+		if err == nil {
+			outputDoc, err = kdb.PutDocument(name, inputDoc)
+		}
+
 		if err != nil {
 			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"error":"%s","reason":"%s"}`, code, reason))
+			jsonb = []byte(fmt.Sprintf(`{"_id":"%s", "error":"%s","reason":"%s"}`, inputDoc.ID, code, reason))
 		} else {
 			jsonb = []byte(formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
 		}
+
 		v := fastjson.MustParse(string(jsonb))
 		outputs.SetArrayItem(idx, v)
 	}
@@ -205,7 +211,7 @@ func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 	}
 	docs := fValues.GetArray("_docs")
 	if docs == nil {
-		return nil, fmt.Errorf("%s:%w", "_docs can't be empty", ErrDocumentInvalidInput)
+		return nil, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
 	}
 
 	outputs, _ := fastjson.ParseBytes([]byte("[]"))
@@ -215,7 +221,7 @@ func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 
 		inputDoc, err := ParseDocument([]byte(item.String()))
 		if inputDoc == nil || inputDoc.ID == "" {
-			err = fmt.Errorf("%s:%w", "id can't be empty", ErrDocumentInvalidInput)
+			err = fmt.Errorf("%s:%w", "id is missing", ErrDocumentInvalidInput)
 		}
 
 		if err == nil {
@@ -329,8 +335,8 @@ func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 
 // ValidateDatabaseName validate correctness of the name
 func ValidateDatabaseName(name string) bool {
-	re := regexp.MustCompile(`^([a-z]+([0-9-]+)?)$`)
-	if len(name) <= 0 || !re.Match([]byte(name)) || len(name) > 50 {
+	re := regexp.MustCompile(`^([a-z0-9_]+)$`)
+	if len(name) == 0 || len(name) > 50 || name[0] == '_' || !re.Match([]byte(name)) {
 		return false
 	}
 	return true
@@ -339,10 +345,10 @@ func ValidateDatabaseName(name string) bool {
 // ValidateDocumentID validate correctness of the document id
 func ValidateDocumentID(id string) bool {
 	id = strings.Trim(id, " ")
-	re := regexp.MustCompile(`^([a-z0-9-]*)$`)
+	re := regexp.MustCompile(`^([A-Za-z0-9_]+)$`)
 
-	if !strings.HasPrefix(id, "_design/") {
-		if len(id) > 50 || !re.Match([]byte(id)) {
+	if len(id) > 0 && !strings.HasPrefix(id, "_design/") {
+		if len(id) > 50 || id[0] == '_' || !re.Match([]byte(id)) {
 			return false
 		}
 	}
