@@ -114,9 +114,11 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 	vars := mux.Vars(r)
 	db := vars["db"]
 	r.ParseForm()
+
 	since := r.FormValue("since")
 	limit, _ := strconv.Atoi(r.FormValue("limit"))
-	rs, err := kdb.Changes(db, since, limit)
+	descending, _ := strconv.ParseBool(r.FormValue("descending"))
+	rs, err := kdb.Changes(db, since, limit, descending)
 	if err != nil {
 		NotOK(err, w)
 		return

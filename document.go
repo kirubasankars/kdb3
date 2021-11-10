@@ -35,7 +35,7 @@ func ParseDocument(value []byte) (*Document, error) {
 
 	obj := v.GetObject()
 	if obj == nil {
-		return nil, fmt.Errorf("%s: %w", "json object is only allowed", ErrDocumentInvalidInput)
+		return nil, fmt.Errorf("%s: %w", "payload is not a object", ErrDocumentInvalidInput)
 	}
 
 	var (
