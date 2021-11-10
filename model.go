@@ -29,3 +29,12 @@ type Query struct {
 	text   string
 	params []string
 }
+
+// DesignDocument design document
+type DesignDocumentValidator struct {
+	ID      string                 `json:"_id"`
+	Version int                    `json:"-"`
+	Hash    string                 `json:"-"`
+	Rev     string                 `json:"_rev"`
+	Schema  map[string]interface{} `json:"schema"`
+}
