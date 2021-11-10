@@ -306,7 +306,7 @@ func TestReaderGetChanges(t *testing.T) {
 
 	reader.Begin()
 	expected := `{"results":[{"seq":"seqID1","id":"_design/_views","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"},{"seq":"seqID2","id":"1","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"},{"seq":"seqID4","id":"2","rev":"2-4dd69f96755b8be0c5d6a4c4d875e705","deleted":true},{"seq":"seqID5","id":"invalid","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}]}`
-	changes, _ := reader.GetChanges("", 999)
+	changes, _ := reader.GetChanges("", 999, false)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
 	}

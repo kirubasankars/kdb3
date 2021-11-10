@@ -22,7 +22,7 @@ type Database interface {
 	GetDocument(doc *Document, includeData bool) (*Document, error)
 	GetAllDesignDocuments() ([]Document, error)
 	GetLastUpdateSequence() string
-	GetChanges(since string, limit int) ([]byte, error)
+	GetChanges(since string, limit int, order bool) ([]byte, error)
 	GetDocumentCount() (int, int)
 
 	GetStat() *DatabaseStat
@@ -144,6 +144,41 @@ func (db *DefaultDatabase) Close(closeChannel bool) error {
 
 // PutDocument put a document
 func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
+
+	// ctx := context.Background()
+	// _ = &jsonschema.Schema{}
+	// var schemaData = []byte(`{
+	// 	"title": "Person",
+	// 	"type": "object",
+	// 	"properties": {
+	// 		"firstName": {
+	// 			"type": "string"
+	// 		},
+	// 		"lastName": {
+	// 			"type": "string"
+	// 		},
+	// 		"age": {
+	// 			"description": "Age in years",
+	// 			"type": "integer",
+	// 			"minimum": 0
+	// 		},
+	// 		"friends": {
+	// 		  "type" : "array",
+	// 		  "items" : { "title" : "REFERENCE", "$ref" : "#" }
+	// 		}
+	// 	},
+	// 	"required": ["firstName", "lastName"]
+	//   }`)
+	// rs := &jsonschema.Schema{}
+	// if err := json.Unmarshal(schemaData, rs); err != nil {
+	// 	panic("unmarshal schema: " + err.Error())
+	// }
+	// errs, err := rs.ValidateBytes(ctx, doc.Data)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println(errs)
+
 	writer, ok := <-db.writer
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -288,7 +323,7 @@ func (db *DefaultDatabase) GetLastUpdateSequence() string {
 }
 
 // GetChanges get changes
-func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
+func (db *DefaultDatabase) GetChanges(since string, limit int, desc bool) ([]byte, error) {
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -300,7 +335,7 @@ func (db *DefaultDatabase) GetChanges(since string, limit int) ([]byte, error) {
 	defer reader.Commit()
 	reader.Begin()
 
-	return reader.GetChanges(since, limit)
+	return reader.GetChanges(since, limit, desc)
 }
 
 // GetDocumentCount get document count

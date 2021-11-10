@@ -21,7 +21,6 @@ type KDB struct {
 	dbs            map[string]Database
 	rwMutex        sync.RWMutex
 	serviceLocator ServiceLocator
-	fileHandler    FileHandler
 	localDB        LocalDB
 }
 
@@ -264,7 +263,7 @@ func (kdb *KDB) Vacuum(name string) error {
 }
 
 // Changes list changes
-func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
+func (kdb *KDB) Changes(name string, since string, limit int, desc bool) ([]byte, error) {
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -272,9 +271,9 @@ func (kdb *KDB) Changes(name string, since string, limit int) ([]byte, error) {
 		return nil, ErrDatabaseNotFound
 	}
 	if limit == 0 {
-		limit = 10000
+		limit = 1000
 	}
-	return db.GetChanges(since, limit)
+	return db.GetChanges(since, limit, desc)
 }
 
 // SelectView select the kdb view
