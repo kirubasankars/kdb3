@@ -395,7 +395,7 @@ func TestHandlerGetChanges(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &a)
 
 	a0 := a.Results[0]
-	if a0.ID != "_design/_views" || a0.Rev != "1-99914b932bd37a50b983c5e7c90ae93b" {
+	if a0.ID != "_design/_views" || a0.Rev != "1-97ed309809ad03093b85f264029f83af" {
 		t.Errorf(`failed`)
 	}
 
