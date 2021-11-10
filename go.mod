@@ -7,3 +7,8 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/valyala/fastjson v1.6.3
 )
+
+require (
+	github.com/qri-io/jsonpointer v0.1.1 // indirect
+	github.com/qri-io/jsonschema v0.2.1 // indirect
+)
