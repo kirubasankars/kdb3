@@ -49,8 +49,11 @@ type DefaultDatabase struct {
 	reader chan DatabaseReader
 	writer chan DatabaseWriter
 
-	viewManager    ViewManager
-	vacuumManager  chan VacuumManager
+	viewManager   ViewManager
+	vacuumManager chan VacuumManager
+
+	schemaValidator SchemaValidator
+
 	serviceLocator ServiceLocator
 }
 
@@ -86,6 +89,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
 	db.UpdateSequence = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSequence)
+	db.schemaValidator = &DefaultJSONSchemaValidator{}
 
 	if createIfNotExists {
 		if err = db.SetupAllDocsViews(); err != nil {
@@ -97,6 +101,8 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	if err != nil {
 		return err
 	}
+
+	db.schemaValidator.Setup(designDocs)
 
 	return db.viewManager.Initialize(designDocs)
 }
@@ -144,40 +150,9 @@ func (db *DefaultDatabase) Close(closeChannel bool) error {
 
 // PutDocument put a document
 func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
-
-	// ctx := context.Background()
-	// _ = &jsonschema.Schema{}
-	// var schemaData = []byte(`{
-	// 	"title": "Person",
-	// 	"type": "object",
-	// 	"properties": {
-	// 		"firstName": {
-	// 			"type": "string"
-	// 		},
-	// 		"lastName": {
-	// 			"type": "string"
-	// 		},
-	// 		"age": {
-	// 			"description": "Age in years",
-	// 			"type": "integer",
-	// 			"minimum": 0
-	// 		},
-	// 		"friends": {
-	// 		  "type" : "array",
-	// 		  "items" : { "title" : "REFERENCE", "$ref" : "#" }
-	// 		}
-	// 	},
-	// 	"required": ["firstName", "lastName"]
-	//   }`)
-	// rs := &jsonschema.Schema{}
-	// if err := json.Unmarshal(schemaData, rs); err != nil {
-	// 	panic("unmarshal schema: " + err.Error())
-	// }
-	// errs, err := rs.ValidateBytes(ctx, doc.Data)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println(errs)
+	if errs := db.schemaValidator.Validate(doc); errs != nil {
+		return nil, fmt.Errorf("%s: %w", strings.Join(errs, ","), ErrInternalError)
+	}
 
 	writer, ok := <-db.writer
 	if !ok {
@@ -250,6 +225,10 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	}
 
 	if currentDoc != nil && strings.HasPrefix(doc.ID, "_design/") {
+		if doc.ID == "_design/_schema" {
+			designDocs, _ := db.GetAllDesignDocuments()
+			db.schemaValidator.Setup(designDocs)
+		}
 		// call only if design doc changed
 		db.viewManager.DeleteViewsIfRemoved(*doc)
 	}
@@ -501,6 +480,7 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 

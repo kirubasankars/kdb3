@@ -14,6 +14,7 @@ type Document struct {
 	Version int
 	Hash    string
 	Deleted bool
+	Kind    string
 	Data    []byte
 }
 
@@ -42,6 +43,7 @@ func ParseDocument(value []byte) (*Document, error) {
 		id      string
 		version int = 0
 		hash    string
+		kind    string
 		deleted bool
 	)
 
@@ -66,6 +68,10 @@ func ParseDocument(value []byte) (*Document, error) {
 		deleted = false
 	}
 
+	if v.Exists("_kind") {
+		kind = strings.ReplaceAll(v.Get("_kind").String(), "\"", "")
+	}
+
 	if id == "" && (version != 0 || hash != "" || deleted) {
 		return &Document{ID: id}, fmt.Errorf("%s: %w", "document missing _id", ErrDocumentInvalidInput)
 	}
@@ -76,6 +82,7 @@ func ParseDocument(value []byte) (*Document, error) {
 	doc.ID = id
 	doc.Version = version
 	doc.Hash = hash
+	doc.Kind = kind
 	doc.Deleted = deleted
 	doc.Data = value
 
