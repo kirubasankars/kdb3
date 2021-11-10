@@ -142,6 +142,12 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") && len(newDoc.Data) != 0 {
+		if newDoc.ID == "_design/_schema" {
+			err := db.ValidateSchemaDocument(*newDoc)
+			if err != nil {
+				return nil, err
+			}
+		}
 		err := db.ValidateDesignDocument(*newDoc)
 		if err != nil {
 			return nil, err

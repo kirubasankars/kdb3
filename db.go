@@ -29,6 +29,7 @@ type Database interface {
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	SQL(fromSeqID, designDocID, viewName string) ([]byte, error)
 	ValidateDesignDocument(doc Document) error
+	ValidateSchemaDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
 
@@ -441,6 +442,11 @@ func (db *DefaultDatabase) SQL(fromSeqID, designDocID, viewName string) ([]byte,
 // ValidateDesignDocument validate design document
 func (db *DefaultDatabase) ValidateDesignDocument(doc Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
+}
+
+// ValidateSchemaDocument validate schema document
+func (db *DefaultDatabase) ValidateSchemaDocument(doc Document) error {
+	return db.schemaValidator.ValidateSchema(doc)
 }
 
 // GetViewManager get a view manager
