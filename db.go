@@ -225,7 +225,7 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	}
 
 	if currentDoc != nil && strings.HasPrefix(doc.ID, "_design/") {
-		if doc.ID == "_design/_validations" {
+		if doc.ID == "_design/_schema" {
 			designDocs, _ := db.GetAllDesignDocuments()
 			db.schemaValidator.Setup(designDocs)
 		}
