@@ -25,7 +25,7 @@ func (validator *DefaultJSONSchemaValidator) Setup(designDocs []Document) {
 
 	var designDoc Document
 	for _, x := range designDocs {
-		if x.ID == "_design/_validations" {
+		if x.ID == "_design/_schema" {
 			designDoc = x
 			break
 		}
@@ -47,6 +47,7 @@ func (validator *DefaultJSONSchemaValidator) Setup(designDocs []Document) {
 	if schemaObject != nil {
 		schemaObject.Visit(func(key []byte, value *fastjson.Value) {
 			rs := &jsonschema.Schema{}
+			value.Set("type", fastjson.MustParse("\"object\""))
 			if err := json.Unmarshal([]byte(value.String()), rs); err != nil {
 				panic("unmarshal schema: " + err.Error())
 			}
