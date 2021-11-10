@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/qri-io/jsonschema"
 	"github.com/valyala/fastjson"
@@ -11,6 +12,7 @@ import (
 type SchemaValidator interface {
 	Setup(designDocs []Document)
 	Validate(doc *Document) []string
+	ValidateSchema(doc Document) error
 }
 
 type DefaultJSONSchemaValidator struct {
@@ -71,5 +73,22 @@ func (validator *DefaultJSONSchemaValidator) Validate(doc *Document) []string {
 		}
 	}
 
+	return nil
+}
+
+func (validator *DefaultJSONSchemaValidator) ValidateSchema(doc Document) error {
+	jsonValue, _ := parserPool.Get().ParseBytes(doc.Data)
+
+	schemaObject := jsonValue.GetObject("schema")
+	if schemaObject != nil {
+		var err error
+		schemaObject.Visit(func(key []byte, value *fastjson.Value) {
+			rs := &jsonschema.Schema{}
+			if err = json.Unmarshal([]byte(value.String()), rs); err != nil {
+				err = fmt.Errorf("%s: %w", err, ErrInternalError)
+			}
+		})
+		return err
+	}
 	return nil
 }
