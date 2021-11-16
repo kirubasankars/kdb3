@@ -148,9 +148,11 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 				return nil, err
 			}
 		}
-		err := db.ValidateDesignDocument(*newDoc)
-		if err != nil {
-			return nil, err
+		if newDoc.ID == "_design/_views" {
+			err := db.ValidateDesignDocument(*newDoc)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

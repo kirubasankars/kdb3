@@ -222,6 +222,7 @@ func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 func ValidateRequestJSON(w http.ResponseWriter, r *http.Request) error {
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(fmt.Sprintf("Content-Type header [%s] is not supported", r.Header.Get("Content-Type"))))
 		return ErrInternalError
 	}
 	return nil
