@@ -50,9 +50,7 @@ func (validator *DefaultJSONSchemaValidator) Setup(designDocs []Document) {
 		schemaObject.Visit(func(key []byte, value *fastjson.Value) {
 			rs := &jsonschema.Schema{}
 			value.Set("type", fastjson.MustParse("\"object\""))
-			if err := json.Unmarshal([]byte(value.String()), rs); err != nil {
-				panic("unmarshal schema: " + err.Error())
-			}
+			json.Unmarshal([]byte(value.String()), rs)
 			validator.schema[string(key)] = rs
 		})
 	}
