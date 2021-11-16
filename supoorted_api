@@ -1,0 +1,39 @@
+GET     /
+GET     /_cat/dbs
+GET     /_cat/views
+
+GET     /{db}
+PUT     /{db}
+DELETE  /{db}
+POST    /{db}
+
+HEAD    /{db}/{doc_id}
+PUT     /{db}/{doc_id}
+GET     /{db}/{doc_id}
+DELETE  /{db}/{doc_id}
+
+PUT     /{db}/{doc_id}/{attname}
+GET     /{db}/{doc_id}/{attname}
+DELETE  /{db}/{doc_id}/{attname}
+
+HEAD    /{db}/_design/{doc_id}
+GET     /{db}/_design/{doc_id}
+PUT     /{db}/_design/{doc_id}
+DELETE  /{db}/_design/{doc_id}
+
+GET     /{db}/_design/{doc_id}/{attname}
+PUT     /{db}/_design/{doc_id}/{attname}
+DELETE  /{db}/_design/{doc_id}/{attname}
+
+GET     /{db}/_design/{doc_id}/{view_name}
+GET     /{db}/_design/{doc_id}/{view_name}/{select}
+POST    /{db}/_design/{doc_id}/{view_name}
+POST    /{db}/_design/{doc_id}/{view_name}/{select}
+
+GET     /{db}/_changes
+GET     /{db}/_all_docs
+POST    /{db}/_vacuum
+
+GET     /{db}/_remote
+PUT     /{db}/_remote
+DELETE  /{db}/_remote
