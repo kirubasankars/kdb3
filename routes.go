@@ -1,6 +1,7 @@
 package main
 
 import (
+	"mime"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -19,8 +20,10 @@ func NewRouter(kdb *KDB) *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 	kdbHandler := NewKDBHandler(kdb)
 
-	router.PathPrefix("/_utils").
-		Handler(http.StripPrefix("/_utils", http.FileServer(http.Dir("./share/www/"))))
+	mime.AddExtensionType(".js", "application/javascript; charset=utf-8")
+
+	fs := http.FileServer(http.Dir("./share/www"))
+	router.PathPrefix("/_utils").Handler(http.StripPrefix("/_utils", fs))
 
 	var routes = Routes{
 		Route{
