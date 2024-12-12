@@ -76,9 +76,6 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 
 	//load all design docs into memory
 	for _, x := range designDocs {
-		if x.ID == "_design/_schema" {
-			continue
-		}
 		designDoc := &DesignDocument{}
 		doc, _ := ParseDocument(x.Data)
 		err := json.Unmarshal(doc.Data, designDoc)

@@ -29,7 +29,6 @@ type Database interface {
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	SQL(fromSeqID, designDocID, viewName string) ([]byte, error)
 	ValidateDesignDocument(doc Document) error
-	ValidateSchemaDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
 
@@ -52,8 +51,6 @@ type DefaultDatabase struct {
 
 	viewManager   ViewManager
 	vacuumManager chan VacuumManager
-
-	schemaValidator SchemaValidator
 
 	serviceLocator ServiceLocator
 }
@@ -90,7 +87,6 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
 	db.UpdateSequence = db.GetLastUpdateSequence()
 	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSequence)
-	db.schemaValidator = &DefaultJSONSchemaValidator{}
 
 	if createIfNotExists {
 		if err = db.SetupAllDocsViews(); err != nil {
@@ -102,8 +98,6 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	if err != nil {
 		return err
 	}
-
-	db.schemaValidator.Setup(designDocs)
 
 	return db.viewManager.Initialize(designDocs)
 }
@@ -151,10 +145,6 @@ func (db *DefaultDatabase) Close(closeChannel bool) error {
 
 // PutDocument put a document
 func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
-	if errs := db.schemaValidator.Validate(doc); errs != nil {
-		return nil, fmt.Errorf("%s: %w", strings.Join(errs, ","), ErrInternalError)
-	}
-
 	writer, ok := <-db.writer
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -226,10 +216,6 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	}
 
 	if currentDoc != nil && strings.HasPrefix(doc.ID, "_design/") {
-		if doc.ID == "_design/_schema" {
-			designDocs, _ := db.GetAllDesignDocuments()
-			db.schemaValidator.Setup(designDocs)
-		}
 		// call only if design doc changed
 		db.viewManager.DeleteViewsIfRemoved(*doc)
 	}
@@ -442,11 +428,6 @@ func (db *DefaultDatabase) SQL(fromSeqID, designDocID, viewName string) ([]byte,
 // ValidateDesignDocument validate design document
 func (db *DefaultDatabase) ValidateDesignDocument(doc Document) error {
 	return db.viewManager.ValidateDesignDocument(doc)
-}
-
-// ValidateSchemaDocument validate schema document
-func (db *DefaultDatabase) ValidateSchemaDocument(doc Document) error {
-	return db.schemaValidator.ValidateSchema(doc)
 }
 
 // GetViewManager get a view manager
