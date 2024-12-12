@@ -36,5 +36,4 @@ type DesignDocumentValidator struct {
 	Version int                    `json:"-"`
 	Hash    string                 `json:"-"`
 	Rev     string                 `json:"_rev"`
-	Schema  map[string]interface{} `json:"schema"`
 }
