@@ -7,9 +7,7 @@ Features
   3. Restful API
   4. Change tracking
   5. Incrementally updated Materialized View (with sqlite3)  
-  6. JSON Schema validation
-  7. Live Vacuum  
-  8. UI - InProgress
+  6. Live Vacuum  
 
 Database can be created as follows.
 
