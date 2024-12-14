@@ -195,7 +195,7 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 			code, reason := errorString(err)
 			jsonb = []byte(fmt.Sprintf(`{"_id":"%s", "error":"%s","reason":"%s"}`, inputDoc.ID, code, reason))
 		} else {
-			jsonb = []byte(formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
+			jsonb = []byte(formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
 		}
 
 		v := fastjson.MustParse(string(jsonb))
@@ -265,7 +265,7 @@ func (kdb *KDB) Vacuum(name string) error {
 }
 
 // Changes list changes
-func (kdb *KDB) Changes(name string, since string, limit int, desc bool) ([]byte, error) {
+func (kdb *KDB) Changes(name string, since int, limit int, desc bool) ([]byte, error) {
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -296,7 +296,7 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 }
 
 // SQL build sql the kdb view
-func (kdb *KDB) SQL(dbName, designDocID, viewName, fromSeqID string) ([]byte, error) {
+func (kdb *KDB) SQL(dbName, designDocID, viewName string, fromSeqID int) ([]byte, error) {
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[dbName]

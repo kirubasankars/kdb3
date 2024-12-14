@@ -15,26 +15,25 @@ type DatabaseWriter interface {
 	ExecBuildScript() error
 
 	GetDocumentMetadataByID(docID string) (*Document, error)
-	PutDocument(updateSeqID string, newDoc *Document) error
+	PutDocument(updateSeqID int, newDoc *Document) error
 }
 
 func SetupDatabaseScript() string {
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS documents (
-			doc_id 		TEXT, 
-			version     INTEGER, 
-			hash 		TEXT,
+			doc_id 		TEXT,
+			version     INTEGER,
 			deleted     BOOL,
 			data        TEXT,
-			seq_id 		TEXT,
+			update_seq	INT,
 			PRIMARY KEY (doc_id)
 		) WITHOUT ROWID;
-		
-		CREATE INDEX IF NOT EXISTS idx_metadata ON documents 
-			(doc_id, version, hash, deleted);
 
-		CREATE INDEX IF NOT EXISTS idx_changes ON documents 
-			(doc_id, seq_id, deleted);
+		CREATE INDEX IF NOT EXISTS idx_metadata ON documents
+			(doc_id, version, deleted);
+
+		CREATE INDEX IF NOT EXISTS idx_changes ON documents
+			(doc_id, update_seq, deleted);
 		`
 	return buildSQL
 }
@@ -67,7 +66,7 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 		writer.Commit()
 	}
 
-	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, hash, deleted, seq_id, data) VALUES(?, ?, ?, ?, ?, ?)")
+	writer.stmtPutDocument, err = con.Prepare("INSERT OR REPLACE INTO documents (doc_id, version, deleted, update_seq, data) VALUES(?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -112,7 +111,7 @@ func (writer *DefaultDatabaseWriter) GetDocumentMetadataByID(docID string) (*Doc
 }
 
 // PutDocument put document
-func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document) error {
+func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID int, newDoc *Document) error {
 	defer writer.stmtPutDocument.Reset()
-	return writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Hash, newDoc.Deleted, updateSeqID, newDoc.Data)
+	return writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Deleted, updateSeqID, newDoc.Data)
 }

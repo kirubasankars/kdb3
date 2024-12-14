@@ -21,8 +21,8 @@ type ViewManager interface {
 	Initialize(designDocs []Document) error
 	OpenView(docID, viewName string, designDocumentView DesignDocumentView) error
 	GetView(viewName string) (*View, bool)
-	SelectView(updateSeqID string, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	SQL(updateSeqID string, doc Document, viewName string) ([]byte, error)
+	SelectView(updateSeqID int, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SQL(updateSeqID int, doc Document, viewName string) ([]byte, error)
 
 	DeleteViewsIfRemoved(doc Document)
 	ValidateDesignDocument(doc Document) error
@@ -79,7 +79,6 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 		designDoc := &DesignDocument{}
 		doc, _ := ParseDocument(x.Data)
 		err := json.Unmarshal(doc.Data, designDoc)
-		designDoc.Hash = doc.Hash
 		designDoc.Version = doc.Version
 		if err != nil {
 			return err
@@ -159,7 +158,7 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (mgr *DefaultViewManager) SelectView(updateSeqID int, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
@@ -177,9 +176,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 
 		designDoc := &DesignDocument{}
 		err := json.Unmarshal(doc.Data, designDoc)
-		version, hash, _ := SplitRev(designDoc.Rev)
-		designDoc.Version = version
-		designDoc.Hash = hash
+		designDoc.Version = designDoc.Rev
 		if err != nil {
 			panic("invalid_design_document " + doc.ID)
 		}
@@ -254,7 +251,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID string, doc Document, view
 	return view.Select(selectName, values)
 }
 
-func (mgr *DefaultViewManager) SQL(fromSeqID string, doc Document, viewName string) ([]byte, error) {
+func (mgr *DefaultViewManager) SQL(fromSeqID int, doc Document, viewName string) ([]byte, error) {
 	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
@@ -576,7 +573,7 @@ type View struct {
 	name         string
 	DBName       string
 	designDocID  string
-	currentSeqID string
+	currentSeqID int
 
 	viewReader chan ViewReader
 	viewWriter chan ViewWriter
@@ -665,7 +662,7 @@ func (view *View) Close(closeChannel bool) error {
 	return nil
 }
 
-func (view *View) Build(nextSeqID string) error {
+func (view *View) Build(nextSeqID int) error {
 	if view.currentSeqID >= nextSeqID {
 		return nil
 	}
@@ -703,7 +700,7 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 	return viewReader.Select(name, values)
 }
 
-func (view *View) SQL(fromSeqID string) ([]byte, error) {
+func (view *View) SQL(fromSeqID int) ([]byte, error) {
 	vs := view.serviceLocator.GetViewSQLBuilder(view.DBName, view.designDocID, view.name, view.setupScripts, view.runScripts)
 	vs.Open()
 	return vs.SQL(fromSeqID)
@@ -759,9 +756,9 @@ func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
 	}
 
 	err = db.Exec(`
-		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted, seq_id FROM docsdb.documents INDEXED BY idx_changes WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW latest_documents AS SELECT doc_id, printf('%d-%s', version, hash) as rev, deleted, data, seq_id FROM docsdb.documents WHERE seq_id > (SELECT current_seq_id FROM view_meta) AND seq_id <= (SELECT next_seq_id FROM view_meta);
-		CREATE TEMP VIEW documents AS SELECT doc_id, printf('%d-%s', version, hash) as rev, deleted, data, seq_id FROM docsdb.documents
+		CREATE TEMP VIEW latest_changes AS SELECT doc_id, deleted, update_seq FROM docsdb.documents INDEXED BY idx_changes WHERE update_seq > (SELECT current_update_seq FROM view_meta) AND update_seq <= (SELECT next_update_seq FROM view_meta);
+		CREATE TEMP VIEW latest_documents AS SELECT doc_id, version as rev, deleted, data, update_seq FROM docsdb.documents WHERE update_seq > (SELECT current_update_seq FROM view_meta) AND update_seq <= (SELECT next_update_seq FROM view_meta);
+		CREATE TEMP VIEW documents AS SELECT doc_id, version as rev, deleted, data, update_seq FROM docsdb.documents
 	`)
 
 	return err

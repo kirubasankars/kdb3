@@ -4,73 +4,19 @@ import (
 	"encoding/hex"
 	mrand "math/rand"
 	"sync"
-	"time"
 )
 
 type ChangeSequenceGenarator struct {
-	charSet []byte
-	len     int
-
-	current   []int
-	endString []int
+	current int
 }
 
-func NewChangeSequenceGenarator(l int, seedId string) *ChangeSequenceGenarator {
-	seq := &ChangeSequenceGenarator{}
-	seq.charSet = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz")
-	seq.len = l
-
-	mrand.Seed(time.Now().UnixNano())
-	if seedId == "" {
-		for i := 0; i < l; i++ {
-			seq.current = append(seq.current, mrand.Intn(63))
-		}
-	} else {
-		if l != len(seedId) {
-			panic("seed value has to match len")
-		}
-
-		for _, x := range []byte(seedId) {
-			for j, y := range seq.charSet {
-				if x == y {
-					seq.current = append(seq.current, j)
-				}
-			}
-		}
-	}
-
-	return seq
+func NewChangeSequenceGenarator(current int) *ChangeSequenceGenarator {
+	return &ChangeSequenceGenarator{current: current}
 }
 
-func (seq *ChangeSequenceGenarator) Next() string {
-
-	reachedEnd := false
-	for i := seq.len - 1; i >= 0; i-- {
-		t := seq.current[i] + 1
-		if t == 63 {
-			reachedEnd = true
-			t = 0
-		} else {
-			reachedEnd = false
-		}
-
-		seq.current[i] = t
-
-		if i == 0 && reachedEnd {
-			panic("reached the end of world.")
-		}
-
-		if !reachedEnd {
-			break
-		}
-	}
-
-	v := []byte("")
-	for i := 0; i < seq.len; i++ {
-		v = append(v, seq.charSet[seq.current[i]])
-	}
-
-	return string(v)
+func (seq *ChangeSequenceGenarator) Next() int {
+	seq.current = seq.current + 1
+	return seq.current
 }
 
 type SequenceUUIDGenarator struct {

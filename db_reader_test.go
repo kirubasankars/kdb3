@@ -14,20 +14,20 @@ func openTestDatabaseForReader() func() {
 	writer.Open(true)
 
 	writer.Begin()
-	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705", "test":"test"}`))
-	writer.PutDocument("seqID1", doc)
+	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views", "_rev": 1, "test":"test"}`))
+	writer.PutDocument(0, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
-	writer.PutDocument("seqID2", doc)
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev": 1}`))
+	writer.PutDocument(1, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
-	writer.PutDocument("seqID3", doc)
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 1}`))
+	writer.PutDocument(2, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705", "_deleted":true}`))
-	writer.PutDocument("seqID4", doc)
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 2, "_deleted":true}`))
+	writer.PutDocument(3, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}`))
-	writer.PutDocument("seqID5", doc)
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev": 1}`))
+	writer.PutDocument(4, doc)
 
 	writer.Commit()
 

@@ -15,16 +15,16 @@ type DatabaseReader interface {
 	Begin() error
 	Commit() error
 
-	GetDocumentMetadataByIDandVersion(ID string, Version int, Hash string) (*Document, error)
+	GetDocumentMetadataByIDandVersion(ID string, Version int) (*Document, error)
 	GetDocumentMetadataByID(ID string) (*Document, error)
 
 	GetDocumentByID(ID string) (*Document, error)
-	GetDocumentByIDandVersion(ID string, Version int, Hash string) (*Document, error)
+	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
 
 	GetAllDesignDocuments() ([]Document, error)
-	GetChanges(since string, limit int, desc bool) ([]byte, error)
+	GetChanges(since int, limit int, desc bool) ([]byte, error)
 
-	GetLastUpdateSequence() string
+	GetLastUpdateSequence() int
 	GetDocumentCount() (int, int)
 }
 
@@ -77,19 +77,19 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentMetadataByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? AND hash = ? LIMIT 1")
+	reader.stmtDocumentMetadataByIDandVersion, err = con.Prepare("SELECT doc_id, version, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ? AND version = ? LIMIT 1")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentMetadataByID, err = con.Prepare("SELECT doc_id, version, hash, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?")
+	reader.stmtDocumentMetadataByID, err = con.Prepare("SELECT doc_id, version, deleted FROM documents INDEXED BY idx_metadata WHERE doc_id = ?")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentByID, err = con.Prepare("SELECT doc_id, version, hash, deleted, data FROM documents WHERE doc_id = ?")
+	reader.stmtDocumentByID, err = con.Prepare("SELECT doc_id, version, deleted, data FROM documents WHERE doc_id = ?")
 	if err != nil {
 		return err
 	}
-	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, hash, deleted, data FROM documents WHERE doc_id = ? AND version = ? AND hash = ?")
+	reader.stmtDocumentByIDandVersion, err = con.Prepare("SELECT doc_id, version, deleted, data FROM documents WHERE doc_id = ? AND version = ?")
 	if err != nil {
 		return err
 	}
@@ -101,15 +101,15 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	changesQuery := `
 		WITH all_changes(doc_id) as
 		(
-			SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR seq_id > ?) ORDER by seq_id $ORDER$ LIMIT ?
+			SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR update_seq > ?) ORDER by update_seq $ORDER$ LIMIT ?
 		),
-		all_changes_metadata (seq, doc_id, version, hash, deleted) AS 
+		all_changes_metadata (update_seq, doc_id, version, deleted) AS
 		(
-			SELECT d.seq_id, d.doc_id, d.version, d.hash, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.seq_id $ORDER$
+			SELECT d.update_seq, d.doc_id, d.version, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.update_seq $ORDER$
 		),
 		changes_object (obj) as
 		(
-			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('seq', seq, 'id', doc_id, 'rev', printf('%d-%s', version, hash)) ELSE JSON_OBJECT('seq', seq, 'id', doc_id, 'rev', printf('%d-%s', version, hash), 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
+			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version) ELSE JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
 		)
 		SELECT JSON_OBJECT('results', JSON_GROUP_ARRAY(obj)) FROM changes_object
 	`
@@ -123,7 +123,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 		return err
 	}
 
-	reader.stmtLastUpdateSequence, err = con.Prepare("SELECT IFNULL(seq_id, '') FROM (SELECT MAX(seq_id) as seq_id FROM documents INDEXED BY idx_changes)")
+	reader.stmtLastUpdateSequence, err = con.Prepare("SELECT IFNULL(update_seq, '') FROM (SELECT MAX(update_seq) as update_seq FROM documents INDEXED BY idx_changes)")
 	if err != nil {
 		return err
 	}
@@ -141,10 +141,10 @@ func (reader *DefaultDatabaseReader) Commit() error {
 }
 
 // GetDocumentRevisionByIDandVersion get document info with id and version
-func (reader *DefaultDatabaseReader) GetDocumentMetadataByIDandVersion(ID string, Version int, Hash string) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentMetadataByIDandVersion(ID string, Version int) (*Document, error) {
 
 	defer reader.stmtDocumentMetadataByIDandVersion.Reset()
-	if err := reader.stmtDocumentMetadataByIDandVersion.Bind(ID, Version, Hash); err != nil {
+	if err := reader.stmtDocumentMetadataByIDandVersion.Bind(ID, Version); err != nil {
 		return nil, err
 	}
 	hasRow, err := reader.stmtDocumentMetadataByIDandVersion.Step()
@@ -154,7 +154,7 @@ func (reader *DefaultDatabaseReader) GetDocumentMetadataByIDandVersion(ID string
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentMetadataByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Deleted); err != nil {
+		if err := reader.stmtDocumentMetadataByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Deleted); err != nil {
 			return nil, err
 		}
 		if doc.Deleted {
@@ -181,7 +181,7 @@ func (reader *DefaultDatabaseReader) GetDocumentMetadataByID(ID string) (*Docume
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentMetadataByID.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Deleted); err != nil {
+		if err := reader.stmtDocumentMetadataByID.Scan(&doc.ID, &doc.Version, &doc.Deleted); err != nil {
 			return nil, err
 		}
 		if doc.Deleted {
@@ -208,11 +208,11 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 
 	if hasRow {
 		doc := &Document{}
-		if err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Deleted, &doc.Data); err != nil {
+		if err := reader.stmtDocumentByID.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data); err != nil {
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_rev":"%d-%s"`, doc.ID, doc.Version, doc.Hash)
+		var meta = fmt.Sprintf(`{"_id":"%s","_rev":%d`, doc.ID, doc.Version)
 		if len(doc.Data) != 2 {
 			meta = meta + ","
 		}
@@ -235,10 +235,10 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 }
 
 // GetDocumentByIDandVersion get document id and version
-func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int, Hash string) (*Document, error) {
+func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
 
 	defer reader.stmtDocumentByIDandVersion.Reset()
-	if err := reader.stmtDocumentByIDandVersion.Bind(ID, Version, Hash); err != nil {
+	if err := reader.stmtDocumentByIDandVersion.Bind(ID, Version); err != nil {
 		return nil, err
 	}
 
@@ -249,12 +249,12 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 
 	if hasRow {
 		doc := &Document{}
-		err := reader.stmtDocumentByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Hash, &doc.Deleted, &doc.Data)
+		err := reader.stmtDocumentByIDandVersion.Scan(&doc.ID, &doc.Version, &doc.Deleted, &doc.Data)
 		if err != nil {
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_rev":"%d-%s"`, doc.ID, doc.Version, doc.Hash)
+		var meta = fmt.Sprintf(`{"_id":"%s","_rev":%d`, doc.ID, doc.Version)
 		if len(doc.Data) != 2 {
 			meta = meta + ","
 		}
@@ -313,7 +313,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 }
 
 // GetChanges get document changes
-func (reader *DefaultDatabaseReader) GetChanges(since string, limit int, desc bool) ([]byte, error) {
+func (reader *DefaultDatabaseReader) GetChanges(since int, limit int, desc bool) ([]byte, error) {
 
 	if desc {
 		defer reader.stmtChangesDesc.Reset()
@@ -366,7 +366,7 @@ func (reader *DefaultDatabaseReader) GetChanges(since string, limit int, desc bo
 }
 
 // GetLastUpdateSequence get document changes
-func (reader *DefaultDatabaseReader) GetLastUpdateSequence() string {
+func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int {
 
 	defer reader.stmtLastUpdateSequence.Reset()
 	hasRow, err := reader.stmtLastUpdateSequence.Step()
@@ -375,7 +375,7 @@ func (reader *DefaultDatabaseReader) GetLastUpdateSequence() string {
 	}
 
 	if hasRow {
-		var maxUpdateSeq string
+		var maxUpdateSeq int
 		reader.stmtLastUpdateSequence.Scan(&maxUpdateSeq)
 		return maxUpdateSeq
 	}

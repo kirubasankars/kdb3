@@ -199,7 +199,6 @@ func TestDeleteDocument(t *testing.T) {
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","test":2}`))
-	inputDoc.Hash = ""
 	doc, err = kdb.PutDocument("testdb", inputDoc)
 	if err != nil && doc.Version != 3 {
 		t.Error(err)

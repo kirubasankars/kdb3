@@ -3,7 +3,7 @@ package main
 // DatabaseStat stat
 type DatabaseStat struct {
 	DBName          string `json:"name"`
-	UpdateSeq       string `json:"update_seq"`
+	UpdateSeq       int    `json:"update_seq"`
 	DocCount        int    `json:"doc_count"`
 	DeletedDocCount int    `json:"deleted_doc_count"`
 }
@@ -19,8 +19,7 @@ type DesignDocumentView struct {
 type DesignDocument struct {
 	ID      string                         `json:"_id"`
 	Version int                            `json:"-"`
-	Hash    string                         `json:"-"`
-	Rev     string                         `json:"_rev"`
+	Rev     int                            `json:"_rev"`
 	Views   map[string]*DesignDocumentView `json:"views"`
 }
 
@@ -32,8 +31,7 @@ type Query struct {
 
 // DesignDocument design document
 type DesignDocumentValidator struct {
-	ID      string                 `json:"_id"`
-	Version int                    `json:"-"`
-	Hash    string                 `json:"-"`
-	Rev     string                 `json:"_rev"`
+	ID      string `json:"_id"`
+	Version int    `json:"-"`
+	Rev     int    `json:"_rev"`
 }

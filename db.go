@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/md5"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,13 +20,13 @@ type Database interface {
 	DeleteDocument(doc *Document) (*Document, error)
 	GetDocument(doc *Document, includeData bool) (*Document, error)
 	GetAllDesignDocuments() ([]Document, error)
-	GetLastUpdateSequence() string
-	GetChanges(since string, limit int, order bool) ([]byte, error)
+	GetLastUpdateSequence() int
+	GetChanges(since int, limit int, order bool) ([]byte, error)
 	GetDocumentCount() (int, int)
 
 	GetStat() *DatabaseStat
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	SQL(fromSeqID, designDocID, viewName string) ([]byte, error)
+	SQL(fromSeqID int, designDocID, viewName string) ([]byte, error)
 	ValidateDesignDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
@@ -38,7 +37,7 @@ type Database interface {
 // DefaultDatabase default implementation of database
 type DefaultDatabase struct {
 	Name                 string
-	UpdateSequence       string
+	UpdateSequence       int
 	DocumentCount        int
 	DeletedDocumentCount int
 
@@ -86,7 +85,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 
 	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
 	db.UpdateSequence = db.GetLastUpdateSequence()
-	db.changeSeq = NewChangeSequenceGenarator(138, db.UpdateSequence)
+	db.changeSeq = NewChangeSequenceGenarator(db.UpdateSequence)
 
 	if createIfNotExists {
 		if err = db.SetupAllDocsViews(); err != nil {
@@ -194,8 +193,6 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 	doc.CalculateNextVersion()
 	updateSeq := db.changeSeq.Next()
 
-	doc.Hash = fmt.Sprintf("%x", md5.Sum(doc.Data))
-
 	if err = writer.PutDocument(updateSeq, doc); err != nil {
 		return nil, err
 	}
@@ -245,13 +242,13 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 
 	if includeData {
 		if doc.Version > 0 {
-			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version, doc.Hash)
+			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
 		}
 		return reader.GetDocumentByID(doc.ID)
 	}
 
 	if doc.Version > 0 {
-		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version, doc.Hash)
+		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)
 	}
 	return reader.GetDocumentMetadataByID(doc.ID)
 }
@@ -273,7 +270,7 @@ func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
 }
 
 // GetLastUpdateSequence get last sequence number
-func (db *DefaultDatabase) GetLastUpdateSequence() string {
+func (db *DefaultDatabase) GetLastUpdateSequence() int {
 	reader, ok := <-db.reader
 	if !ok {
 		panic(ErrDatabaseNotFound)
@@ -289,7 +286,7 @@ func (db *DefaultDatabase) GetLastUpdateSequence() string {
 }
 
 // GetChanges get changes
-func (db *DefaultDatabase) GetChanges(since string, limit int, desc bool) ([]byte, error) {
+func (db *DefaultDatabase) GetChanges(since int, limit int, desc bool) ([]byte, error) {
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -355,7 +352,7 @@ func (db *DefaultDatabase) Vacuum() error {
 	vacuumManager.SetupDatabase()
 
 	maxUpdateSequence := db.UpdateSequence
-	vacuumManager.CopyData("", maxUpdateSequence)
+	vacuumManager.CopyData(0, maxUpdateSequence)
 
 	vacuumManager.Vacuum()
 
@@ -413,7 +410,7 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 }
 
 // SQL build sql
-func (db *DefaultDatabase) SQL(fromSeqID, designDocID, viewName string) ([]byte, error) {
+func (db *DefaultDatabase) SQL(fromSeqID int, designDocID, viewName string) ([]byte, error) {
 	inputDoc := &Document{ID: designDocID}
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
@@ -451,7 +448,7 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 					],
 					"select" : {
 						"default" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
-						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"						
+						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"
 					}
 				}
 			}

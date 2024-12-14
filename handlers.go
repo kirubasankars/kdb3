@@ -115,7 +115,7 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 	db := vars["db"]
 	r.ParseForm()
 
-	since := r.FormValue("since")
+	since, _ := strconv.Atoi(r.FormValue("since"))
 	limit, _ := strconv.Atoi(r.FormValue("limit"))
 	descending, _ := strconv.ParseBool(r.FormValue("descending"))
 	rs, err := kdb.Changes(db, since, limit, descending)
@@ -158,7 +158,7 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 		NotOK(err, w)
 		return
 	}
-	output := formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted)
+	output := formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -168,16 +168,16 @@ func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r
 func (handler KDBHandler) getDocument(db, docid string, includeDocs bool, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	rev := r.FormValue("rev")
-	version, hash := 0, ""
+	version := 0
 	if rev != "" {
 		var err error
-		version, hash, err = SplitRev(rev)
+		version, err = strconv.Atoi(rev)
 		if err != nil {
 			NotOK(err, w)
 			return
 		}
 	}
-	var inputDoc = &Document{ID: docid, Version: version, Hash: hash}
+	var inputDoc = &Document{ID: docid, Version: version}
 	outputDoc, err := kdb.GetDocument(db, inputDoc, includeDocs)
 	if err != nil {
 		NotOK(err, w)
@@ -194,12 +194,12 @@ func (handler KDBHandler) getDocument(db, docid string, includeDocs bool, w http
 func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	rev := r.FormValue("rev")
-	version, hash, err := SplitRev(rev)
+	version, err := strconv.Atoi(rev)
 	if err != nil {
 		NotOK(err, w)
 		return
 	}
-	inputDoc := &Document{ID: docid, Version: version, Hash: hash, Deleted: true}
+	inputDoc := &Document{ID: docid, Version: version, Deleted: true}
 	outputDoc, err := kdb.DeleteDocument(db, inputDoc)
 	if err != nil {
 		NotOK(err, w)
@@ -208,7 +208,7 @@ func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Hash, outputDoc.Deleted))
+	fmt.Fprint(w, formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
 }
 
 func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
@@ -382,7 +382,7 @@ func (handler KDBHandler) SQL(w http.ResponseWriter, r *http.Request) {
 	view := vars["view"]
 
 	r.ParseForm()
-	fromSeqID := r.FormValue("from")
+	fromSeqID, _ := strconv.Atoi(r.FormValue("from"))
 	rs, _ := kdb.SQL(db, ddocID, view, fromSeqID)
 
 	w.Header().Set("Content-Type", "application/json")
