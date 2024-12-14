@@ -11,7 +11,7 @@ import (
 	"github.com/valyala/fastjson"
 )
 
-//https://blog.questionable.services/article/testing-http-handlers-go/
+// https://blog.questionable.services/article/testing-http-handlers-go/
 func TestGetUUID(t *testing.T) {
 	kdb, _ := NewKDB()
 	var parser fastjson.Parser
@@ -181,7 +181,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
 	}
 
-	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version, doc.Hash, false))
+	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version, false))
 	req, _ = http.NewRequest("POST", "/testdb", body)
 	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -195,7 +195,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 		t.Errorf(`expected to have ok, got %s`, rr.Body.String())
 	}
 
-	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version-1, doc.Hash, false))
+	body = bytes.NewBufferString(formatDocumentString(doc.ID, doc.Version-1, false))
 	req, _ = http.NewRequest("POST", "/testdb", body)
 	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -231,7 +231,7 @@ func TestHandlerDeleteDocument(t *testing.T) {
 
 	doc, _ := ParseDocument(rr.Body.Bytes())
 	rr = httptest.NewRecorder()
-	req, _ = http.NewRequest("DELETE", fmt.Sprintf("/testdb/1?rev=%d-%s", doc.Version, doc.Hash), nil)
+	req, _ = http.NewRequest("DELETE", fmt.Sprintf("/testdb/1?rev=%d", doc.Version), nil)
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)

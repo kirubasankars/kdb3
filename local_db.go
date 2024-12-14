@@ -162,7 +162,6 @@ func (db *DefaultLocalDB) ListViewFiles(dbname string) ([]string, error) {
 	db.mux.RLock()
 	defer db.mux.RUnlock()
 
-
 	stmt, err := db.con.Prepare("SELECT filename FROM views where db = ?", dbname)
 	if err != nil {
 		return nil, err

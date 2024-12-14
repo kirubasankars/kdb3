@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-func formatDocumentString(id string, version int, hash string, deleted bool) string {
+func formatDocumentString(id string, version int, deleted bool) string {
 	var item []string
 	item = append(item, fmt.Sprintf(`"_id":"%s"`, id))
-	item = append(item, fmt.Sprintf(`"_rev":"%d-%s"`, version, hash))
+	item = append(item, fmt.Sprintf(`"_rev":%d`, version))
 	if deleted {
 		item = append(item, `"_deleted":true`)
 	}

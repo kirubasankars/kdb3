@@ -3,16 +3,17 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"path/filepath"
 	"strings"
+
+	"github.com/bvinc/go-sqlite-lite/sqlite3"
 )
 
 type ViewSQLChangeSet struct {
 	absoluteDatabasePath string
-	setupScripts		 []Query
+	setupScripts         []Query
 	scripts              []Query
-	con 				 *sqlite3.Conn
+	con                  *sqlite3.Conn
 }
 
 func (vs *ViewSQLChangeSet) Open() error {
@@ -25,12 +26,12 @@ func (vs *ViewSQLChangeSet) Open() error {
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS view_meta (
 			Id						INTEGER PRIMARY KEY,
-			current_seq_id		  	TEXT,
-			next_seq_id		  		TEXT
+			current_update_seq	  	INT,
+			next_update_seq	  		INT
 		) WITHOUT ROWID;
-	
-		INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
-			SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+
+		INSERT INTO view_meta (Id, current_update_seq, next_update_seq)
+			SELECT 1,0,0 WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	`
 
 	err = con.WithTx(func() error {
@@ -53,12 +54,12 @@ func (vs *ViewSQLChangeSet) Open() error {
 	return err
 }
 
-func (vs *ViewSQLChangeSet) SQL(seqID string) ([]byte, error) {
+func (vs *ViewSQLChangeSet) SQL(update_seq int) ([]byte, error) {
 	db := vs.con
 	defer db.Close()
 
 	db.WithTx(func() error {
-		if err := db.Exec("UPDATE view_meta SET current_seq_id = ?, next_seq_id = (SELECT IFNULL(MAX(seq_id),?) FROM documents WHERE seq_id >= ? ORDER BY seq_id LIMIT 300)", seqID, seqID, seqID); err != nil {
+		if err := db.Exec("UPDATE view_meta SET current_update_seq = ?, next_update_seq = (SELECT IFNULL(MAX(update_seq),?) FROM documents WHERE update_seq >= ? ORDER BY update_seq LIMIT 300)", update_seq, update_seq, update_seq); err != nil {
 			return err
 		}
 		for _, x := range vs.scripts {
@@ -109,8 +110,8 @@ func (vs *ViewSQLChangeSet) SQL(seqID string) ([]byte, error) {
 	var outputSQL bytes.Buffer
 
 	outputSQL.WriteString("BEGIN;\n")
-	if seqID == "" {
-		outputSQL.WriteString(`CREATE TABLE IF NOT EXISTS view_meta (Id INTEGER PRIMARY KEY, current_seq_id TEXT, next_seq_id TEXT) WITHOUT ROWID;`)
+	if update_seq == 0 {
+		outputSQL.WriteString(`CREATE TABLE IF NOT EXISTS view_meta (Id INTEGER PRIMARY KEY, current_update_seq TEXT, next_update_seq TEXT) WITHOUT ROWID;`)
 		outputSQL.WriteString("\n")
 
 		for _, q := range vs.setupScripts {

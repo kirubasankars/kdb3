@@ -10,7 +10,7 @@ type VacuumManager interface {
 	SetNewConnectionString(connectionString string)
 	SetCurrentConnectionString(currentDatabasePath, connectionString string)
 	SetupDatabase() error
-	CopyData(minUpdateSequence string, maxUpdateSequence string) error
+	CopyData(minUpdateSequence int, maxUpdateSequence int) error
 	Vacuum() error
 }
 
@@ -62,7 +62,7 @@ func (vm DefaultVacuumManager) SetupDatabase() error {
 	return nil
 }
 
-func (vm DefaultVacuumManager) CopyData(minUpdateSequence string, maxUpdateSequence string) error {
+func (vm DefaultVacuumManager) CopyData(minUpdateSequence int, maxUpdateSequence int) error {
 	absoluteCurrentDatabasePath, _ := filepath.Abs(vm.currentDatabasePath)
 
 	con, err := sqlite3.Open("file:" + vm.newConnectionString + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc")
@@ -82,14 +82,14 @@ func (vm DefaultVacuumManager) CopyData(minUpdateSequence string, maxUpdateSeque
 		con.Close()
 	}()
 
-	if minUpdateSequence == "" {
-		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id <= ?", maxUpdateSequence)
+	if minUpdateSequence == 0 {
+		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE update_seq <= ?", maxUpdateSequence)
 		if err != nil {
 			return err
 		}
 		con.Commit()
 	} else {
-		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE seq_id > ? AND seq_id <= ?", minUpdateSequence, maxUpdateSequence)
+		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE update_seq > ? AND update_seq <= ?", minUpdateSequence, maxUpdateSequence)
 		if err != nil {
 			return err
 		}

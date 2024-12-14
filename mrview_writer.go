@@ -9,7 +9,7 @@ import (
 type ViewWriter interface {
 	Open() error
 	Close() error
-	Build(nextSeqID string) error
+	Build(nextSeqID int) error
 }
 
 type DefaultViewWriter struct {
@@ -39,12 +39,12 @@ func (vw *DefaultViewWriter) Open() error {
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS view_meta (
 			Id						INTEGER PRIMARY KEY,
-			current_seq_id		  	TEXT,
-			next_seq_id		  		TEXT
+			current_update_seq		INT,
+			next_update_seq		  	INT
 		) WITHOUT ROWID;
-	
-		INSERT INTO view_meta (Id, current_seq_id, next_seq_id) 
-			SELECT 1,"", "" WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
+
+		INSERT INTO view_meta (Id, current_update_seq, next_update_seq)
+			SELECT 1,0,0 WHERE NOT EXISTS (SELECT 1 FROM view_meta WHERE Id = 1);
 	`
 
 	err = db.WithTx(func() error {
@@ -60,7 +60,7 @@ func (vw *DefaultViewWriter) Open() error {
 			}
 		}
 
-		vw.stmtUpdateViewMeta, err = db.Prepare("UPDATE view_meta SET current_seq_id = next_seq_id, next_seq_id = ?")
+		vw.stmtUpdateViewMeta, err = db.Prepare("UPDATE view_meta SET current_update_seq = next_update_seq, next_update_seq = ?")
 
 		return err
 	})
@@ -73,7 +73,7 @@ func (vw *DefaultViewWriter) Close() error {
 	return vw.con.Close()
 }
 
-func (vw *DefaultViewWriter) Build(nextSeqID string) error {
+func (vw *DefaultViewWriter) Build(nextSeqID int) error {
 	db := vw.con
 
 	err := db.WithTx(func() error {
