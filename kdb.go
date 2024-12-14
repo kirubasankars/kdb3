@@ -111,16 +111,17 @@ func (kdb *KDB) Delete(name string) error {
 	kdb.rwMutex.Lock()
 	defer kdb.rwMutex.Unlock()
 
+	db, ok := kdb.dbs[name]
+	if !ok {
+		return ErrDatabaseNotFound
+	}
+
 	fileName := kdb.localDB.GetDatabaseFileName(name)
 	viewFileNames, _ := kdb.localDB.ListViewFiles(name)
 
 	kdb.localDB.DeleteViews(name)
 	kdb.localDB.DeleteDatabase(name)
 
-	db, ok := kdb.dbs[name]
-	if !ok {
-		return ErrDatabaseNotFound
-	}
 	delete(kdb.dbs, name)
 	db.Close(true)
 
@@ -131,14 +132,16 @@ func (kdb *KDB) Delete(name string) error {
 
 // PutDocument insert a document
 func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
+	if !ValidateDocumentID(newDoc.ID) {
+		return nil, ErrDocumentInvalidID
+	}
+
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
+
 	db, ok := kdb.dbs[name]
 	if !ok {
 		return nil, ErrDatabaseNotFound
-	}
-	if !ValidateDocumentID(newDoc.ID) {
-		return nil, ErrDocumentInvalidID
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") && len(newDoc.Data) != 0 {

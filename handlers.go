@@ -232,6 +232,7 @@ func (handler KDBHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
+	fmt.Print("dasdsad")
 
 	kdb := handler.kdb
 	_, err := kdb.DBStat(db)
