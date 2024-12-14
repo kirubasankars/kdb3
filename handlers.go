@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -196,7 +197,7 @@ func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter
 	rev := r.FormValue("rev")
 	version, err := strconv.Atoi(rev)
 	if err != nil {
-		NotOK(err, w)
+		NotOK(errors.New("rev should be int and can't be empty."), w)
 		return
 	}
 	inputDoc := &Document{ID: docid, Version: version, Deleted: true}
