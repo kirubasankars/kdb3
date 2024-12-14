@@ -186,7 +186,7 @@ func TestDeleteDocument(t *testing.T) {
 		t.Error(err)
 	}
 
-	inputDoc, _ = ParseDocument([]byte(fmt.Sprintf(`{"_id":"1", "_rev":"%s"}`, doc.GetRev())))
+	inputDoc, _ = ParseDocument([]byte(fmt.Sprintf(`{"_id":"1", "_rev":%d}`, doc.Version)))
 	_, err = kdb.DeleteDocument("testdb", inputDoc)
 	if err != nil {
 		t.Error("unable to delete doc", err)
@@ -247,7 +247,7 @@ func TestDatabaseStat(t *testing.T) {
 		t.Error(err)
 	}
 
-	if stat.DocCount != 1 || stat.DBName != "testdb" || stat.UpdateSeq == "" {
+	if stat.DocCount != 1 || stat.DBName != "testdb" || stat.UpdateSeq == 0 {
 		t.Error("db stat err")
 	}
 

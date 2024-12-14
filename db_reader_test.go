@@ -15,19 +15,19 @@ func openTestDatabaseForReader() func() {
 
 	writer.Begin()
 	doc, _ := ParseDocument([]byte(`{"_id":"_design/_views", "_rev": 1, "test":"test"}`))
-	writer.PutDocument(0, doc)
-
-	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev": 1}`))
 	writer.PutDocument(1, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":1, "_rev": 1}`))
 	writer.PutDocument(2, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 2, "_deleted":true}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 1}`))
 	writer.PutDocument(3, doc)
 
-	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev": 1}`))
+	doc, _ = ParseDocument([]byte(`{"_id":2, "_rev": 2, "_deleted":true}`))
 	writer.PutDocument(4, doc)
+
+	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_rev": 1}`))
+	writer.PutDocument(5, doc)
 
 	writer.Commit()
 
@@ -158,11 +158,11 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 
 	reader.Begin()
 
-	if _, err := reader.GetDocumentByIDandVersion("1", 1, "4dd69f96755b8be0c5d6a4c4d875e705"); err != nil {
+	if _, err := reader.GetDocumentByIDandVersion("1", 1); err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	doc, err := reader.GetDocumentByIDandVersion("1", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err := reader.GetDocumentByIDandVersion("1", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
@@ -171,7 +171,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentByIDandVersion("2", 2, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err = reader.GetDocumentByIDandVersion("2", 2)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -180,7 +180,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentByIDandVersion("_design/_views", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err = reader.GetDocumentByIDandVersion("_design/_views", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
@@ -194,7 +194,7 @@ func TestReaderGetDocumentByIDandVersion(t *testing.T) {
 	//	t.Errorf("expected error %s", ErrDocumentNotFound)
 	//}
 
-	_, err = reader.GetDocumentByIDandVersion("nothing", 1, "")
+	_, err = reader.GetDocumentByIDandVersion("nothing", 1)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -213,11 +213,11 @@ func TestReaderGetDocumentMetadataByIDandVersion(t *testing.T) {
 
 	reader.Begin()
 
-	if _, err := reader.GetDocumentMetadataByIDandVersion("1", 1, "4dd69f96755b8be0c5d6a4c4d875e705"); err != nil {
+	if _, err := reader.GetDocumentMetadataByIDandVersion("1", 1); err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
 
-	doc, err := reader.GetDocumentMetadataByIDandVersion("1", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err := reader.GetDocumentMetadataByIDandVersion("1", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
@@ -226,7 +226,7 @@ func TestReaderGetDocumentMetadataByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentMetadataByIDandVersion("2", 2, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err = reader.GetDocumentMetadataByIDandVersion("2", 2)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -235,7 +235,7 @@ func TestReaderGetDocumentMetadataByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected doc values")
 	}
 
-	doc, err = reader.GetDocumentMetadataByIDandVersion("_design/_views", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	doc, err = reader.GetDocumentMetadataByIDandVersion("_design/_views", 1)
 	if err != nil {
 		t.Errorf("unexpected error %s", err.Error())
 	}
@@ -244,12 +244,12 @@ func TestReaderGetDocumentMetadataByIDandVersion(t *testing.T) {
 		t.Errorf("unexpected doc values")
 	}
 
-	_, err = reader.GetDocumentMetadataByIDandVersion("invalid", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	_, err = reader.GetDocumentMetadataByIDandVersion("invalid", 1)
 	if err != nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
 
-	_, err = reader.GetDocumentMetadataByIDandVersion("nothing", 1, "4dd69f96755b8be0c5d6a4c4d875e705")
+	_, err = reader.GetDocumentMetadataByIDandVersion("nothing", 1)
 	if err == nil {
 		t.Errorf("expected error %s", ErrDocumentNotFound)
 	}
@@ -287,9 +287,9 @@ func TestReaderGetLastUpdateSequence(t *testing.T) {
 
 	reader.Begin()
 
-	seqID := reader.GetLastUpdateSequence()
-	if seqID != "seqID5" {
-		t.Errorf("expected last seqID as %s, got %s", "seqID5", seqID)
+	update_seq := reader.GetLastUpdateSequence()
+	if update_seq != 5 {
+		t.Errorf("expected last seqID as %d, got %d", 5, update_seq)
 	}
 
 	reader.Commit()
@@ -305,8 +305,8 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"seq":"seqID1","id":"_design/_views","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"},{"seq":"seqID2","id":"1","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"},{"seq":"seqID4","id":"2","rev":"2-4dd69f96755b8be0c5d6a4c4d875e705","deleted":true},{"seq":"seqID5","id":"invalid","rev":"1-4dd69f96755b8be0c5d6a4c4d875e705"}]}`
-	changes, _ := reader.GetChanges("", 999, false)
+	expected := `{"results":[{"update_seq":1,"id":"_design/_views","rev":1},{"update_seq":2,"id":"1","rev":1},{"update_seq":4,"id":"2","rev":2,"deleted":true},{"update_seq":5,"id":"invalid","rev":1}]}`
+	changes, _ := reader.GetChanges(0, 999, false)
 	if string(changes) != expected {
 		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
 	}

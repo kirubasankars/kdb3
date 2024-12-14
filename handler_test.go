@@ -259,7 +259,7 @@ func TestHandlerPutDeleteDocument(t *testing.T) {
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	body := bytes.NewBufferString(`{"_id":1, "_rev":"2-4dd69f96755b8be0c5d6a4c4d875e705"}`)
+	body := bytes.NewBufferString(`{"_id":1, "_rev":2}`)
 	req, _ = http.NewRequest("POST", "/testdb", body)
 	req.Header.Add("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -309,7 +309,7 @@ func TestHandlerBulkDocuments(t *testing.T) {
 	testExpect200(t, rr)
 	testExpectJSONContentType(t, rr)
 
-	expected := `[{"_id":"3","_rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"_id":"4","_rev":"1-99914b932bd37a50b983c5e7c90ae93b"}]`
+	expected := `[{"_id":"3","_rev":1},{"_id":"4","_rev":1}]`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have %s, got %s`, expected, rr.Body.String())
 	}
@@ -346,7 +346,7 @@ func TestHandlerBulkGetDocuments(t *testing.T) {
 	testExpect200(t, rr)
 	testExpectJSONContentType(t, rr)
 
-	expected := `[{"_id":"3","_rev":"1-99914b932bd37a50b983c5e7c90ae93b"},{"_id":"4","_rev":"1-99914b932bd37a50b983c5e7c90ae93b"}]`
+	expected := `[{"_id":"3","_rev":1},{"_id":"4","_rev":1}]`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have %s, got %s`, expected, rr.Body.String())
 	}
@@ -362,8 +362,8 @@ type testChanges struct {
 
 type testChange struct {
 	ID  string `json:"id"`
-	Rev string `json:"rev"`
-	Seq string `json:"seq"`
+	Rev int    `json:"rev"`
+	Seq int    `json:"seq"`
 }
 
 func TestHandlerGetChanges(t *testing.T) {
@@ -395,17 +395,17 @@ func TestHandlerGetChanges(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &a)
 
 	a0 := a.Results[0]
-	if a0.ID != "_design/_views" || a0.Rev != "1-97ed309809ad03093b85f264029f83af" {
+	if a0.ID != "_design/_views" || a0.Rev != 1 {
 		t.Errorf(`failed`)
 	}
 
 	a1 := a.Results[1]
-	if a1.ID != "3" || a1.Rev != "1-99914b932bd37a50b983c5e7c90ae93b" {
+	if a1.ID != "3" || a1.Rev != 1 {
 		t.Errorf(`failed`)
 	}
 
 	a4 := a.Results[2]
-	if a4.ID != "4" || a4.Rev != "1-99914b932bd37a50b983c5e7c90ae93b" {
+	if a4.ID != "4" || a4.Rev != 1 {
 		t.Errorf(`failed`)
 	}
 

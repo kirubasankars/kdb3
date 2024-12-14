@@ -15,7 +15,7 @@ type DatabaseWriter interface {
 	ExecBuildScript() error
 
 	GetDocumentMetadataByID(docID string) (*Document, error)
-	PutDocument(updateSeqID int, newDoc *Document) error
+	PutDocument(updateSeq int64, newDoc *Document) error
 }
 
 func SetupDatabaseScript() string {
@@ -111,7 +111,7 @@ func (writer *DefaultDatabaseWriter) GetDocumentMetadataByID(docID string) (*Doc
 }
 
 // PutDocument put document
-func (writer *DefaultDatabaseWriter) PutDocument(updateSeqID int, newDoc *Document) error {
+func (writer *DefaultDatabaseWriter) PutDocument(updateSeq int64, newDoc *Document) error {
 	defer writer.stmtPutDocument.Reset()
-	return writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Deleted, updateSeqID, newDoc.Data)
+	return writer.stmtPutDocument.Exec(newDoc.ID, newDoc.Version, newDoc.Deleted, updateSeq, newDoc.Data)
 }

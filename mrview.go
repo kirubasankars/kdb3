@@ -21,8 +21,8 @@ type ViewManager interface {
 	Initialize(designDocs []Document) error
 	OpenView(docID, viewName string, designDocumentView DesignDocumentView) error
 	GetView(viewName string) (*View, bool)
-	SelectView(updateSeqID int, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	SQL(updateSeqID int, doc Document, viewName string) ([]byte, error)
+	SelectView(updateSeq int64, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
+	SQL(updateSeq int64, doc Document, viewName string) ([]byte, error)
 
 	DeleteViewsIfRemoved(doc Document)
 	ValidateDesignDocument(doc Document) error
@@ -158,7 +158,7 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 	return nil
 }
 
-func (mgr *DefaultViewManager) SelectView(updateSeqID int, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
@@ -243,7 +243,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID int, doc Document, viewNam
 	}
 
 	// refresh view data
-	err = view.Build(updateSeqID)
+	err = view.Build(updateSeq)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (mgr *DefaultViewManager) SelectView(updateSeqID int, doc Document, viewNam
 	return view.Select(selectName, values)
 }
 
-func (mgr *DefaultViewManager) SQL(fromSeqID int, doc Document, viewName string) ([]byte, error) {
+func (mgr *DefaultViewManager) SQL(fromSeq int64, doc Document, viewName string) ([]byte, error) {
 	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
@@ -304,7 +304,7 @@ func (mgr *DefaultViewManager) SQL(fromSeqID int, doc Document, viewName string)
 		return nil, ErrViewNotFound
 	}
 
-	return view.SQL(fromSeqID)
+	return view.SQL(fromSeq)
 }
 
 func (mgr *DefaultViewManager) Close(closeChannel bool) error {
@@ -570,10 +570,10 @@ func NewViewManager(DBName, viewDirPath string, serviceLocator ServiceLocator) *
 var viewResultValidation = regexp.MustCompile("sql: expected (\\d+) destination arguments in Scan, not 1")
 
 type View struct {
-	name         string
-	DBName       string
-	designDocID  string
-	currentSeqID int
+	name        string
+	DBName      string
+	designDocID string
+	currentSeq  int64
 
 	viewReader chan ViewReader
 	viewWriter chan ViewWriter
@@ -662,8 +662,8 @@ func (view *View) Close(closeChannel bool) error {
 	return nil
 }
 
-func (view *View) Build(nextSeqID int) error {
-	if view.currentSeqID >= nextSeqID {
+func (view *View) Build(nextSeq int64) error {
+	if view.currentSeq >= nextSeq {
 		return nil
 	}
 
@@ -675,16 +675,16 @@ func (view *View) Build(nextSeqID int) error {
 		view.viewWriter <- viewWriter
 	}()
 
-	if view.currentSeqID >= nextSeqID {
+	if view.currentSeq >= nextSeq {
 		return nil
 	}
 
-	err := viewWriter.Build(nextSeqID)
+	err := viewWriter.Build(nextSeq)
 	if err != nil {
 		return err
 	}
 
-	view.currentSeqID = nextSeqID
+	view.currentSeq = nextSeq
 
 	return nil
 }
@@ -700,10 +700,10 @@ func (view *View) Select(name string, values url.Values) ([]byte, error) {
 	return viewReader.Select(name, values)
 }
 
-func (view *View) SQL(fromSeqID int) ([]byte, error) {
+func (view *View) SQL(fromSeq int64) ([]byte, error) {
 	vs := view.serviceLocator.GetViewSQLBuilder(view.DBName, view.designDocID, view.name, view.setupScripts, view.runScripts)
 	vs.Open()
-	return vs.SQL(fromSeqID)
+	return vs.SQL(fromSeq)
 }
 
 func (view *View) Vacuum() error {

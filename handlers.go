@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 
@@ -116,7 +115,7 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 	db := vars["db"]
 	r.ParseForm()
 
-	since, _ := strconv.Atoi(r.FormValue("since"))
+	since, _ := strconv.ParseInt(r.FormValue("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.FormValue("limit"))
 	descending, _ := strconv.ParseBool(r.FormValue("descending"))
 	rs, err := kdb.Changes(db, since, limit, descending)
@@ -132,7 +131,7 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 
 func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -261,7 +260,7 @@ func (handler KDBHandler) BulkPutDocuments(w http.ResponseWriter, r *http.Reques
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -285,7 +284,7 @@ func (handler KDBHandler) BulkGetDocuments(w http.ResponseWriter, r *http.Reques
 	kdb := handler.kdb
 	vars := mux.Vars(r)
 	db := vars["db"]
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
 		NotOK(err, w)
 		return
@@ -383,8 +382,8 @@ func (handler KDBHandler) SQL(w http.ResponseWriter, r *http.Request) {
 	view := vars["view"]
 
 	r.ParseForm()
-	fromSeqID, _ := strconv.Atoi(r.FormValue("from"))
-	rs, _ := kdb.SQL(db, ddocID, view, fromSeqID)
+	fromSeq, _ := strconv.Atoi(r.FormValue("from"))
+	rs, _ := kdb.SQL(db, ddocID, view, int64(fromSeq))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

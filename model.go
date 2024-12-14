@@ -3,7 +3,7 @@ package main
 // DatabaseStat stat
 type DatabaseStat struct {
 	DBName          string `json:"name"`
-	UpdateSeq       int    `json:"update_seq"`
+	UpdateSeq       int64  `json:"update_seq"`
 	DocCount        int    `json:"doc_count"`
 	DeletedDocCount int    `json:"deleted_doc_count"`
 }

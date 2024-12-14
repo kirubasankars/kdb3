@@ -10,7 +10,7 @@ type VacuumManager interface {
 	SetNewConnectionString(connectionString string)
 	SetCurrentConnectionString(currentDatabasePath, connectionString string)
 	SetupDatabase() error
-	CopyData(minUpdateSequence int, maxUpdateSequence int) error
+	CopyData(minUpdateSequence int64, maxUpdateSequence int64) error
 	Vacuum() error
 }
 
@@ -62,7 +62,7 @@ func (vm DefaultVacuumManager) SetupDatabase() error {
 	return nil
 }
 
-func (vm DefaultVacuumManager) CopyData(minUpdateSequence int, maxUpdateSequence int) error {
+func (vm DefaultVacuumManager) CopyData(minUpdateSequence int64, maxUpdateSequence int64) error {
 	absoluteCurrentDatabasePath, _ := filepath.Abs(vm.currentDatabasePath)
 
 	con, err := sqlite3.Open("file:" + vm.newConnectionString + "?_locking_mode=EXCLUSIVE&_mutex=no&mode=rwc")

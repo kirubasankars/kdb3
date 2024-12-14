@@ -265,7 +265,7 @@ func (kdb *KDB) Vacuum(name string) error {
 }
 
 // Changes list changes
-func (kdb *KDB) Changes(name string, since int, limit int, desc bool) ([]byte, error) {
+func (kdb *KDB) Changes(name string, since int64, limit int, desc bool) ([]byte, error) {
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
@@ -296,7 +296,7 @@ func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, val
 }
 
 // SQL build sql the kdb view
-func (kdb *KDB) SQL(dbName, designDocID, viewName string, fromSeqID int) ([]byte, error) {
+func (kdb *KDB) SQL(dbName, designDocID, viewName string, fromSeq int64) ([]byte, error) {
 	kdb.rwMutex.RLock()
 	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[dbName]
@@ -304,7 +304,7 @@ func (kdb *KDB) SQL(dbName, designDocID, viewName string, fromSeqID int) ([]byte
 		return nil, ErrDatabaseNotFound
 	}
 
-	rs, err := db.SQL(fromSeqID, designDocID, viewName)
+	rs, err := db.SQL(fromSeq, designDocID, viewName)
 	if err != nil {
 		return nil, err
 	}

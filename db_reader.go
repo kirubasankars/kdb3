@@ -22,9 +22,9 @@ type DatabaseReader interface {
 	GetDocumentByIDandVersion(ID string, Version int) (*Document, error)
 
 	GetAllDesignDocuments() ([]Document, error)
-	GetChanges(since int, limit int, desc bool) ([]byte, error)
+	GetChanges(since int64, limit int, desc bool) ([]byte, error)
 
-	GetLastUpdateSequence() int
+	GetLastUpdateSequence() int64
 	GetDocumentCount() (int, int)
 }
 
@@ -313,7 +313,7 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 }
 
 // GetChanges get document changes
-func (reader *DefaultDatabaseReader) GetChanges(since int, limit int, desc bool) ([]byte, error) {
+func (reader *DefaultDatabaseReader) GetChanges(since int64, limit int, desc bool) ([]byte, error) {
 
 	if desc {
 		defer reader.stmtChangesDesc.Reset()
@@ -366,7 +366,7 @@ func (reader *DefaultDatabaseReader) GetChanges(since int, limit int, desc bool)
 }
 
 // GetLastUpdateSequence get document changes
-func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int {
+func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int64 {
 
 	defer reader.stmtLastUpdateSequence.Reset()
 	hasRow, err := reader.stmtLastUpdateSequence.Step()
@@ -375,7 +375,7 @@ func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int {
 	}
 
 	if hasRow {
-		var maxUpdateSeq int
+		var maxUpdateSeq int64
 		reader.stmtLastUpdateSequence.Scan(&maxUpdateSeq)
 		return maxUpdateSeq
 	}
