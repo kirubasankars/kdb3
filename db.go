@@ -20,13 +20,13 @@ type Database interface {
 	DeleteDocument(doc *Document) (*Document, error)
 	GetDocument(doc *Document, includeData bool) (*Document, error)
 	GetAllDesignDocuments() ([]Document, error)
-	GetLastUpdateSequence() int
-	GetChanges(since int, limit int, order bool) ([]byte, error)
+	GetLastUpdateSequence() int64
+	GetChanges(since int64, limit int, order bool) ([]byte, error)
 	GetDocumentCount() (int, int)
 
 	GetStat() *DatabaseStat
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
-	SQL(fromSeqID int, designDocID, viewName string) ([]byte, error)
+	SQL(fromSeq int64, designDocID, viewName string) ([]byte, error)
 	ValidateDesignDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
@@ -37,7 +37,7 @@ type Database interface {
 // DefaultDatabase default implementation of database
 type DefaultDatabase struct {
 	Name                 string
-	UpdateSequence       int
+	UpdateSequence       int64
 	DocumentCount        int
 	DeletedDocumentCount int
 
@@ -270,7 +270,7 @@ func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
 }
 
 // GetLastUpdateSequence get last sequence number
-func (db *DefaultDatabase) GetLastUpdateSequence() int {
+func (db *DefaultDatabase) GetLastUpdateSequence() int64 {
 	reader, ok := <-db.reader
 	if !ok {
 		panic(ErrDatabaseNotFound)
@@ -286,7 +286,7 @@ func (db *DefaultDatabase) GetLastUpdateSequence() int {
 }
 
 // GetChanges get changes
-func (db *DefaultDatabase) GetChanges(since int, limit int, desc bool) ([]byte, error) {
+func (db *DefaultDatabase) GetChanges(since int64, limit int, desc bool) ([]byte, error) {
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -410,16 +410,16 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 }
 
 // SQL build sql
-func (db *DefaultDatabase) SQL(fromSeqID int, designDocID, viewName string) ([]byte, error) {
+func (db *DefaultDatabase) SQL(fromSeq int64, designDocID, viewName string) ([]byte, error) {
 	inputDoc := &Document{ID: designDocID}
 	outputDoc, err := db.GetDocument(inputDoc, true)
 	if err != nil {
 		return nil, err
 	}
-	if fromSeqID == db.UpdateSequence {
+	if fromSeq == db.UpdateSequence {
 		return nil, nil
 	}
-	return db.viewManager.SQL(fromSeqID, *outputDoc, viewName)
+	return db.viewManager.SQL(fromSeq, *outputDoc, viewName)
 }
 
 // ValidateDesignDocument validate design document

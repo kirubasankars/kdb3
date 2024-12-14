@@ -9,7 +9,7 @@ import (
 type ViewWriter interface {
 	Open() error
 	Close() error
-	Build(nextSeqID int) error
+	Build(nextSeq int64) error
 }
 
 type DefaultViewWriter struct {
@@ -73,12 +73,12 @@ func (vw *DefaultViewWriter) Close() error {
 	return vw.con.Close()
 }
 
-func (vw *DefaultViewWriter) Build(nextSeqID int) error {
+func (vw *DefaultViewWriter) Build(nextSeq int64) error {
 	db := vw.con
 
 	err := db.WithTx(func() error {
 		defer vw.stmtUpdateViewMeta.Reset()
-		if err := vw.stmtUpdateViewMeta.Exec(nextSeqID); err != nil {
+		if err := vw.stmtUpdateViewMeta.Exec(nextSeq); err != nil {
 			return err
 		}
 		//TODO: use complied stmt

@@ -16,19 +16,19 @@ func openTestDatabaseForWriter() func() {
 	writer.Begin()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":1}`))
-	writer.PutDocument("seqID1", doc)
+	writer.PutDocument(1, doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":1}`))
-	writer.PutDocument("seqID2", doc)
+	writer.PutDocument(2, doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":2, "_version":2, "_deleted":true}`))
-	writer.PutDocument("seqID3", doc)
+	writer.PutDocument(3, doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":"invalid", "_version":1}`))
-	writer.PutDocument("seqID3", doc)
+	writer.PutDocument(4, doc)
 
 	doc, _ = ParseDocument([]byte(`{"_id":"_design/_views", "_version":1, "test":"test"}`))
-	writer.PutDocument("seqID4", doc)
+	writer.PutDocument(5, doc)
 
 	writer.Commit()
 
@@ -58,7 +58,7 @@ func TestWriterPutDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	if err := writer.PutDocument("seqID", doc); err != nil {
+	if err := writer.PutDocument(0, doc); err != nil {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
@@ -79,7 +79,7 @@ func TestWriterPutDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ = ParseDocument([]byte(`{"_id":"new"}`))
-	if err := writer.PutDocument("seqID", doc); err != nil {
+	if err := writer.PutDocument(0, doc); err != nil {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
@@ -108,7 +108,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	if err := writer.PutDocument("seqID1", doc); err != nil {
+	if err := writer.PutDocument(1, doc); err != nil {
 		t.Errorf("unable to put document, error %s", err.Error())
 	}
 
@@ -117,7 +117,7 @@ func TestWriterDeleteDocument(t *testing.T) {
 	writer.Begin()
 
 	doc, _ = ParseDocument([]byte(`{"_id":1, "_version":1, "_deleted":true}`))
-	if err := writer.PutDocument("seqID2", doc); err != nil {
+	if err := writer.PutDocument(2, doc); err != nil {
 		t.Errorf("unable to delete document, error %s", err.Error())
 	}
 

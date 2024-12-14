@@ -1,11 +1,12 @@
 package main
 
 import (
+	"math"
 	"testing"
 )
 
 func TestNewSequence(t *testing.T) {
-	seqGen := NewChangeSequenceGenarator(136, "")
+	seqGen := NewChangeSequenceGenarator(0)
 	currentSeqID := seqGen.Next()
 	i := 0
 	for {
@@ -24,12 +25,8 @@ func TestNewSequence(t *testing.T) {
 	}
 }
 
-func TestNewSequenceNoMatchLen(t *testing.T) {
-	assertPanic(t, func() { NewChangeSequenceGenarator(2, "1") })
-}
-
 func TestNewSequenceEndfoWorld(t *testing.T) {
-	a := NewChangeSequenceGenarator(2, "zz")
+	a := NewChangeSequenceGenarator(math.MaxInt64)
 	assertPanic(t, func() { a.Next() })
 }
 

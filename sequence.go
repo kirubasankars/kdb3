@@ -7,15 +7,18 @@ import (
 )
 
 type ChangeSequenceGenarator struct {
-	current int
+	current int64
 }
 
-func NewChangeSequenceGenarator(current int) *ChangeSequenceGenarator {
+func NewChangeSequenceGenarator(current int64) *ChangeSequenceGenarator {
 	return &ChangeSequenceGenarator{current: current}
 }
 
-func (seq *ChangeSequenceGenarator) Next() int {
+func (seq *ChangeSequenceGenarator) Next() int64 {
 	seq.current = seq.current + 1
+	if seq.current < 0 {
+		panic("int64 overflow")
+	}
 	return seq.current
 }
 

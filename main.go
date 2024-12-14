@@ -3,11 +3,17 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"time"
 )
 
 func main() {
+	var a int64 = math.MaxInt64
+	if a+1 < 0 {
+		fmt.Print("dadsa")
+	}
+
 	kdb, err := NewKDB()
 	if err != nil {
 		panic(err)
