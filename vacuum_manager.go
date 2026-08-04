@@ -71,7 +71,9 @@ func (vm DefaultVacuumManager) CopyData(minUpdateSequence int64, maxUpdateSequen
 	}
 	defer con.Close()
 
-	con.Exec("ATTACH DATABASE 'file:" + absoluteCurrentDatabasePath + "' as currentdb;")
+	if err = con.Exec("ATTACH DATABASE 'file:" + absoluteCurrentDatabasePath + "' as currentdb;"); err != nil {
+		return err
+	}
 
 	err = con.Begin()
 	if err != nil {

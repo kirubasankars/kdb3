@@ -227,7 +227,10 @@ function request(path, init) {
       if (!res.ok) {
         var msg = (data && (data.reason || data.error)) ||
           "HTTP " + res.status + (text ? ": " + text : "");
-        throw new Error(msg);
+        var err = new Error(msg);
+        err.status = res.status;
+        err.data = data;
+        throw err;
       }
       return data;
     });
@@ -265,9 +268,146 @@ var api = {
     if (q.length) p += "?" + q.join("&");
     return request(p);
   },
+  viewStatus: function(db,dd,v) {
+    return request("/"+enc(db)+"/_design/"+enc(dd)+"/"+enc(v)+"/_status");
+  },
+  dryRunView: function(db,dd,v,body) {
+    return request("/"+enc(db)+"/_design/"+enc(dd)+"/"+enc(v)+"/_dry_run", {
+      method: "POST",
+      body: JSON.stringify(body || {})
+    });
+  },
   changes:    function(db,since,lim) { return request("/"+enc(db)+"/_changes?since="+(since||0)+"&limit="+(lim||200)); },
   vacuum:     function(db)        { return request("/"+enc(db)+"/_vacuum", {method:"POST"}); },
 };
+
+/** Continuous _changes SSE (feed=eventsource). Supports Bearer via fetch stream. */
+function followChanges(opts, onChange) {
+  var db = opts.db;
+  var since = opts.since != null ? Number(opts.since) : 0;
+  var limit = opts.limit || 1000;
+  var onError = typeof opts.onError === "function" ? opts.onError : null;
+  var onStatus = typeof opts.onStatus === "function" ? opts.onStatus : null;
+  var backoffMs = opts.backoffMs != null ? opts.backoffMs : 1000;
+  var maxBackoffMs = opts.maxBackoffMs != null ? opts.maxBackoffMs : 15000;
+  var aborted = false;
+  var controller = null;
+  var currentBackoff = backoffMs;
+
+  function buildURL() {
+    return "/"+enc(db)+"/_changes?feed=eventsource&since="+enc(String(since))+"&limit="+enc(String(limit));
+  }
+
+  function headers() {
+    var h = { Accept: "text/event-stream" };
+    var token = localStorage.getItem(TOKEN_KEY) || "";
+    if (token) h.Authorization = "Bearer " + token;
+    return h;
+  }
+
+  function handleDataLine(line) {
+    if (line.indexOf("data:") !== 0) return;
+    var payload = line.slice(5).replace(/^\s+/, "");
+    if (!payload) return;
+    var change;
+    try { change = JSON.parse(payload); }
+    catch (e) { if (onError) onError(e); return; }
+    if (change && typeof change.update_seq === "number" && change.update_seq > since) {
+      since = change.update_seq;
+    }
+    onChange(change);
+  }
+
+  function processBuffer(buf) {
+    var parts = buf.split("\n");
+    var rest = parts.pop();
+    for (var i = 0; i < parts.length; i++) {
+      var line = parts[i].replace(/\r$/, "");
+      if (!line || line.charAt(0) === ":") continue;
+      handleDataLine(line);
+    }
+    return rest || "";
+  }
+
+  function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+  }
+
+  async function run() {
+    while (!aborted) {
+      controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      try {
+        if (onStatus) onStatus("connecting");
+        var res = await fetch(buildURL(), {
+          headers: headers(),
+          signal: controller ? controller.signal : undefined
+        });
+        if (!res.ok) {
+          var body = "";
+          try { body = await res.text(); } catch (_) {}
+          throw new Error("HTTP " + res.status + (body ? ": " + body : ""));
+        }
+        if (!res.body || !res.body.getReader) {
+          throw new Error("ReadableStream not supported");
+        }
+        currentBackoff = backoffMs;
+        if (onStatus) onStatus("live");
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder("utf-8");
+        var pending = "";
+        while (!aborted) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          pending += decoder.decode(chunk.value, { stream: true });
+          pending = processBuffer(pending);
+        }
+        if (!aborted && onStatus) onStatus("reconnecting");
+      } catch (err) {
+        if (aborted) return;
+        if (onStatus) onStatus("reconnecting");
+        if (onError) onError(err);
+      }
+      if (aborted) return;
+      await sleep(currentBackoff);
+      currentBackoff = Math.min(currentBackoff * 2, maxBackoffMs);
+    }
+  }
+
+  run();
+  return {
+    abort: function() {
+      aborted = true;
+      if (controller) {
+        try { controller.abort(); } catch (_) {}
+      }
+      if (onStatus) onStatus("stopped");
+    },
+    since: function() { return since; }
+  };
+}
+
+function extractSelectParams(sql) {
+  var params = [];
+  var seen = {};
+  var re = /\$\{(.*?)\}/g;
+  var m;
+  var text = sql || "";
+  while ((m = re.exec(text)) !== null) {
+    if (!seen[m[1]]) {
+      seen[m[1]] = true;
+      params.push(m[1]);
+    }
+  }
+  return params;
+}
+
+function parseSQLErrorReason(reason) {
+  var text = String(reason || "");
+  var m = text.match(/^(setup|run|select)\[(\d+)\]:\s*(.*)$/);
+  if (m) return { phase: m[1], index: parseInt(m[2], 10), message: m[3] };
+  if (/invalid keyword:/i.test(text)) return { phase: "keyword", index: 0, message: text };
+  return null;
+}
 
 function fillServerIdentity() {
   var el = document.getElementById("server-identity");
@@ -394,6 +534,7 @@ function hrefDesign(db, ddoc, view) {
 
 var liveDocs = null;
 var liveDesign = null;
+var liveChanges = null;
 var routeSig = "";
 
 function parseRoute() {
@@ -443,6 +584,10 @@ function route() {
     }
   }
 
+  if (liveChanges) {
+    liveChanges.abort();
+    liveChanges = null;
+  }
   liveDocs = null;
   liveDesign = null;
   routeSig = shellSig(r);
@@ -905,17 +1050,26 @@ function designView(db, preferDdoc, preferView) {
       '<div id="design-form" class="view-form"></div>' +
       '<textarea class="view-json-editor is-hidden" id="design-json" spellcheck="false"></textarea>' +
       '<div class="run-panel">' +
-        '<h3>Run view</h3>' +
+        '<div class="run-panel-head">' +
+          '<h3>View atelier</h3>' +
+          '<span id="view-lag-badge" class="badge lag-badge is-hidden" title="View catch-up vs database update_seq"></span>' +
+        '</div>' +
         '<div class="run-toolbar">' +
           '<label class="field-label">View <select id="run-view-sel"></select></label>' +
           '<label class="field-label">Select <select id="run-select-sel"></select></label>' +
-          '<label class="field-label">Limit <input id="run-limit" class="input-narrow" value="50" /></label>' +
-          '<label class="field-label">Startkey <input id="run-startkey" class="input-startkey" placeholder="optional" /></label>' +
           '<label class="field-label check-label"><input type="checkbox" id="run-stale" /> Stale</label>' +
           '<button class="btn-primary btn-small" id="run-view-btn" disabled>Run</button>' +
         '</div>' +
+        '<div class="run-toolbar" id="run-param-fields"></div>' +
+        '<div class="run-toolbar atelier-toolbar">' +
+          '<label class="field-label">Since <input id="dry-since" class="input-seq" value="0" /></label>' +
+          '<label class="field-label">Window <input id="dry-limit" class="input-narrow" value="300" title="Docs in dry-run window" /></label>' +
+          '<label class="field-label check-label"><input type="checkbox" id="dry-include-sql" /> Generated SQL</label>' +
+          '<button class="btn-ghost btn-small" id="dry-run-btn" disabled>Dry-run</button>' +
+        '</div>' +
+        '<div id="sql-inline-error" class="sql-inline-error is-hidden"></div>' +
         '<div id="view-result" class="code-block">' +
-          '<span class="muted">Pick a view and press Run.</span>' +
+          '<span class="muted">Pick a view. Dry-run works on unsaved SQL; Run needs a saved design doc.</span>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -927,9 +1081,130 @@ function designView(db, preferDdoc, preferView) {
   var jsonStatus = document.getElementById("design-json-status");
   var runViewSel = document.getElementById("run-view-sel");
   var runSelectSel = document.getElementById("run-select-sel");
+  var runParamFields = document.getElementById("run-param-fields");
+  var lagBadge = document.getElementById("view-lag-badge");
+  var sqlInlineError = document.getElementById("sql-inline-error");
+  var paramValueCache = {};
 
   function viewNames() {
     return doc && doc.views ? Object.keys(doc.views) : [];
+  }
+
+  function clearSQLInlineError() {
+    sqlInlineError.textContent = "";
+    sqlInlineError.className = "sql-inline-error is-hidden";
+    formEl.querySelectorAll(".sql-row.has-error").forEach(function(el) {
+      el.classList.remove("has-error");
+    });
+  }
+
+  function showSQLInlineError(reason, errors) {
+    clearSQLInlineError();
+    var info = null;
+    if (errors && errors.length) {
+      var e0 = errors[0];
+      info = {
+        phase: e0.phase,
+        index: e0.index,
+        message: e0.phase === "keyword" ? ("invalid keyword: " + e0.message) : e0.message
+      };
+    } else {
+      info = parseSQLErrorReason(reason);
+    }
+    var text = reason || (info && info.message) || "SQL error";
+    sqlInlineError.textContent = text;
+    sqlInlineError.classList.remove("is-hidden");
+    if (!info || !info.phase || info.phase === "keyword") return;
+    if (mode !== "form") return;
+    if (info.phase === "select") {
+      var selArea = document.getElementById("select-sql");
+      if (selArea) {
+        var row = selArea.closest(".sql-row");
+        if (row) row.classList.add("has-error");
+      }
+      return;
+    }
+    var areas = formEl.querySelectorAll('.sql-area[data-sql="'+ info.phase +'"]');
+    var target = areas[info.index];
+    if (target) {
+      var parent = target.closest(".sql-row");
+      if (parent) parent.classList.add("has-error");
+    }
+  }
+
+  function collectRunParams() {
+    var params = {};
+    runParamFields.querySelectorAll("input[data-param]").forEach(function(inp) {
+      var key = inp.getAttribute("data-param");
+      var val = inp.value;
+      paramValueCache[key] = val;
+      if (val !== "") params[key] = val;
+    });
+    return params;
+  }
+
+  function refreshParamFields() {
+    syncFormFromDom();
+    var viewName = runViewSel.value || selectedView;
+    var selName = runSelectSel.value || selectedSelect || "default";
+    var v = doc && doc.views && doc.views[viewName];
+    var sql = v && v.select ? (v.select[selName] || "") : "";
+    var names = extractSelectParams(sql);
+    if (!names.length) {
+      runParamFields.innerHTML = '<span class="muted param-empty">No ${param} placeholders in this select.</span>';
+      return;
+    }
+    runParamFields.innerHTML = names.map(function(name) {
+      var cached = paramValueCache[name];
+      var fallback = name === "limit" ? "50" : (name === "offset" ? "0" : "");
+      var val = cached != null ? cached : fallback;
+      return '<label class="field-label">'+ esc(name) +
+        ' <input data-param="'+ esc(name) +'" class="input-param" value="'+ esc(val) +'" /></label>';
+    }).join("");
+  }
+
+  function refreshLagBadge() {
+    if (!doc || isNew || !shortId || !selectedView) {
+      setHidden(lagBadge, true);
+      return;
+    }
+    var viewName = runViewSel.value || selectedView;
+    api.viewStatus(db, shortId, viewName).then(function(st) {
+      setHidden(lagBadge, false);
+      lagBadge.classList.remove("lag-ok", "lag-warn", "lag-missing");
+      if (!st.built) {
+        lagBadge.textContent = "not built";
+        lagBadge.classList.add("lag-missing");
+        lagBadge.title = "No persistent view file yet";
+        return;
+      }
+      var lag = st.lag || 0;
+      lagBadge.textContent = lag === 0 ? "caught up" : ("lag " + lag);
+      lagBadge.classList.add(lag === 0 ? "lag-ok" : "lag-warn");
+      lagBadge.title = "db " + st.db_update_seq + " · view " + st.view_update_seq +
+        (st.open ? " · open" : "");
+    }).catch(function() {
+      setHidden(lagBadge, true);
+    });
+  }
+
+  function draftViewBody() {
+    var viewName = runViewSel.value || selectedView;
+    var source = doc;
+    if (mode === "json") {
+      try { source = JSON.parse(jsonEl.value); }
+      catch (e) { toast("Invalid JSON: " + e.message, "error"); return null; }
+    } else {
+      syncFormFromDom();
+    }
+    var v = source && source.views && source.views[viewName];
+    if (!v) return null;
+    v = normalizeView(v);
+    return {
+      setup: (v.setup || []).slice(),
+      run: (v.run || []).slice(),
+      select: Object.assign({}, v.select || {})
+    };
   }
 
   function currentView() {
@@ -1154,12 +1429,15 @@ function designView(db, preferDdoc, preferView) {
     var saveBtn = document.getElementById("save-design-btn");
     var delBtn = document.getElementById("del-design-btn");
     var runBtn = document.getElementById("run-view-btn");
+    var dryBtn = document.getElementById("dry-run-btn");
     if (!doc) {
       title.textContent = "Select a design doc";
       setHidden(rev, true);
       saveBtn.disabled = true;
       delBtn.disabled = true;
       runBtn.disabled = true;
+      dryBtn.disabled = true;
+      setHidden(lagBadge, true);
       return;
     }
     title.textContent = shortId + (dirty ? " •" : "");
@@ -1170,6 +1448,7 @@ function designView(db, preferDdoc, preferView) {
     saveBtn.disabled = false;
     delBtn.disabled = isNew || shortId === "_views" || doc._rev == null;
     runBtn.disabled = !selectedView || isNew;
+    dryBtn.disabled = !selectedView;
   }
 
   function fillRunControls() {
@@ -1184,12 +1463,15 @@ function designView(db, preferDdoc, preferView) {
     var v = doc && doc.views && doc.views[runViewSel.value];
     var keys = v && v.select ? Object.keys(v.select) : ["default"];
     if (!keys.length) keys = ["default"];
-    var prevSel = runSelectSel.value || selectedSelect;
+    var prevSel = selectedSelect || runSelectSel.value;
     runSelectSel.innerHTML = keys.map(function(k) {
       return '<option value="'+ esc(k) +'">'+ esc(k) +'</option>';
     }).join("");
     if (keys.indexOf(prevSel) >= 0) runSelectSel.value = prevSel;
     else runSelectSel.value = keys[0];
+    selectedSelect = runSelectSel.value;
+    refreshParamFields();
+    refreshLagBadge();
   }
 
   function renderAll() {
@@ -1474,6 +1756,7 @@ function designView(db, preferDdoc, preferView) {
     parsed._id = "_design/" + id;
     var btn = document.getElementById("save-design-btn");
     btn.disabled = true;
+    clearSQLInlineError();
     api.putDesign(db, id, JSON.stringify(parsed)).then(function(r) {
       toast("Design doc saved (rev " + r._rev + ")", "success");
       isNew = false;
@@ -1483,6 +1766,7 @@ function designView(db, preferDdoc, preferView) {
       selectDesign(id, { force: true });
     }).catch(function(e) {
       toast(e.message, "error");
+      showSQLInlineError(e.message, e.data && e.data.errors);
     }).then(function(){ btn.disabled = false; updateToolbar(); });
   }
 
@@ -1515,24 +1799,68 @@ function designView(db, preferDdoc, preferView) {
       return;
     }
     syncFormFromDom();
+    clearSQLInlineError();
     var view = runViewSel.value || selectedView;
     var sel = runSelectSel.value || "default";
-    var limit = document.getElementById("run-limit").value.trim();
-    var startkey = document.getElementById("run-startkey").value.trim();
     var stale = document.getElementById("run-stale").checked;
     var res = document.getElementById("view-result");
     var btn = this;
-    var params = {};
-    if (limit) params.limit = limit;
-    if (startkey) params.startkey = startkey;
+    var params = collectRunParams();
     if (stale) params.stale = "true";
     res.innerHTML = '<span class="spinner"></span>';
     btn.disabled = true;
     api.selectView(db, shortId, view, sel, params).then(function(data) {
       res.innerHTML = jsonHighlight(JSON.stringify(data, null, 2));
+      refreshLagBadge();
     }).catch(function(e) {
       toast(e.message, "error");
+      showSQLInlineError(e.message, e.data && e.data.errors);
       res.innerHTML = '<span class="error-text">'+ esc(e.message) +'</span>';
+    }).then(function(){ btn.disabled = false; updateToolbar(); });
+  });
+
+  document.getElementById("dry-run-btn").addEventListener("click", function() {
+    if (!doc || !selectedView) {
+      toast("Select a view to dry-run", "error");
+      return;
+    }
+    var draft = draftViewBody();
+    if (!draft) {
+      toast("No view draft available", "error");
+      return;
+    }
+    clearSQLInlineError();
+    var view = runViewSel.value || selectedView;
+    var sel = runSelectSel.value || "default";
+    var since = parseInt(document.getElementById("dry-since").value, 10) || 0;
+    var limit = parseInt(document.getElementById("dry-limit").value, 10) || 300;
+    var includeSQL = document.getElementById("dry-include-sql").checked;
+    var res = document.getElementById("view-result");
+    var btn = this;
+    var body = {
+      setup: draft.setup,
+      run: draft.run,
+      select: draft.select,
+      since: since,
+      limit: limit,
+      select_name: sel,
+      params: collectRunParams(),
+      include_sql: includeSQL
+    };
+    var ddoc = shortId || "draft";
+    res.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    api.dryRunView(db, ddoc, view, body).then(function(data) {
+      res.innerHTML = jsonHighlight(JSON.stringify(data, null, 2));
+    }).catch(function(e) {
+      toast(e.message, "error");
+      var payload = e.data;
+      showSQLInlineError(e.message, payload && payload.errors);
+      if (payload && typeof payload === "object") {
+        res.innerHTML = jsonHighlight(JSON.stringify(payload, null, 2));
+      } else {
+        res.innerHTML = '<span class="error-text">'+ esc(e.message) +'</span>';
+      }
     }).then(function(){ btn.disabled = false; updateToolbar(); });
   });
 
@@ -1543,6 +1871,15 @@ function designView(db, preferDdoc, preferView) {
     renderBrowser();
     fillRunControls();
     syncHash();
+  });
+
+  runSelectSel.addEventListener("change", function() {
+    selectedSelect = runSelectSel.value || "default";
+    refreshParamFields();
+  });
+
+  formEl.addEventListener("input", function(e) {
+    if (e.target && e.target.id === "select-sql") refreshParamFields();
   });
 
   stageEl.addEventListener("keydown", function(e) {
@@ -1564,54 +1901,134 @@ function changesView(db) {
   indexEl.innerHTML = "";
   indexEl.classList.remove("open");
 
+  var MAX_ROWS = 500;
+  var seen = 0;
+  var empty = true;
+  var sub = null;
+
   stageEl.innerHTML =
     '<div class="plain-stage">' +
       '<div class="toolbar">' +
         '<label class="inline-label">Since <input id="since-in" class="input-seq" value="0" /></label>' +
-        '<label class="inline-label">Limit <input id="limit-in" class="input-limit" value="100" /></label>' +
-        '<button class="btn-primary btn-small" id="load-changes-btn">Load</button>' +
+        '<label class="inline-label">Batch <input id="limit-in" class="input-limit" value="200" title="Catch-up batch size" /></label>' +
+        '<button class="btn-primary btn-small" id="changes-toggle-btn">Stop</button>' +
+        '<button class="btn-ghost btn-small" id="changes-clear-btn">Clear</button>' +
+        '<span id="changes-live" class="live-badge live-connecting">connecting</span>' +
         '<span id="changes-count" class="muted"></span>' +
       '</div>' +
-      '<div class="table-wrap">' +
+      '<div class="table-wrap" id="changes-scroll">' +
         '<table class="data"><thead><tr><th>Seq</th><th>ID</th><th>Rev</th><th></th></tr></thead>' +
-        '<tbody id="changes-tbody"></tbody></table>' +
+        '<tbody id="changes-tbody">' +
+          '<tr class="changes-empty"><td colspan="4">'+ emptyHTML("Listening for changes…") +'</td></tr>' +
+        '</tbody></table>' +
       '</div>' +
     '</div>';
 
-  function load() {
-    var since = parseInt(document.getElementById("since-in").value, 10) || 0;
-    var lim = parseInt(document.getElementById("limit-in").value, 10) || 100;
-    document.getElementById("changes-tbody").innerHTML =
-      '<tr><td colspan="4">'+ emptyHTML('<span class="spinner"></span>') +'</td></tr>';
-    api.changes(db, since, lim).then(function(data) {
-      var results = (data && data.results) || [];
-      document.getElementById("changes-count").textContent = results.length + " entries";
-      var tbody = document.getElementById("changes-tbody");
-      if (!results.length) {
-        tbody.innerHTML = '<tr><td colspan="4">'+ emptyHTML("No changes.") +'</td></tr>';
-        return;
-      }
-      tbody.innerHTML = results.map(function(r) {
-        var del = r.deleted ? '<span class="badge deleted badge-gap">deleted</span>' : "";
-        var design = String(r.id).startsWith("_design/")
-          ? '<span class="badge badge-gap">design</span>' : "";
-        return '<tr>' +
-          '<td><span class="badge">'+ esc(r.update_seq) +'</span></td>' +
-          '<td><span class="doc-id">'+ esc(r.id) + design + del +'</span></td>' +
-          '<td><span class="badge">'+ esc(r.rev) +'</span></td>' +
-          '<td><button class="btn-icon btn-small" data-copy="'+ esc(r.id) +'" title="Copy ID">⧉</button></td>' +
-        '</tr>';
-      }).join("");
-    }).catch(function(e) { toast(e.message, "error"); });
+  var tbody = document.getElementById("changes-tbody");
+  var countEl = document.getElementById("changes-count");
+  var liveEl = document.getElementById("changes-live");
+  var toggleBtn = document.getElementById("changes-toggle-btn");
+  var sinceIn = document.getElementById("since-in");
+  var limitIn = document.getElementById("limit-in");
+  var scrollEl = document.getElementById("changes-scroll");
+
+  function setLiveStatus(status) {
+    liveEl.className = "live-badge live-" + status;
+    liveEl.textContent = status;
   }
 
-  document.getElementById("load-changes-btn").addEventListener("click", load);
+  function updateCount() {
+    countEl.textContent = seen ? (seen + " events") : "";
+  }
+
+  function rowHTML(r) {
+    var del = r.deleted ? '<span class="badge deleted badge-gap">deleted</span>' : "";
+    var design = String(r.id).startsWith("_design/")
+      ? '<span class="badge badge-gap">design</span>' : "";
+    return '<tr>' +
+      '<td><span class="badge">'+ esc(r.update_seq) +'</span></td>' +
+      '<td><span class="doc-id">'+ esc(r.id) + design + del +'</span></td>' +
+      '<td><span class="badge">'+ esc(r.rev) +'</span></td>' +
+      '<td><button class="btn-icon btn-small" data-copy="'+ esc(r.id) +'" title="Copy ID">⧉</button></td>' +
+    '</tr>';
+  }
+
+  function appendChange(r) {
+    if (!r || r.update_seq == null) return;
+    if (empty) {
+      tbody.innerHTML = "";
+      empty = false;
+    }
+    var nearBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 80;
+    tbody.insertAdjacentHTML("beforeend", rowHTML(r));
+    seen++;
+    while (tbody.children.length > MAX_ROWS) {
+      tbody.removeChild(tbody.firstChild);
+    }
+    sinceIn.value = String(r.update_seq);
+    updateCount();
+    if (nearBottom) scrollEl.scrollTop = scrollEl.scrollHeight;
+  }
+
+  function stop() {
+    if (sub) {
+      sub.abort();
+      sub = null;
+    }
+    if (liveChanges === apiHandle) liveChanges = null;
+    toggleBtn.textContent = "Start";
+    setLiveStatus("stopped");
+  }
+
+  function start() {
+    stop();
+    var since = parseInt(sinceIn.value, 10) || 0;
+    var lim = parseInt(limitIn.value, 10) || 200;
+    toggleBtn.textContent = "Stop";
+    setLiveStatus("connecting");
+    sub = followChanges({
+      db: db,
+      since: since,
+      limit: lim,
+      onStatus: setLiveStatus,
+      onError: function(err) {
+        if (err && err.name === "AbortError") return;
+        // transient; badge shows reconnecting
+      }
+    }, appendChange);
+    liveChanges = apiHandle;
+  }
+
+  function clearRows() {
+    tbody.innerHTML = '<tr class="changes-empty"><td colspan="4">'+ emptyHTML("Listening for changes…") +'</td></tr>';
+    empty = true;
+    seen = 0;
+    updateCount();
+  }
+
+  var apiHandle = {
+    abort: function() {
+      if (sub) {
+        sub.abort();
+        sub = null;
+      }
+    }
+  };
+
+  toggleBtn.addEventListener("click", function() {
+    if (sub) stop();
+    else start();
+  });
+
+  document.getElementById("changes-clear-btn").addEventListener("click", clearRows);
+
   stageEl.addEventListener("click", function(e) {
     var btn = e.target.closest("[data-copy]");
     if (btn) { copyText(btn.getAttribute("data-copy")); toast("Copied", "info", 1500); }
   });
 
-  load();
+  liveChanges = apiHandle;
+  start();
 }
 
 /* ═══════════════════════════════════════════════════

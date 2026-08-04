@@ -2,6 +2,7 @@ package main
 
 import "C"
 import (
+	"encoding/json"
 	"strings"
 
 	"kdb3/sqlite3"
@@ -22,6 +23,7 @@ type DatabaseReader interface {
 
 	GetAllDesignDocuments() ([]Document, error)
 	GetChanges(since int64, limit int, desc bool) ([]byte, error)
+	GetChangesRows(since int64, limit int, desc bool) ([]Change, error)
 
 	GetLastUpdateSequence() int64
 	GetDocumentCount() (int, int)
@@ -113,27 +115,16 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 		return err
 	}
 
-	changesQuery := `
-		WITH all_changes(doc_id) as
-		(
-			SELECT doc_id FROM documents INDEXED BY idx_changes WHERE (? IS NULL OR update_seq > ?) ORDER by update_seq $ORDER$ LIMIT ?
-		),
-		all_changes_metadata (update_seq, doc_id, version, deleted) AS
-		(
-			SELECT d.update_seq, d.doc_id, d.version, d.deleted FROM documents d INDEXED BY idx_metadata JOIN all_changes c USING (doc_id) ORDER BY d.update_seq $ORDER$
-		),
-		changes_object (obj) as
-		(
-			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version) ELSE JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
-		)
-		SELECT JSON_OBJECT('results', JSON_GROUP_ARRAY(json(obj))) FROM changes_object
+	changesRowsQuery := `
+		SELECT update_seq, doc_id, version, deleted FROM documents INDEXED BY idx_changes
+		WHERE update_seq > ? ORDER BY update_seq $ORDER$ LIMIT ?
 	`
-	reader.stmtChanges, err = con.Prepare(strings.ReplaceAll(changesQuery, "$ORDER$", "ASC"))
+	reader.stmtChanges, err = con.Prepare(strings.ReplaceAll(changesRowsQuery, "$ORDER$", "ASC"))
 	if err != nil {
 		return err
 	}
 
-	reader.stmtChangesDesc, err = con.Prepare(strings.ReplaceAll(changesQuery, "$ORDER$", "DESC"))
+	reader.stmtChangesDesc, err = con.Prepare(strings.ReplaceAll(changesRowsQuery, "$ORDER$", "DESC"))
 	if err != nil {
 		return err
 	}
@@ -307,61 +298,53 @@ func (reader *DefaultDatabaseReader) GetAllDesignDocuments() ([]Document, error)
 	return nil, ErrDocumentNotFound
 }
 
-// GetChanges get document changes
-func (reader *DefaultDatabaseReader) GetChanges(since int64, limit int, desc bool) ([]byte, error) {
-
+// GetChangesRows returns typed change rows for since/limit/order.
+func (reader *DefaultDatabaseReader) GetChangesRows(since int64, limit int, desc bool) ([]Change, error) {
+	stmt := reader.stmtChanges
 	if desc {
-		defer reader.stmtChangesDesc.Reset()
-		if err := reader.stmtChangesDesc.Bind(since, since, limit); err != nil {
-			return nil, err
-		}
-
-		hasRow, err := reader.stmtChangesDesc.Step()
-		if err != nil {
-			return nil, err
-		}
-
-		var (
-			changes []byte
-		)
-
-		if hasRow {
-			err := reader.stmtChangesDesc.Scan(&changes)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if changes == nil {
-			return []byte(`{"results":[]}`), nil
-		}
-		return changes, nil
+		stmt = reader.stmtChangesDesc
 	}
-
-	defer reader.stmtChanges.Reset()
-	if err := reader.stmtChanges.Bind(since, since, limit); err != nil {
+	defer stmt.Reset()
+	if err := stmt.Bind(since, limit); err != nil {
 		return nil, err
 	}
 
-	hasRow, err := reader.stmtChanges.Step()
+	rows := make([]Change, 0)
+	for {
+		hasRow, err := stmt.Step()
+		if err != nil {
+			return nil, err
+		}
+		if !hasRow {
+			break
+		}
+		var c Change
+		var deleted int
+		if err := stmt.Scan(&c.UpdateSeq, &c.ID, &c.Rev, &deleted); err != nil {
+			return nil, err
+		}
+		c.Deleted = deleted == 1
+		rows = append(rows, c)
+	}
+	return rows, nil
+}
+
+// GetChanges get document changes as JSON {results, last_seq}.
+func (reader *DefaultDatabaseReader) GetChanges(since int64, limit int, desc bool) ([]byte, error) {
+	rows, err := reader.GetChangesRows(since, limit, desc)
 	if err != nil {
 		return nil, err
 	}
-
-	var (
-		changes []byte
-	)
-
-	if hasRow {
-		err := reader.stmtChanges.Scan(&changes)
-		if err != nil {
-			return nil, err
+	lastSeq := since
+	for _, c := range rows {
+		if c.UpdateSeq > lastSeq {
+			lastSeq = c.UpdateSeq
 		}
 	}
-	if changes == nil {
-		return []byte(`{"results":[]}`), nil
+	if rows == nil {
+		rows = []Change{}
 	}
-	return changes, nil
-
+	return json.Marshal(ChangesResult{Results: rows, LastSeq: lastSeq})
 }
 
 // GetLastUpdateSequence get document changes

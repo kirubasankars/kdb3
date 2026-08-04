@@ -15,7 +15,9 @@ func TokenAuthMiddleware(token string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/_utils") || strings.HasPrefix(r.URL.Path, "/_docs") {
+		if strings.HasPrefix(r.URL.Path, "/_utils") ||
+			strings.HasPrefix(r.URL.Path, "/_docs") ||
+			r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}

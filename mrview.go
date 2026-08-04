@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"kdb3/sqlite3"
 )
@@ -22,6 +23,8 @@ type ViewManager interface {
 	GetView(viewName string) (*View, bool)
 	SelectView(updateSeq int64, designDoc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	SQL(updateSeq int64, doc Document, viewName string) ([]byte, error)
+	DryRun(req ViewAtelierDryRunRequest) (*ViewAtelierDryRunResult, error)
+	GetViewStatus(designDocID, viewName string, dbUpdateSeq int64) (*ViewStatus, error)
 
 	DeleteViewsIfRemoved(doc Document)
 	ValidateDesignDocument(doc Document) error
@@ -30,6 +33,7 @@ type ViewManager interface {
 
 	Close(closeChannel bool) error
 	ReinitializeViews() error
+	RebuildAfterVacuum(updateSeq int64) error
 	Vacuum() error
 }
 
@@ -152,6 +156,7 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 			return err
 		}
 		mgr.views[qualifiedViewName] = view
+		syncViewPoolGaugesLocked(mgr)
 	}
 	return nil
 }
@@ -208,7 +213,15 @@ func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewNam
 	}
 	mgr.rwMutex.RUnlock()
 
-	var err error
+	var (
+		err error
+		rs  []byte
+	)
+	defer func() {
+		viewQueriesTotal.WithLabelValues(mgr.DBName, metricsResult(err)).Inc()
+		syncViewPoolGauges(mgr)
+	}()
+
 	if !ok {
 		view, err = mgr.openOrUpdateView(doc, viewName, qualifiedViewName)
 		if err != nil {
@@ -217,11 +230,13 @@ func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewNam
 	}
 
 	if view == nil {
-		return nil, ErrViewNotFound
+		err = ErrViewNotFound
+		return nil, err
 	}
 
 	if stale {
-		return view.Select(selectName, values)
+		rs, err = view.Select(selectName, values)
+		return rs, err
 	}
 
 	if doc.Version != designVer {
@@ -231,13 +246,15 @@ func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewNam
 		}
 	}
 	if view == nil {
-		return nil, ErrViewNotFound
+		err = ErrViewNotFound
+		return nil, err
 	}
 
 	if err = view.Build(updateSeq); err != nil {
 		return nil, err
 	}
-	return view.Select(selectName, values)
+	rs, err = view.Select(selectName, values)
+	return rs, err
 }
 
 func (mgr *DefaultViewManager) SQL(fromSeq int64, doc Document, viewName string) ([]byte, error) {
@@ -282,6 +299,7 @@ func (mgr *DefaultViewManager) Close(closeChannel bool) error {
 			return err
 		}
 	}
+	syncViewPoolGauges(mgr)
 	return nil
 }
 
@@ -298,6 +316,61 @@ func (mgr *DefaultViewManager) ReinitializeViews() error {
 			return err
 		}
 	}
+	return nil
+}
+
+// RebuildAfterVacuum wipes persistent view indexes and rebuilds them from live docs.
+// Call only after views were Close(false)'d (channels drained); do not Close again.
+func (mgr *DefaultViewManager) RebuildAfterVacuum(updateSeq int64) error {
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
+
+	mgr.views = make(map[string]*View)
+
+	viewFiles, err := mgr.localDB.ListViewFiles(mgr.DBName)
+	if err != nil {
+		return err
+	}
+	if err := mgr.localDB.DeleteViews(mgr.DBName); err != nil {
+		return err
+	}
+	for _, vf := range viewFiles {
+		removeSQLiteFiles(path.Join(mgr.viewDirPath, vf+dbExt))
+	}
+	diskFiles, err := mgr.ListViewFiles()
+	if err != nil {
+		return err
+	}
+	for _, vf := range diskFiles {
+		removeSQLiteFiles(path.Join(mgr.viewDirPath, vf+dbExt))
+	}
+
+	for docID, dd := range mgr.designDocs {
+		if dd == nil {
+			continue
+		}
+		id := dd.ID
+		if id == "" {
+			id = docID
+		}
+		for viewName, viewDef := range dd.Views {
+			if viewDef == nil {
+				continue
+			}
+			if err := mgr.OpenView(id, viewName, *viewDef); err != nil {
+				return err
+			}
+			qualified := id + "$" + viewName
+			view := mgr.views[qualified]
+			if view == nil {
+				return ErrViewNotFound
+			}
+			if err := view.Build(updateSeq); err != nil {
+				return err
+			}
+		}
+	}
+	syncViewPoolGaugesLocked(mgr)
 	return nil
 }
 
@@ -331,6 +404,7 @@ func (mgr *DefaultViewManager) deleteViews(qualifiedViewNames []string) {
 
 		mgr.deleteViewFileIfNoReference(viewFileName)
 	}
+	syncViewPoolGaugesLocked(mgr)
 }
 
 func (mgr *DefaultViewManager) deleteViewFileIfNoReference(viewFileName string) {
@@ -429,9 +503,6 @@ func containsInvalidSQLKeyword(query string, invalidKeywords []string) string {
 }
 
 func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
-	var invalidKeywords = []string{
-		"PRAGMA", "ALTER", "ATTACH", "TRANSACTION", "DETACH", "DROP", "EXPLAIN", "REINDEX", "SAVEPOINT", "VACUUM",
-	}
 	newDDoc := &DesignDocument{}
 	err := json.Unmarshal(doc.Data, newDDoc)
 	if err != nil {
@@ -460,35 +531,22 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 		return err
 	}
 
-	var sqlErr = ""
 	for _, v := range newDDoc.Views {
 		if v == nil {
 			continue
 		}
-		checkList := append(append([]string{}, v.Setup...), v.Run...)
-		for _, sel := range v.Select {
-			checkList = append(checkList, sel)
+		if kwErr := checkViewSQLKeywords(v.Setup, v.Run, v.Select); kwErr != nil {
+			return fmt.Errorf("%s: %w", sqlErrorReason(*kwErr), ErrInvalidSQLStmt)
 		}
-		for _, x := range checkList {
-			if kw := containsInvalidSQLKeyword(x, invalidKeywords); kw != "" {
-				return fmt.Errorf("%s: invalid keyword: %w", kw, ErrInvalidSQLStmt)
-			}
-		}
-		for _, x := range v.Setup {
+		for i, x := range v.Setup {
 			if err := db.Exec(x); err != nil {
-				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
+				return fmt.Errorf("%s: %w", formatSQLStmtError("setup", i, err.Error()), ErrInvalidSQLStmt)
 			}
 		}
-		if sqlErr != "" {
-			break
-		}
-		for _, x := range v.Run {
+		for i, x := range v.Run {
 			if err := db.Exec(x); err != nil {
-				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
+				return fmt.Errorf("%s: %w", formatSQLStmtError("run", i, err.Error()), ErrInvalidSQLStmt)
 			}
-		}
-		if sqlErr != "" {
-			break
 		}
 	}
 
@@ -500,10 +558,6 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 	}
 	if err = db.Exec("SELECT * FROM documents WHERE 1 = 2"); err != nil {
 		return errors.New("your script can't drop documents")
-	}
-
-	if sqlErr != "" {
-		return fmt.Errorf("%s : %w", sqlErr, ErrInvalidSQLStmt)
 	}
 
 	return nil
@@ -662,7 +716,9 @@ func (view *View) Build(nextSeq int64) error {
 		return nil
 	}
 
+	start := time.Now()
 	err := viewWriter.Build(nextSeq)
+	viewBuildDuration.WithLabelValues(view.DBName).Observe(time.Since(start).Seconds())
 	if err != nil {
 		return err
 	}

@@ -769,10 +769,17 @@ button { cursor: pointer; border: none; background: none; }
   border-top: 1px solid var(--line);
 }
 
+.run-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
 .run-panel h3 {
   font-size: 0.95rem;
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin: 0;
 }
 
 .run-toolbar {
@@ -781,6 +788,49 @@ button { cursor: pointer; border: none; background: none; }
   gap: 0.65rem;
   align-items: flex-end;
   margin-bottom: 0.85rem;
+}
+
+.atelier-toolbar {
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--line);
+}
+
+.param-empty {
+  font-size: 0.8rem;
+  padding-bottom: 0.35rem;
+}
+
+.input-param { width: 7.5rem; }
+
+.lag-badge.lag-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.lag-badge.lag-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.lag-badge.lag-missing {
+  background: rgba(120, 120, 120, 0.12);
+  color: var(--muted);
+}
+
+.sql-inline-error {
+  margin-bottom: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(160, 40, 40, 0.25);
+  background: rgba(160, 40, 40, 0.06);
+  color: var(--seal);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.sql-row.has-error .sql-area,
+.sql-row.has-error #select-sql {
+  border-color: var(--seal);
 }
 
 .field-label {
@@ -1022,6 +1072,38 @@ kbd {
 }
 
 .badge-gap { margin-left: 0.35rem; }
+
+.live-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--line);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.live-badge.live-live {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: rgba(47, 93, 58, 0.35);
+}
+
+.live-badge.live-connecting,
+.live-badge.live-reconnecting {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: rgba(138, 90, 18, 0.35);
+}
+
+.live-badge.live-stopped {
+  color: var(--muted);
+}
+
+#changes-scroll {
+  max-height: calc(100vh - 12rem);
+  overflow: auto;
+}
 
 .json-valid,
 .json-invalid {

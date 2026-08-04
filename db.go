@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Database interface
@@ -22,11 +23,15 @@ type Database interface {
 	GetAllDesignDocuments() ([]Document, error)
 	GetLastUpdateSequence() int64
 	GetChanges(since int64, limit int, order bool) ([]byte, error)
+	GetChangesRows(since int64, limit int, desc bool) ([]Change, error)
+	ChangesNotifyChan() <-chan struct{}
 	GetDocumentCount() (int, int)
 
 	GetStat() *DatabaseStat
 	SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error)
 	SQL(fromSeq int64, designDocID, viewName string) ([]byte, error)
+	DryRunView(viewName string, req ViewAtelierDryRunRequest) (*ViewAtelierDryRunResult, error)
+	GetViewStatus(designDocID, viewName string) (*ViewStatus, error)
 	ValidateDesignDocument(doc Document) error
 	SetupAllDocsViews() error
 	Vacuum() error
@@ -53,6 +58,9 @@ type DefaultDatabase struct {
 	vacuumManager chan VacuumManager
 
 	serviceLocator ServiceLocator
+
+	notifyMu      sync.Mutex
+	changesNotify chan struct{}
 }
 
 // legacy field accessors used by tests expecting struct fields — keep via methods
@@ -128,7 +136,12 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 		return err
 	}
 
-	return db.viewManager.Initialize(designDocs)
+	if err := db.viewManager.Initialize(designDocs); err != nil {
+		return err
+	}
+	syncDatabaseStatGauges(db)
+	syncDBPoolGauges(db)
+	return nil
 }
 
 func (db *DefaultDatabase) closePoolsUnlocked(closeChannel bool) error {
@@ -195,8 +208,15 @@ func (db *DefaultDatabase) applyCountDelta(currentDoc *Document, doc *Document) 
 
 // PutDocument put a document
 func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
+	start := time.Now()
+	defer func() {
+		documentWriteDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		syncDBPoolGauges(db)
+	}()
+
 	writer, ok := <-db.writer
 	if !ok {
+		documentsWrittenTotal.WithLabelValues(db.Name, metricsResult(ErrDatabaseNotFound)).Inc()
 		return nil, ErrDatabaseNotFound
 	}
 	defer func() {
@@ -205,20 +225,26 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 
 	defer writer.Rollback()
 	if err := writer.Begin(); err != nil {
+		documentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
 		return nil, err
 	}
 
 	out, currentDoc, err := db.putDocumentWithWriter(writer, doc)
 	if err != nil {
+		documentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
 		return nil, err
 	}
 
 	if err := writer.Commit(); err != nil {
+		documentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
 		return nil, err
 	}
 
 	db.updateSeq.Store(out.updateSeq)
 	db.applyCountDelta(currentDoc, out.doc)
+	syncDatabaseStatGauges(db)
+	documentsWrittenTotal.WithLabelValues(db.Name, "ok").Inc()
+	db.notifyChanges()
 
 	if currentDoc != nil && strings.HasPrefix(out.doc.ID, "_design/") {
 		db.viewManager.DeleteViewsIfRemoved(*out.doc)
@@ -271,8 +297,23 @@ func (db *DefaultDatabase) putDocumentWithWriter(writer DatabaseWriter, doc *Doc
 
 // BulkPutDocuments put many documents in a single transaction
 func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []error) {
+	start := time.Now()
 	outs := make([]*Document, len(docs))
 	errs := make([]error, len(docs))
+	defer func() {
+		documentWriteDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		for _, err := range errs {
+			if err != nil {
+				documentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+			}
+		}
+		for _, out := range outs {
+			if out != nil {
+				documentsWrittenTotal.WithLabelValues(db.Name, "ok").Inc()
+			}
+		}
+		syncDBPoolGauges(db)
+	}()
 
 	writer, ok := <-db.writer
 	if !ok {
@@ -316,6 +357,7 @@ func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []er
 		for i := range docs {
 			if errs[i] == nil && pendings[i] != nil {
 				errs[i] = err
+				pendings[i] = nil
 			}
 		}
 		return outs, errs
@@ -323,15 +365,21 @@ func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []er
 	if lastSeq > 0 {
 		db.updateSeq.Store(lastSeq)
 	}
+	notified := false
 	for i, p := range pendings {
 		if p == nil {
 			continue
 		}
 		outs[i] = p.out
+		notified = true
 		db.applyCountDelta(p.current, p.out)
 		if p.current != nil && strings.HasPrefix(p.out.ID, "_design/") {
 			db.viewManager.DeleteViewsIfRemoved(*p.out)
 		}
+	}
+	syncDatabaseStatGauges(db)
+	if notified {
+		db.notifyChanges()
 	}
 	return outs, errs
 }
@@ -350,8 +398,15 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 }
 
 func (db *DefaultDatabase) getDocumentUnlocked(doc *Document, includeData bool) (*Document, error) {
+	start := time.Now()
+	defer func() {
+		documentReadDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		syncDBPoolGauges(db)
+	}()
+
 	reader, ok := <-db.reader
 	if !ok {
+		documentsReadTotal.WithLabelValues(db.Name, metricsResult(ErrDatabaseNotFound)).Inc()
 		return nil, ErrDatabaseNotFound
 	}
 	defer func() {
@@ -361,17 +416,23 @@ func (db *DefaultDatabase) getDocumentUnlocked(doc *Document, includeData bool) 
 	defer reader.Commit()
 	reader.Begin()
 
+	var (
+		out *Document
+		err error
+	)
 	if includeData {
 		if doc.Version > 0 {
-			return reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
+			out, err = reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
+		} else {
+			out, err = reader.GetDocumentByID(doc.ID)
 		}
-		return reader.GetDocumentByID(doc.ID)
+	} else if doc.Version > 0 {
+		out, err = reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)
+	} else {
+		out, err = reader.GetDocumentMetadataByID(doc.ID)
 	}
-
-	if doc.Version > 0 {
-		return reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)
-	}
-	return reader.GetDocumentMetadataByID(doc.ID)
+	documentsReadTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+	return out, err
 }
 
 // GetAllDesignDocuments get all design document
@@ -437,6 +498,43 @@ func (db *DefaultDatabase) GetChanges(since int64, limit int, desc bool) ([]byte
 	return reader.GetChanges(since, limit, desc)
 }
 
+// GetChangesRows returns typed change rows.
+func (db *DefaultDatabase) GetChangesRows(since int64, limit int, desc bool) ([]Change, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
+	reader, ok := <-db.reader
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	defer func() {
+		db.reader <- reader
+	}()
+
+	defer reader.Commit()
+	reader.Begin()
+
+	return reader.GetChangesRows(since, limit, desc)
+}
+
+func (db *DefaultDatabase) notifyChanges() {
+	db.notifyMu.Lock()
+	defer db.notifyMu.Unlock()
+	if db.changesNotify != nil {
+		close(db.changesNotify)
+	}
+	db.changesNotify = make(chan struct{})
+}
+
+// ChangesNotifyChan returns the current notify channel. Callers should
+// snapshot it before reading changes so writes during the read are not missed.
+func (db *DefaultDatabase) ChangesNotifyChan() <-chan struct{} {
+	db.notifyMu.Lock()
+	ch := db.changesNotify
+	db.notifyMu.Unlock()
+	return ch
+}
+
 // GetDocumentCount get document count
 func (db *DefaultDatabase) GetDocumentCount() (int, int) {
 	db.mutex.RLock()
@@ -471,6 +569,16 @@ func (db *DefaultDatabase) GetStat() *DatabaseStat {
 
 // Vacuum vacuum — quiesces writer, copies live docs, swaps file; errors abort without rename/delete.
 func (db *DefaultDatabase) Vacuum() error {
+	start := time.Now()
+	vacuumInProgress.WithLabelValues(db.Name).Set(1)
+	var vacuumErr error
+	defer func() {
+		vacuumInProgress.WithLabelValues(db.Name).Set(0)
+		vacuumDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		vacuumTotal.WithLabelValues(db.Name, metricsResult(vacuumErr)).Inc()
+		syncDBPoolGauges(db)
+	}()
+
 	vacuumManager := <-db.vacuumManager
 	defer func() {
 		db.vacuumManager <- vacuumManager
@@ -491,6 +599,7 @@ func (db *DefaultDatabase) Vacuum() error {
 
 	if err := vacuumManager.SetupDatabase(); err != nil {
 		removeSQLiteFiles(newConnectionString)
+		vacuumErr = err
 		return err
 	}
 
@@ -506,18 +615,21 @@ func (db *DefaultDatabase) Vacuum() error {
 	if err := vacuumManager.CopyData(0, maxUpdateSequence); err != nil {
 		db.writer <- writer
 		removeSQLiteFiles(newConnectionString)
+		vacuumErr = err
 		return err
 	}
 
 	if err := vacuumManager.Vacuum(); err != nil {
 		db.writer <- writer
 		removeSQLiteFiles(newConnectionString)
+		vacuumErr = err
 		return err
 	}
 
 	if err := writer.Close(); err != nil {
 		db.writer <- writer
 		removeSQLiteFiles(newConnectionString)
+		vacuumErr = err
 		return err
 	}
 
@@ -532,11 +644,13 @@ func (db *DefaultDatabase) Vacuum() error {
 	if err := db.viewManager.Close(false); err != nil {
 		removeSQLiteFiles(newConnectionString)
 		restorePools()
+		vacuumErr = err
 		return err
 	}
 	if readerErr != nil {
 		removeSQLiteFiles(newConnectionString)
 		restorePools()
+		vacuumErr = readerErr
 		return readerErr
 	}
 
@@ -544,22 +658,33 @@ func (db *DefaultDatabase) Vacuum() error {
 	if err := localDB.UpdateDatabaseFileName(db.Name, newFileName); err != nil {
 		removeSQLiteFiles(newConnectionString)
 		restorePools()
+		vacuumErr = err
 		return err
 	}
 
 	if err := db.reinitializeUnlocked(); err != nil {
-		return err
-	}
-
-	if err := db.viewManager.ReinitializeViews(); err != nil {
+		vacuumErr = err
 		return err
 	}
 
 	docs, deleted := db.getDocumentCountUnlocked()
 	db.docCount.Store(int64(docs))
 	db.deletedCount.Store(int64(deleted))
-	db.updateSeq.Store(db.getLastUpdateSequenceUnlocked())
-	db.changeSeq = NewChangeSequenceGenarator(db.updateSeq.Load())
+	// Never rewind update_seq: tombstone purge can lower MAX(seq) of live docs.
+	liveSeq := db.getLastUpdateSequenceUnlocked()
+	hwm := maxUpdateSequence
+	if liveSeq > hwm {
+		hwm = liveSeq
+	}
+	db.updateSeq.Store(hwm)
+	db.changeSeq = NewChangeSequenceGenarator(hwm)
+	syncDatabaseStatGauges(db)
+
+	// Wipe stale view indexes (tombstones are gone; incremental deletes can't run) and rebuild.
+	if err := db.viewManager.RebuildAfterVacuum(hwm); err != nil {
+		vacuumErr = err
+		return err
+	}
 
 	// Remove old DB + WAL/SHM. Orphan sidecars make SQLite report READONLY_DBMOVED (1032).
 	removeSQLiteFiles(filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt))
@@ -604,6 +729,21 @@ func (db *DefaultDatabase) SQL(fromSeq int64, designDocID, viewName string) ([]b
 		return nil, nil
 	}
 	return db.viewManager.SQL(fromSeq, *outputDoc, viewName)
+}
+
+// DryRunView dry-runs draft view SQL against a docs sequence window.
+func (db *DefaultDatabase) DryRunView(viewName string, req ViewAtelierDryRunRequest) (*ViewAtelierDryRunResult, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	_ = viewName
+	return db.viewManager.DryRun(req)
+}
+
+// GetViewStatus returns view lag vs the database update_seq.
+func (db *DefaultDatabase) GetViewStatus(designDocID, viewName string) (*ViewStatus, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	return db.viewManager.GetViewStatus(designDocID, viewName, db.updateSeq.Load())
 }
 
 // ValidateDesignDocument validate design document
@@ -689,6 +829,7 @@ func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLoca
 	db := &DefaultDatabase{Name: name}
 	db.idSeq = NewSequenceUUIDGenarator()
 	db.serviceLocator = serviceLocator
+	db.changesNotify = make(chan struct{})
 
 	db.writer = make(chan DatabaseWriter, 1)
 	db.reader = make(chan DatabaseReader, dbReaderPoolSize)

@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/valyala/fastjson"
 )
@@ -358,12 +362,13 @@ func TestHandlerBulkGetDocuments(t *testing.T) {
 
 type testChanges struct {
 	Results []testChange `json:"results"`
+	LastSeq int64        `json:"last_seq"`
 }
 
 type testChange struct {
-	ID  string `json:"id"`
-	Rev int    `json:"rev"`
-	Seq int    `json:"seq"`
+	ID        string `json:"id"`
+	Rev       int    `json:"rev"`
+	UpdateSeq int64  `json:"update_seq"`
 }
 
 func TestHandlerGetChanges(t *testing.T) {
@@ -408,10 +413,158 @@ func TestHandlerGetChanges(t *testing.T) {
 	if a4.ID != "4" || a4.Rev != 1 {
 		t.Errorf(`failed`)
 	}
+	if a.LastSeq != a4.UpdateSeq {
+		t.Errorf("expected last_seq %d, got %d", a4.UpdateSeq, a.LastSeq)
+	}
 
 	req, _ = http.NewRequest("DELETE", "/testdb", nil)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
+}
+
+func TestHandlerChangesInvalidFeed(t *testing.T) {
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb, "")
+
+	req, _ := http.NewRequest("PUT", "/feeddb", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	req, _ = http.NewRequest("GET", "/feeddb/_changes?feed=websocket", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandlerChangesEventSource(t *testing.T) {
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb, "")
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	delReq, _ := http.NewRequest("DELETE", ts.URL+"/ssedb", nil)
+	delResp, err := http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delResp.Body.Close()
+
+	req, _ := http.NewRequest("PUT", ts.URL+"/ssedb", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create db: %d %s", resp.StatusCode, body)
+	}
+
+	// Discover current seq so we only wait for the new write.
+	resp, err = http.Get(ts.URL + "/ssedb/_changes?since=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var baseline ChangesResult
+	if err := json.NewDecoder(resp.Body).Decode(&baseline); err != nil {
+		resp.Body.Close()
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, _ = http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("%s/ssedb/_changes?feed=eventsource&since=%d", ts.URL, baseline.LastSeq), nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("sse status %d", resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct != "text/event-stream" {
+		t.Fatalf("content-type %q", ct)
+	}
+
+	type sseHit struct {
+		change Change
+		err    error
+	}
+	hits := make(chan sseHit, 1)
+	go func() {
+		buf := make([]byte, 0, 4096)
+		tmp := make([]byte, 512)
+		for {
+			n, err := resp.Body.Read(tmp)
+			if n > 0 {
+				buf = append(buf, tmp[:n]...)
+				for {
+					idx := bytes.Index(buf, []byte("\n\n"))
+					if idx < 0 {
+						break
+					}
+					frame := string(buf[:idx])
+					buf = buf[idx+2:]
+					for _, line := range strings.Split(frame, "\n") {
+						line = strings.TrimSuffix(line, "\r")
+						if !strings.HasPrefix(line, "data:") {
+							continue
+						}
+						payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+						var ch Change
+						if err := json.Unmarshal([]byte(payload), &ch); err != nil {
+							hits <- sseHit{err: err}
+							return
+						}
+						if ch.ID == "livedoc" {
+							hits <- sseHit{change: ch}
+							return
+						}
+					}
+				}
+			}
+			if err != nil {
+				hits <- sseHit{err: err}
+				return
+			}
+		}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	putBody := bytes.NewBufferString(`{"hello":"sse"}`)
+	putReq, _ := http.NewRequest("PUT", ts.URL+"/ssedb/livedoc", putBody)
+	putReq.Header.Set("Content-Type", "application/json")
+	putResp, err := http.DefaultClient.Do(putReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putBytes, _ := io.ReadAll(putResp.Body)
+	putResp.Body.Close()
+	if putResp.StatusCode != http.StatusOK {
+		t.Fatalf("put doc: %d %s", putResp.StatusCode, putBytes)
+	}
+
+	select {
+	case hit := <-hits:
+		if hit.err != nil {
+			t.Fatalf("sse read: %v", hit.err)
+		}
+		if hit.change.ID != "livedoc" || hit.change.Rev != 1 {
+			t.Fatalf("unexpected change: %+v", hit.change)
+		}
+		if hit.change.UpdateSeq <= baseline.LastSeq {
+			t.Fatalf("expected update_seq > %d, got %d", baseline.LastSeq, hit.change.UpdateSeq)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for SSE change")
+	}
+	cancel()
 }
 
 func TestHandlerGetDocument(t *testing.T) {

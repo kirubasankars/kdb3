@@ -8,6 +8,20 @@ type DatabaseStat struct {
 	DeletedDocCount int    `json:"deleted_doc_count"`
 }
 
+// Change is one row from the _changes feed.
+type Change struct {
+	UpdateSeq int64  `json:"update_seq"`
+	ID        string `json:"id"`
+	Rev       int    `json:"rev"`
+	Deleted   bool   `json:"deleted,omitempty"`
+}
+
+// ChangesResult is the one-shot _changes JSON response.
+type ChangesResult struct {
+	Results []Change `json:"results"`
+	LastSeq int64    `json:"last_seq"`
+}
+
 // DesignDocumentView design document view
 type DesignDocumentView struct {
 	Setup  []string          `json:"setup,omitempty"`

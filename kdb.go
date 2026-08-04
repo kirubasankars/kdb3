@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"kdb3/sqlite3"
 	"github.com/valyala/fastjson"
+	"kdb3/sqlite3"
 )
 
 var dbExt = ".db"
@@ -110,6 +110,11 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 		return err
 	}
 	kdb.dbs[name] = db
+	databasesOpen.Set(float64(len(kdb.dbs)))
+	if defDB, ok := db.(*DefaultDatabase); ok {
+		syncDatabaseStatGauges(defDB)
+		syncDBPoolGauges(defDB)
+	}
 
 	return nil
 }
@@ -125,6 +130,8 @@ func (kdb *KDB) Delete(name string) error {
 	// Unregister first so concurrent Vacuum/Open cannot start; Close waits on db.mutex
 	// so an in-flight Vacuum finishes before files are removed.
 	delete(kdb.dbs, name)
+	databasesOpen.Set(float64(len(kdb.dbs)))
+	clearDatabaseStatGauges(name)
 	kdb.rwMutex.Unlock()
 
 	_ = db.Close(true)
@@ -339,6 +346,31 @@ func (kdb *KDB) Changes(name string, since int64, limit int, desc bool) ([]byte,
 	return db.GetChanges(since, limit, desc)
 }
 
+// ChangesRows returns typed change rows.
+func (kdb *KDB) ChangesRows(name string, since int64, limit int, desc bool) ([]Change, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
+	db, ok := kdb.dbs[name]
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	if limit == 0 {
+		limit = 1000
+	}
+	return db.GetChangesRows(since, limit, desc)
+}
+
+// ChangesNotifyChan returns the DB notify channel for continuous feeds.
+func (kdb *KDB) ChangesNotifyChan(name string) (<-chan struct{}, error) {
+	kdb.rwMutex.RLock()
+	db, ok := kdb.dbs[name]
+	kdb.rwMutex.RUnlock()
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	return db.ChangesNotifyChan(), nil
+}
+
 // SelectView select the kdb view
 func (kdb *KDB) SelectView(dbName, designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	kdb.rwMutex.RLock()
@@ -371,6 +403,29 @@ func (kdb *KDB) SQL(dbName, designDocID, viewName string, fromSeq int64) ([]byte
 	}
 
 	return rs, nil
+}
+
+// DryRunView dry-runs draft view SQL without writing view files.
+func (kdb *KDB) DryRunView(dbName, designDocID, viewName string, req ViewAtelierDryRunRequest) (*ViewAtelierDryRunResult, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
+	db, ok := kdb.dbs[dbName]
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	_ = designDocID
+	return db.DryRunView(viewName, req)
+}
+
+// GetViewStatus returns view catch-up status for the atelier lag badge.
+func (kdb *KDB) GetViewStatus(dbName, designDocID, viewName string) (*ViewStatus, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
+	db, ok := kdb.dbs[dbName]
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	return db.GetViewStatus(designDocID, viewName)
 }
 
 // Info get kdb info

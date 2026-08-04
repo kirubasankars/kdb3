@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Route struct {
@@ -45,6 +46,7 @@ func NewRouter(kdb *KDB, token string) *mux.Router {
 		Route{"Info", "GET", "/", kdbHandler.GetInfo},
 		Route{"AllDatabases", "GET", "/_cat/dbs", kdbHandler.AllDatabases},
 		Route{"UUID", "GET", "/_uuids", kdbHandler.GetUUIDs},
+		Route{"Metrics", "GET", "/metrics", promhttp.Handler().ServeHTTP},
 		Route{"GetDatabase", "GET", "/{db}", kdbHandler.GetDatabase},
 		Route{"PutDatabase", "PUT", "/{db}", kdbHandler.PutDatabase},
 		Route{"DeleteDatabase", "DELETE", "/{db}", kdbHandler.DeleteDatabase},
@@ -61,6 +63,8 @@ func NewRouter(kdb *KDB, token string) *mux.Router {
 		Route{"PostDDocument", "POST", "/{db}/_design/{docid}", kdbHandler.PutDDocument},
 		Route{"PutDDocument", "PUT", "/{db}/_design/{docid}", kdbHandler.PutDDocument},
 		Route{"DeleteDDocument", "DELETE", "/{db}/_design/{docid}", kdbHandler.DeleteDDocument},
+		Route{"DryRunView", "POST", "/{db}/_design/{docid}/{view}/_dry_run", kdbHandler.DryRunView},
+		Route{"ViewStatus", "GET", "/{db}/_design/{docid}/{view}/_status", kdbHandler.ViewStatus},
 		Route{"SelectView", "GET", "/{db}/_design/{docid}/{view}", kdbHandler.SelectView},
 		Route{"SelectViewSelect", "GET", "/{db}/_design/{docid}/{view}/{select}", kdbHandler.SelectView},
 		Route{"VacuumDatabase", "POST", "/{db}/_vacuum", kdbHandler.Vacuum},
@@ -74,6 +78,7 @@ func NewRouter(kdb *KDB, token string) *mux.Router {
 			Handler(route.HandlerFunc)
 	}
 
+	router.Use(metricsMiddleware)
 	router.Use(func(next http.Handler) http.Handler {
 		return TokenAuthMiddleware(token, next)
 	})

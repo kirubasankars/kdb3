@@ -79,6 +79,27 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /metrics:
+    get:
+      tags: [Server]
+      summary: Prometheus metrics
+      description: |
+        Exposes Prometheus text-format metrics (Go runtime, HTTP, and kdb3
+        application metrics). Always public — no Bearer token required.
+      operationId: getMetrics
+      security: []
+      responses:
+        "200":
+          description: Prometheus metrics scrape
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP kdb_databases_open Number of open databases.
+                  # TYPE kdb_databases_open gauge
+                  kdb_databases_open 0
+
   /{db}:
     parameters:
       - $ref: "#/components/parameters/db"
@@ -208,6 +229,12 @@ paths:
     get:
       tags: [Changes]
       summary: Change feed
+      description: |
+        One-shot JSON feed (`feed=normal`, default) or continuous Server-Sent Events
+        (`feed=eventsource`). SSE emits one `data:` JSON object per change and
+        comment heartbeats about every 25s. Use a client that can send
+        `Authorization` (e.g. fetch stream / share/js/follow.js); native EventSource
+        cannot set Bearer headers.
       operationId: changes
       parameters:
         - $ref: "#/components/parameters/db"
@@ -223,18 +250,35 @@ paths:
           schema:
             type: integer
             default: 1000
+          description: Max results; for eventsource, max rows per catch-up batch
         - name: descending
           in: query
           schema:
             type: boolean
             default: false
+          description: Newest first when true (ignored for feed=eventsource)
+        - name: feed
+          in: query
+          schema:
+            type: string
+            enum: [normal, eventsource]
+            default: normal
+          description: normal = one-shot JSON; eventsource = continuous SSE
       responses:
         "200":
-          description: Changes
+          description: Changes (JSON) or SSE stream
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChangesResult"
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE frames. Change events are `data: {"update_seq", "id", "rev", "deleted"?}`.
+                  Heartbeats are SSE comments (`: `).
+        "400":
+          $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -528,6 +572,65 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /{db}/_design/{docid}/{view}/_dry_run:
+    post:
+      tags: [Admin]
+      summary: Dry-run draft view SQL against a docs sequence window
+      description: |
+        Executes unsaved setup/run (and optional select) in an in-memory scratch DB
+        attached read-only to the live documents database. Does not write view files.
+      operationId: dryRunView
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - $ref: "#/components/parameters/designDocid"
+        - $ref: "#/components/parameters/view"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViewAtelierDryRunRequest"
+      responses:
+        "200":
+          description: Dry-run succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViewAtelierDryRunResult"
+        "400":
+          description: Invalid SQL (structured diagnostics)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViewAtelierDryRunResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+
+  /{db}/_design/{docid}/{view}/_status:
+    get:
+      tags: [Admin]
+      summary: View catch-up status (lag badge)
+      operationId: viewStatus
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - $ref: "#/components/parameters/designDocid"
+        - $ref: "#/components/parameters/view"
+      responses:
+        "200":
+          description: View vs database update_seq
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViewStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
   /{db}/_design/{docid}/{view}:
     get:
       tags: [Views]
@@ -733,6 +836,121 @@ components:
             type: string
           description: Named select queries; `${param}` placeholders from query string
 
+    ViewAtelierDryRunRequest:
+      type: object
+      properties:
+        setup:
+          type: array
+          items:
+            type: string
+        run:
+          type: array
+          items:
+            type: string
+        select:
+          type: object
+          additionalProperties:
+            type: string
+        since:
+          type: integer
+          format: int64
+          default: 0
+          description: Sequence window start (exclusive)
+        limit:
+          type: integer
+          default: 300
+          description: Max documents in the dry-run window
+        select_name:
+          type: string
+          default: default
+        params:
+          type: object
+          additionalProperties:
+            type: string
+          description: Values for `${param}` placeholders in the named select
+        include_sql:
+          type: boolean
+          default: false
+          description: When true, include generated INSERT changeset SQL
+
+    ViewAtelierSQLError:
+      type: object
+      properties:
+        phase:
+          type: string
+          enum: [setup, run, select, keyword]
+        index:
+          type: integer
+        sql:
+          type: string
+        message:
+          type: string
+
+    ViewAtelierTableCount:
+      type: object
+      properties:
+        name:
+          type: string
+        rows:
+          type: integer
+          format: int64
+
+    ViewAtelierDryRunResult:
+      type: object
+      required: [ok, since, errors]
+      properties:
+        ok:
+          type: boolean
+        since:
+          type: integer
+          format: int64
+        current_update_seq:
+          type: integer
+          format: int64
+        next_update_seq:
+          type: integer
+          format: int64
+        docs_in_window:
+          type: integer
+          format: int64
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/ViewAtelierTableCount"
+        result:
+          description: Named select JSON result when select ran successfully
+        generated_sql:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ViewAtelierSQLError"
+        error:
+          type: string
+        reason:
+          type: string
+
+    ViewStatus:
+      type: object
+      required: [db_update_seq, view_update_seq, lag, open, built]
+      properties:
+        db_update_seq:
+          type: integer
+          format: int64
+        view_update_seq:
+          type: integer
+          format: int64
+        lag:
+          type: integer
+          format: int64
+          description: db_update_seq minus view_update_seq (clamped at 0)
+        open:
+          type: boolean
+          description: Whether the view is currently open in memory
+        built:
+          type: boolean
+          description: Whether a persistent view file exists
+
     DesignDocument:
       type: object
       required: [_id, views]
@@ -798,6 +1016,10 @@ components:
                 type: integer
               deleted:
                 type: boolean
+        last_seq:
+          type: integer
+          format: int64
+          description: Highest update_seq in results, or since when empty
 
     AllDocsResult:
       type: object

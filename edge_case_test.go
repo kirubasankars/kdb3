@@ -402,4 +402,63 @@ func TestEdgeAuth(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "openapi:") {
 		t.Fatalf("openapi.yaml missing openapi version line")
 	}
+
+	// Prometheus metrics are public (no token).
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/metrics", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("metrics should be public, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "kdb_databases_open") {
+		t.Fatalf("metrics missing kdb_databases_open")
+	}
+}
+
+func TestEdgeMetrics(t *testing.T) {
+	handler, _ := newTestRouter(t)
+
+	rr := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/metrics", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("metrics: got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "# HELP") || !strings.Contains(body, "kdb_databases_open") {
+		t.Fatalf("metrics body missing HELP/kdb_databases_open")
+	}
+
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("PUT", "/metricsdb", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create db: got %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("POST", "/metricsdb", bytes.NewBufferString(`{"_id":"doc1","n":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated && rr.Code != http.StatusOK {
+		t.Fatalf("write doc: got %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/metrics", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("metrics after write: got %d", rr.Code)
+	}
+	body = rr.Body.String()
+	if !strings.Contains(body, "kdb_databases_open") {
+		t.Fatalf("missing kdb_databases_open after create")
+	}
+	if !strings.Contains(body, `kdb_http_requests_total{code="201",method="PUT",route="PutDatabase"}`) &&
+		!strings.Contains(body, `route="PutDatabase"`) {
+		t.Fatalf("missing PutDatabase http metric, body snippet: %s", body[:min(400, len(body))])
+	}
+	if !strings.Contains(body, "kdb_documents_written_total") {
+		t.Fatalf("missing kdb_documents_written_total after write")
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -118,15 +119,94 @@ func (handler KDBHandler) DatabaseChanges(w http.ResponseWriter, r *http.Request
 	since, _ := strconv.ParseInt(r.FormValue("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.FormValue("limit"))
 	descending, _ := strconv.ParseBool(r.FormValue("descending"))
-	rs, err := kdb.Changes(db, since, limit, descending)
-	if err != nil {
-		NotOK(err, w)
-		return
+	feed := r.FormValue("feed")
+	if feed == "" {
+		feed = "normal"
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	switch feed {
+	case "normal":
+		rs, err := kdb.Changes(db, since, limit, descending)
+		if err != nil {
+			NotOK(err, w)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(rs)
+	case "eventsource":
+		handler.changesEventSource(w, r, db, since, limit)
+	default:
+		NotOK(fmt.Errorf("unsupported feed %q: %w", feed, ErrDocumentInvalidInput), w)
+	}
+}
+
+const changesHeartbeat = 25 * time.Second
+
+func (handler KDBHandler) changesEventSource(w http.ResponseWriter, r *http.Request, db string, since int64, limit int) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		NotOK(fmt.Errorf("streaming unsupported: %w", ErrInternalError), w)
+		return
+	}
+	if limit == 0 {
+		limit = 1000
+	}
+
+	// Long-lived stream: clear the server WriteTimeout deadline for this connection.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
-	w.Write(rs)
+	flusher.Flush()
+
+	ctx := r.Context()
+	for {
+		// Snapshot before read so a write during GetChangesRows is not missed.
+		notifyCh, err := handler.kdb.ChangesNotifyChan(db)
+		if err != nil {
+			return
+		}
+
+		changes, err := handler.kdb.ChangesRows(db, since, limit, false)
+		if err != nil {
+			return
+		}
+		for _, ch := range changes {
+			data, err := json.Marshal(ch)
+			if err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				return
+			}
+			if ch.UpdateSeq > since {
+				since = ch.UpdateSeq
+			}
+		}
+		if len(changes) > 0 {
+			flusher.Flush()
+			if len(changes) >= limit {
+				continue
+			}
+		}
+
+		timer := time.NewTimer(changesHeartbeat)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-notifyCh:
+			timer.Stop()
+		case <-timer.C:
+			if _, err := io.WriteString(w, ": \n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (handler KDBHandler) putDocument(db, docid string, w http.ResponseWriter, r *http.Request) {
@@ -372,6 +452,65 @@ func (handler KDBHandler) SelectView(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(rs)
+}
+
+func (handler KDBHandler) DryRunView(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
+	kdb := handler.kdb
+	vars := mux.Vars(r)
+	db := vars["db"]
+	ddocID := "_design/" + vars["docid"]
+	view := vars["view"]
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+
+	var req ViewAtelierDryRunRequest
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			NotOK(fmt.Errorf("%w: %s", ErrBadJSON, err.Error()), w)
+			return
+		}
+	}
+
+	result, err := kdb.DryRunView(db, ddocID, view, req)
+	if err != nil {
+		if result != nil && errors.Is(err, ErrInvalidSQLStmt) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(result)
+			return
+		}
+		NotOK(err, w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (handler KDBHandler) ViewStatus(w http.ResponseWriter, r *http.Request) {
+	kdb := handler.kdb
+	vars := mux.Vars(r)
+	db := vars["db"]
+	ddocID := "_design/" + vars["docid"]
+	view := vars["view"]
+
+	status, err := kdb.GetViewStatus(db, ddocID, view)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(status)
 }
 
 func (handler KDBHandler) GetInfo(w http.ResponseWriter, r *http.Request) {

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -151,5 +154,152 @@ func TestVacuumPurgesDeletedDocuments(t *testing.T) {
 	}
 	if statAfter.DocCount < 1 {
 		t.Fatalf("expected live docs after vacuum, got doc_count %d", statAfter.DocCount)
+	}
+}
+
+func TestVacuumRebuildsAllDocsDropsPurgedLinks(t *testing.T) {
+	kdb, _ := testDB(t, "vaclinks")
+
+	live, _ := ParseDocument([]byte(`{"_id":"keep_me","n":1}`))
+	if _, err := kdb.PutDocument("vaclinks", live); err != nil {
+		t.Fatal(err)
+	}
+	gone, _ := ParseDocument([]byte(`{"_id":"drop_me","n":2}`))
+	if _, err := kdb.PutDocument("vaclinks", gone); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build _all_docs so the deleted id is indexed before vacuum.
+	rs, err := kdb.SelectView("vaclinks", "_design/_views", "_all_docs", "default", url.Values{
+		"limit": {"50"},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rs), "drop_me") {
+		t.Fatalf("expected drop_me in _all_docs before delete/vacuum, got %s", rs)
+	}
+
+	if _, err := kdb.DeleteDocument("vaclinks", &Document{ID: "drop_me", Version: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Leave the view behind: stale=true so Build does not apply the tombstone.
+	rs, err = kdb.SelectView("vaclinks", "_design/_views", "_all_docs", "default", url.Values{
+		"limit": {"50"},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rs), "drop_me") {
+		t.Fatalf("expected stale _all_docs to still list drop_me, got %s", rs)
+	}
+
+	statBefore, err := kdb.DBStat("vaclinks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kdb.Vacuum("vaclinks"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = kdb.GetDocument("vaclinks", &Document{ID: "drop_me"}, true)
+	if !errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("expected purged doc_not_found, got %v", err)
+	}
+
+	rs, err = kdb.SelectView("vaclinks", "_design/_views", "_all_docs", "default", url.Values{
+		"limit": {"50"},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rs), "drop_me") {
+		t.Fatalf("_all_docs still links to purged doc after vacuum: %s", rs)
+	}
+	if !strings.Contains(string(rs), "keep_me") {
+		t.Fatalf("expected keep_me in _all_docs after vacuum, got %s", rs)
+	}
+
+	statAfter, err := kdb.DBStat("vaclinks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statAfter.UpdateSeq < statBefore.UpdateSeq {
+		t.Fatalf("update_seq rewound: before %d after %d", statBefore.UpdateSeq, statAfter.UpdateSeq)
+	}
+}
+
+func TestVacuumPreservesUpdateSeqHighWater(t *testing.T) {
+	kdb, _ := testDB(t, "vachwm")
+
+	a, _ := ParseDocument([]byte(`{"_id":"a","n":1}`))
+	if _, err := kdb.PutDocument("vachwm", a); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := ParseDocument([]byte(`{"_id":"b","n":2}`))
+	if _, err := kdb.PutDocument("vachwm", b); err != nil {
+		t.Fatal(err)
+	}
+	// Delete the highest-seq doc so MAX(live seq) drops after purge.
+	if _, err := kdb.DeleteDocument("vachwm", &Document{ID: "b", Version: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	statBefore, err := kdb.DBStat("vachwm")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := kdb.Vacuum("vachwm"); err != nil {
+		t.Fatal(err)
+	}
+
+	statAfter, err := kdb.DBStat("vachwm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statAfter.UpdateSeq != statBefore.UpdateSeq {
+		t.Fatalf("expected update_seq high-water %d preserved, got %d", statBefore.UpdateSeq, statAfter.UpdateSeq)
+	}
+
+	c, _ := ParseDocument([]byte(`{"_id":"c","n":3}`))
+	out, err := kdb.PutDocument("vachwm", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// PutDocument returns Version as rev, not update_seq — check DBStat / changes.
+	statNew, err := kdb.DBStat("vachwm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statNew.UpdateSeq <= statBefore.UpdateSeq {
+		t.Fatalf("expected new update_seq > %d after put, got %d (doc rev %d)", statBefore.UpdateSeq, statNew.UpdateSeq, out.Version)
+	}
+
+	rs, err := kdb.SelectView("vachwm", "_design/_views", "_all_docs", "default", url.Values{
+		"limit": {"50"},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Rows []struct {
+			ID string `json:"id"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(rs, &parsed); err != nil {
+		t.Fatalf("parse _all_docs: %v body=%s", err, rs)
+	}
+	found := map[string]bool{}
+	for _, r := range parsed.Rows {
+		found[r.ID] = true
+	}
+	if !found["a"] || !found["c"] {
+		t.Fatalf("expected a and c in _all_docs, got %#v", parsed.Rows)
+	}
+	if found["b"] {
+		t.Fatal("purged b must not appear in _all_docs")
 	}
 }

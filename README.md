@@ -6,12 +6,13 @@ Document database written in Go with SQLite as storage and query/view engine.
 
 1. Document database with optimistic concurrency (`_rev`)
 2. RESTful HTTP API
-3. Change tracking (`_changes`)
+3. Change tracking (`_changes`, including continuous SSE `feed=eventsource`)
 4. Incrementally updated materialized views (SQL over SQLite)
 5. Live vacuum
 6. Admin UI at `/_utils/`
 7. Swagger UI at `/_docs/`
 8. Optional Bearer-token auth
+9. Prometheus metrics at `/metrics` (always public)
 
 **Trust model:** design documents run SQL against SQLite. Do not expose kdb3 on an untrusted network without a token and a restricted bind address. Default listen address is `127.0.0.1:8001`.
 
@@ -56,6 +57,12 @@ curl -H 'Authorization: Bearer secret' http://127.0.0.1:8001/_cat/dbs
 Admin UI assets under `share/www/` are embedded via `go:embed` (no Node build). Open http://127.0.0.1:8001/_utils/ — edit the UI, then rebuild `kdb3`. The UI shell is public; API calls still require the token when auth is enabled (paste it in the UI).
 
 Interactive API docs (Swagger UI + OpenAPI) are at http://127.0.0.1:8001/_docs/ — sources under `share/openapi/`, also embedded. Use **Authorize** with your Bearer token when the server has `-token` set.
+
+Prometheus metrics (Go runtime, HTTP, and kdb3 app metrics) are at http://127.0.0.1:8001/metrics and stay public even when `-token` is set:
+
+```sh
+curl http://127.0.0.1:8001/metrics
+```
 
 ## Test
 
@@ -173,15 +180,42 @@ Each array element is either a document result or `{"_id":"…","error":"…","r
 
 ### Changes
 
+One-shot (poll):
+
 ```sh
 curl 'http://127.0.0.1:8001/testdb/_changes?since=0&limit=100&descending=true'
+# {"results":[...],"last_seq":N}
+```
+
+Continuous SSE feed:
+
+```sh
+curl -N 'http://127.0.0.1:8001/testdb/_changes?feed=eventsource&since=0'
+# data: {"update_seq":1,"id":"…","rev":1}
+# :            (heartbeat comment ~every 25s)
 ```
 
 | Query | Default | Description |
 |-------|---------|-------------|
 | `since` | `0` | Return changes with `update_seq` greater than this |
-| `limit` | `1000` | Max results |
-| `descending` | `false` | Newest first when `true` |
+| `limit` | `1000` | Max results (per batch for SSE) |
+| `descending` | `false` | Newest first when `true` (ignored for `feed=eventsource`) |
+| `feed` | `normal` | `normal` (JSON) or `eventsource` (SSE stream) |
+
+JS helper ([`share/js/follow.js`](share/js/follow.js)) — uses `fetch` + stream so Bearer auth works (native `EventSource` cannot set `Authorization`):
+
+```js
+const { follow } = kdb3Follow; // or require('./share/js/follow.js')
+const cache = new Map();
+const sub = follow(
+  { url: 'http://127.0.0.1:8001', db: 'testdb', since: 0, token: process.env.KDB3_TOKEN },
+  (change) => {
+    if (change.deleted) cache.delete(change.id);
+    else cache.set(change.id, change);
+  }
+);
+// sub.since(); sub.abort();
+```
 
 ### All docs
 
@@ -233,13 +267,43 @@ curl http://127.0.0.1:8001/blog/_design/posts/_all_posts/default
 curl 'http://127.0.0.1:8001/blog/_design/posts/_all_posts?stale=true'
 ```
 
+Full-text search with **FTS5** (compiled into kdb3’s SQLite). Project document fields into a virtual table in `setup`/`run`, then match in `select`. Pass the query as a form/query param (e.g. `?q=hello`):
+
+```json
+{
+  "_id": "_design/search",
+  "views": {
+    "_posts_fts": {
+      "setup": [
+        "CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(title, body, doc_id UNINDEXED)"
+      ],
+      "run": [
+        "DELETE FROM posts_fts WHERE doc_id IN (SELECT doc_id FROM latest_changes)",
+        "INSERT INTO posts_fts (title, body, doc_id) SELECT json_extract(data, '$.title'), json_extract(data, '$.body'), doc_id FROM latest_documents WHERE deleted = 0 AND json_extract(data, '$.title') IS NOT NULL"
+      ],
+      "select": {
+        "default": "SELECT JSON_OBJECT('rows', JSON_GROUP_ARRAY(JSON_OBJECT('id', doc_id, 'title', title))) FROM posts_fts WHERE posts_fts MATCH ${q} ORDER BY rank LIMIT CAST(ifnull(${limit}, 10) AS INT)"
+      }
+    }
+  }
+}
+```
+
+```sh
+curl -X POST http://127.0.0.1:8001/blog \
+  -H 'Content-Type: application/json' -d @./search_view.json
+
+curl 'http://127.0.0.1:8001/blog/_design/search/_posts_fts/default?q=hello'
+```
+
+To unnest JSON arrays in `run`/`select`, use `json_each` / `json_tree` (JSON1 is also built in), for example `json_each(json_extract(data, '$.tags'))`.
+
 | Query | Description |
 |-------|-------------|
 | `stale` | If `true`, read without waiting for the view to catch up |
 | `include_docs` | Uses select name `{name}_with_docs` when present |
 
-Other form values are available to select SQL as `${param}` placeholders (e.g. `${limit}`, `${key}`).
-
+Other form values are available to select SQL as `${param}` placeholders (e.g. `${limit}`, `${key}`, `${q}`).
 Default `_all_docs` definition (for reference):
 
 ```json

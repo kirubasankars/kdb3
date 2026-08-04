@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -305,10 +306,30 @@ func TestReaderGetChanges(t *testing.T) {
 	reader.Open()
 
 	reader.Begin()
-	expected := `{"results":[{"update_seq":1,"id":"_design/_views","rev":1},{"update_seq":2,"id":"1","rev":1},{"update_seq":4,"id":"2","rev":2,"deleted":true},{"update_seq":5,"id":"invalid","rev":1}]}`
-	changes, _ := reader.GetChanges(0, 999, false)
-	if string(changes) != expected {
-		t.Errorf("expected changes as  \n %s \n, got \n %s \n", expected, string(changes))
+	changes, err := reader.GetChanges(0, 999, false)
+	if err != nil {
+		t.Fatalf("GetChanges: %v", err)
+	}
+	var got ChangesResult
+	if err := json.Unmarshal(changes, &got); err != nil {
+		t.Fatalf("unmarshal changes: %v", err)
+	}
+	if got.LastSeq != 5 {
+		t.Errorf("expected last_seq 5, got %d", got.LastSeq)
+	}
+	if len(got.Results) != 4 {
+		t.Fatalf("expected 4 results, got %d (%s)", len(got.Results), string(changes))
+	}
+	want := []Change{
+		{UpdateSeq: 1, ID: "_design/_views", Rev: 1},
+		{UpdateSeq: 2, ID: "1", Rev: 1},
+		{UpdateSeq: 4, ID: "2", Rev: 2, Deleted: true},
+		{UpdateSeq: 5, ID: "invalid", Rev: 1},
+	}
+	for i, c := range want {
+		if got.Results[i] != c {
+			t.Errorf("result[%d]: want %+v, got %+v", i, c, got.Results[i])
+		}
 	}
 	reader.Commit()
 	reader.Close()
