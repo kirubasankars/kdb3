@@ -29,7 +29,8 @@ def test_create_database():
     assert rs["doc_count"] == 1
     assert rs["deleted_doc_count"] == 0
     assert rs["name"] == DBNAME
-    assert len(rs["update_seq"]) == 138
+    assert isinstance(rs["update_seq"], int)
+    assert rs["update_seq"] >= 1
 
     r = requests.get("{}/_cat/dbs".format(DBHOST))
     assert DBNAME in r.json(), "Failed: get created database"

@@ -194,25 +194,33 @@ func TestDeleteDocument(t *testing.T) {
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1"}`))
 	doc, err = kdb.GetDocument("testdb", inputDoc, true)
-	if err != ErrDocumentNotFound || doc.Deleted == false || doc.Version != 2 {
+	if err != ErrDocumentNotFound || doc == nil || !doc.Deleted || doc.Version != 2 {
 		t.Error("revision missing for deleted doc")
 	}
 
+	// recreate without _rev must conflict
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","test":2}`))
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err != ErrDocumentConflict {
+		t.Error("expected conflict recreating deleted doc without rev", err)
+	}
+
+	inputDoc, _ = ParseDocument([]byte(`{"_id":"1","_rev":2,"test":2}`))
 	doc, err = kdb.PutDocument("testdb", inputDoc)
-	if err != nil && doc.Version != 3 {
-		t.Error(err)
+	if err != nil || doc.Version != 3 {
+		t.Error("expected successful recreate with rev", err)
 	}
 
 	inputDoc, _ = ParseDocument([]byte(`{"_id":"2","test":2}`))
-	doc, err = kdb.PutDocument("testdb", inputDoc)
-	if err.Error() != "doc_conflict" {
+	_, err = kdb.PutDocument("testdb", inputDoc)
+	if err == nil || err.Error() != "doc_conflict" {
 		t.Error("doc missing")
 	}
 
 	stat, _ := kdb.DBStat("testdb")
-	if stat.DocCount != 2 {
-		t.Error("doc count failed")
+	// _design/_views + two live user docs
+	if stat.DocCount != 3 {
+		t.Error("doc count failed", stat.DocCount)
 	}
 
 	kdb.Delete("testdb")

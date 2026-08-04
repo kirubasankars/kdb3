@@ -17,7 +17,7 @@ func TestGetUUID(t *testing.T) {
 	var parser fastjson.Parser
 	req, _ := http.NewRequest("GET", "/_uuids?count=10", nil)
 	rr := httptest.NewRecorder()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 	handler.ServeHTTP(rr, req)
 
 	testExpect200(t, rr)
@@ -83,7 +83,7 @@ func testExpect409(t *testing.T, rr *httptest.ResponseRecorder) {
 
 func TestGetInfo(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/", nil)
@@ -95,7 +95,7 @@ func TestGetInfo(t *testing.T) {
 
 func TestHandlerPutDatabase(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
@@ -120,7 +120,7 @@ func TestHandlerPutDatabase(t *testing.T) {
 
 func TestHandlerPutDocument(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
@@ -157,7 +157,7 @@ func TestHandlerPutDocument(t *testing.T) {
 
 func TestHandlerPutDocument1(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
@@ -210,7 +210,7 @@ func TestHandlerPutDocument1(t *testing.T) {
 
 func TestHandlerDeleteDocument(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -249,7 +249,7 @@ func TestHandlerDeleteDocument(t *testing.T) {
 
 func TestHandlerPutDeleteDocument(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -290,7 +290,7 @@ func TestHandlerPutDeleteDocument(t *testing.T) {
 
 func TestHandlerBulkDocuments(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -321,7 +321,7 @@ func TestHandlerBulkDocuments(t *testing.T) {
 
 func TestHandlerBulkGetDocuments(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -368,7 +368,7 @@ type testChange struct {
 
 func TestHandlerGetChanges(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -416,7 +416,7 @@ func TestHandlerGetChanges(t *testing.T) {
 
 func TestHandlerGetDocument(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -462,7 +462,7 @@ func TestHandlerGetDocument(t *testing.T) {
 
 func TestHandlerGetDatabase(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -511,7 +511,7 @@ func TestHandlerGetDatabase(t *testing.T) {
 
 func TestHandlerGetDDatabase(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -553,7 +553,7 @@ type testEmpty struct {
 
 func TestHandlerPutDDatabase(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()
@@ -649,7 +649,7 @@ func TestHandlerPutDDatabase(t *testing.T) {
 
 func TestDeleteDatabase(t *testing.T) {
 	kdb, _ := NewKDB()
-	handler := NewRouter(kdb)
+	handler := NewRouter(kdb, "")
 
 	req, _ := http.NewRequest("DELETE", "/testdb", nil)
 	rr := httptest.NewRecorder()

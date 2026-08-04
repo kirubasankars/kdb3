@@ -1,1071 +1,274 @@
 package main
 
-/*
-type FakeDatabaseReaderPool struct {
-	reader   *FakeDatabaseReader
-	borrowed bool
-	returned bool
-}
-
-func NewTestFakeDatabaseReaderPool(reader *FakeDatabaseReader) *FakeDatabaseReaderPool {
-	p := new(FakeDatabaseReaderPool)
-	p.reader = reader
-	return p
-}
-
-func (p *FakeDatabaseReaderPool) Borrow() DatabaseReader {
-	p.borrowed = true
-	return p.reader
-}
-
-func (p *FakeDatabaseReaderPool) Return(r DatabaseReader) {
-	p.returned = true
-}
-
-func (p *FakeDatabaseReaderPool) Open(connectionString string) error {
-	p.borrowed = false
-	p.returned = false
-	return nil
-}
-
-func (p *FakeDatabaseReaderPool) Close() error {
-	return nil
-}
-
-type FakeDatabaseReader struct {
-	begin  bool
-	commit bool
-}
-
-func (reader *FakeDatabaseReader) Open(connectionString string) error {
-	reader.begin = false
-	reader.commit = false
-	return nil
-}
-
-func (reader *FakeDatabaseReader) Begin() error {
-	reader.begin = true
-	return nil
-}
-
-func (reader *FakeDatabaseReader) Commit() error {
-	reader.commit = true
-	return nil
-}
-
-type FakeDatabaseWriter struct {
-	begin    bool
-	commit   bool
-	rollback bool
-
-	beginerr    bool
-	commiterr   bool
-	roolbackerr bool
-	putdocerror bool
-	getdocerror bool
-}
-
-func (writer *FakeDatabaseWriter) Open(connectionString string) error {
-	writer.rollback = false
-	writer.begin = false
-	writer.commit = false
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Close() error {
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Begin() error {
-	if writer.beginerr {
-		return ErrInternalError
-	}
-	writer.begin = true
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Commit() error {
-	if writer.commiterr {
-		return ErrInternalError
-	}
-	writer.commit = true
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Rollback() error {
-	if writer.roolbackerr {
-		return ErrInternalError
-	}
-	writer.rollback = true
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Reset() error {
-	writer.rollback = false
-	writer.begin = false
-	writer.commit = false
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) ExecBuildScript() error {
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) Vacuum() error {
-	return nil
-}
-
-func (writer *FakeDatabaseWriter) GetDocumentRevisionByID(docID string) (*Document, error) {
-	if writer.getdocerror {
-		return nil, ErrInternalError
-	}
-	if docID == "1" {
-		return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
-	}
-	if docID == "2" {
-		return ParseDocument([]byte(`{"_id":1, "_version" :2, "_deleted":true}`))
-	}
-	if docID == "3" {
-		return nil, ErrInternalError
-	}
-	return nil, nil
-}
-
-func (writer *FakeDatabaseWriter) PutDocument(updateSeqID string, newDoc *Document, currentDoc *Document) error {
-	if writer.putdocerror {
-		return ErrInternalError
-	}
-	return nil
-}
-
-func (reader *FakeDatabaseReader) GetDocumentRevisionByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":2, "_version" :1}`))
-}
-
-func (reader *FakeDatabaseReader) GetDocumentRevisionByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":1, "_version" :1}`))
-}
-
-func (reader *FakeDatabaseReader) GetDocumentByID(ID string) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":3, "_version" :1, "test": "test"}`))
-}
-
-func (reader *FakeDatabaseReader) GetDocumentByIDandVersion(ID string, Version int) (*Document, error) {
-	return ParseDocument([]byte(`{"_id":4, "_version" :1, "test": "test"}`))
-}
-
-func (reader *FakeDatabaseReader) GetAllDesignDocuments() ([]*Document, error) {
-	return nil, nil
-}
-
-func (db *FakeDatabaseReader) GetChanges(since string, limit int) ([]byte, error) {
-	return nil, nil
-}
-
-func (db *FakeDatabaseReader) GetLastUpdateSequence() string {
-	return "GiJYxpHX92iFe_tvtuAICAkmdnOMXEm1erk_0RkfgCC7JHvbN64M2bv5CxtZrfSrrA1b48HGNvV57GbHuqVJrRv9L_1NuceGQQt0OGUs7BskxKjW51aylNDA5Zjqzir44wrUMm6x5W"
-}
-
-func (db *FakeDatabaseReader) GetDocumentCount() (int, int) {
-	return 3, 0
-}
-
-func (reader *FakeDatabaseReader) Close() error {
-	return nil
-}
-
-type FakeViewManager struct {
-}
-
-func (sl *FakeViewManager) Initialize(dbName, dbDirPath, viewDirPath string, designDocs []*Document) error {
-	return nil
-}
-
-func (sl *FakeViewManager) ListViewFiles() ([]string, error) {
-	return nil, nil
-}
-
-func (sl *FakeViewManager) OpenView(viewName string, ddoc *DesignDocument) error {
-	return nil
-}
-
-func (sl *FakeViewManager) GetView(viewName string) (*View, bool) {
-	return nil, false
-}
-
-func (sl *FakeViewManager) SelectView(updateSeqID string, doc *Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
-	return nil, nil
-}
-
-func (sl *FakeViewManager) Close() error {
-	return nil
-}
-
-func (sl *FakeViewManager) Vacuum() error {
-	return nil
-}
-
-func (sl *FakeViewManager) UpdateDesignDocument(doc *Document) error {
-	return nil
-}
-
-func (sl *FakeViewManager) ValidateDesignDocument(doc *Document) error {
-	return nil
-}
-
-func (sl *FakeViewManager) CalculateSignature(ddocv *DesignDocumentView) string {
-	return ""
-}
-
-func (sl *FakeViewManager) ParseQueryParams(query string) (string, []string) {
-	return "", nil
-}
-
-type FakeFileHandler struct {
-}
-
-func (sl *FakeFileHandler) IsFileExists(path string) bool {
-	if path == "data/dbs/testdb.db" {
-		return false
-	}
-	if path == "data/dbs/testdb1.db" {
-		return true
-	}
-	return false
-}
-
-func (sl *FakeFileHandler) MkdirAll(path string) error {
-	return nil
-}
-
-type FakeServiceLocator struct {
-}
-
-func (sl *FakeServiceLocator) GetFileHandler() FileHandler {
-	return &FakeFileHandler{}
-}
-
-func (sl *FakeServiceLocator) GetDatabaseWriter() DatabaseWriter {
-	return &FakeDatabaseWriter{}
-}
-
-func (sl *FakeServiceLocator) GetDatabaseReader() DatabaseReader {
-	return &FakeDatabaseReader{}
-}
-
-func (sl *FakeServiceLocator) GetViewManager() ViewManager {
-	return &FakeViewManager{}
-}
-
-func (sl *FakeServiceLocator) GetView(viewName, connectionString, absoluteDatabasePath string, ddoc *DesignDocument, viewManager ViewManager) *View {
-	return nil
-}
-
-func (sl *FakeServiceLocator) GetViewReader(connectionString, absoluteDatabasePath string, selectScripts map[string]Query) ViewReader {
-	return nil
-}
-
-func TestDBLoadUpdateSeqID(t *testing.T) {
-	db := &Database{}
-	writer := new(FakeDatabaseWriter)
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	l := db.GetLastUpdateSequence()
-
-	if db.UpdateSequence != l {
-		t.Errorf("failed to load last update seq id.")
-	}
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	pool.Open(testConnectionString)
-	reader.Open(testConnectionString)
-
-	if db.GetLastUpdateSequence() != l {
-		t.Errorf("failed to load last update seq id.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-}
-
-func TestDBDocumentCount(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	v, _ := db.GetDocumentCount()
-
-	if v != 3 {
-		t.Errorf("expected %d, got %d", 3, v)
-	}
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-}
-
-func TestDBGetChanges(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	_, _ = db.GetChanges("", 0)
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-}
-
-func TestDBGetDesignDocuments(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	_, _ = db.GetAllDesignDocuments()
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-}
-
-func TestDBStat(t *testing.T) {
-	db := &Database{}
-	writer := new(FakeDatabaseWriter)
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	stat := db.GetStat()
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	if stat.DocumentCount != 3 {
-		t.Errorf("expected doc count %d, got %d", 3, stat.DocumentCount)
-	}
-
-	if stat.UpdateSequence != reader.GetLastUpdateSequence() {
-		t.Errorf("expected to load last update seqid. failed")
-	}
-}
-
-func TestDBGetDocumentRevisionByID(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-
-	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	odoc, err := db.GetDocument(doc, false)
+import (
+	"errors"
+	"net/url"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func testDB(t *testing.T, name string) (*KDB, string) {
+	t.Helper()
+	dir := t.TempDir()
+	kdb, err := NewKDBWithDataDir(dir)
 	if err != nil {
-		t.Errorf("unexpected error %s", err.Error())
+		t.Fatalf("NewKDBWithDataDir: %v", err)
 	}
-
-	if odoc.ID != "1" {
-		t.Errorf("expected doc id %s, got %s", "1", odoc.ID)
+	if err := kdb.Open(name, true); err != nil {
+		t.Fatalf("Open: %v", err)
 	}
-
-	if odoc.Version != 1 {
-		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
-	}
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	if string(odoc.Data) != (`{}`) {
-		t.Errorf("data mismatch.")
-	}
+	return kdb, dir
 }
 
-func TestDBGetDocumentRevisionByIDandVersion(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
+func TestDatabasePutGetDelete(t *testing.T) {
+	kdb, _ := testDB(t, "testdb")
 
-	doc, _ := ParseDocument([]byte(`{"_id":2, "_version":1}`))
-	odoc, err := db.GetDocument(doc, false)
+	doc, err := ParseDocument([]byte(`{"_id":"a","title":"hello"}`))
 	if err != nil {
-		t.Errorf("unexpected error %s", err.Error())
+		t.Fatal(err)
 	}
-
-	if odoc.ID != "2" {
-		t.Errorf("expected doc id %s, got %s", "2", odoc.ID)
-	}
-
-	if odoc.Version != 1 {
-		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
-	}
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	if string(odoc.Data) != (`{}`) {
-		t.Errorf("data mismatch.")
-	}
-}
-
-func TestDBGetDocumentByID(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-
-	doc, _ := ParseDocument([]byte(`{"_id":3}`))
-	odoc, err := db.GetDocument(doc, true)
+	out, err := kdb.PutDocument("testdb", doc)
 	if err != nil {
-		t.Errorf("unexpected error %s", err.Error())
+		t.Fatal(err)
+	}
+	if out.Version != 1 {
+		t.Fatalf("expected rev 1, got %d", out.Version)
 	}
 
-	if odoc.ID != "3" {
-		t.Errorf("expected doc id %s, got %s", "3", odoc.ID)
-	}
-
-	if odoc.Version != 1 {
-		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
-	}
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	if string(odoc.Data) != (`{"test":"test"}`) {
-		t.Errorf("data mismatch.")
-	}
-}
-
-func TestDBGetDocumentByIDandVersion(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-
-	doc, _ := ParseDocument([]byte(`{"_id":4, "_version":1}`))
-	odoc, err := db.GetDocument(doc, true)
+	got, err := kdb.GetDocument("testdb", &Document{ID: "a"}, true)
 	if err != nil {
-		t.Errorf("unexpected error %s", err.Error())
+		t.Fatal(err)
+	}
+	if got.Version != 1 {
+		t.Fatalf("expected rev 1, got %d", got.Version)
 	}
 
-	if odoc.ID != "4" {
-		t.Errorf("expected doc id %s, got %s", "4", odoc.ID)
-	}
-
-	if odoc.Version != 1 {
-		t.Errorf("expected doc version %d, got %d", 1, odoc.Version)
-	}
-
-	if !reader.begin || !reader.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if !pool.borrowed || !pool.returned {
-		t.Errorf("expected to call borrow and return, failed.")
-	}
-
-	if string(odoc.Data) != (`{"test":"test"}`) {
-		t.Errorf("data mismatch.")
-	}
-}
-
-func TestDBPutDocumentNewDocID(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	doc, _ := ParseDocument([]byte(`{}`))
-	odoc, err := db.PutDocument(doc)
+	del, err := kdb.DeleteDocument("testdb", &Document{ID: "a", Version: 1})
 	if err != nil {
-		t.Errorf("unable put document")
+		t.Fatal(err)
 	}
-
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc.ID == "" || odoc.Version != 1 {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
+	if !del.Deleted {
+		t.Fatal("expected deleted flag")
 	}
 }
 
-func TestDBPutDocumentNewDocWithID(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
+func TestDatabaseOCCConflict(t *testing.T) {
+	kdb, _ := testDB(t, "occdb")
 
-	db.Open(testConnectionString, false)
+	doc, _ := ParseDocument([]byte(`{"_id":"x","v":1}`))
+	if _, err := kdb.PutDocument("occdb", doc); err != nil {
+		t.Fatal(err)
+	}
 
-	doc, _ := ParseDocument([]byte(`{"_id": "4"}`))
-	odoc, err := db.PutDocument(doc)
+	bad, _ := ParseDocument([]byte(`{"_id":"x","v":2}`))
+	_, err := kdb.PutDocument("occdb", bad)
+	if !errors.Is(err, ErrDocumentConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+
+	stale, _ := ParseDocument([]byte(`{"_id":"x","_rev":99,"v":3}`))
+	_, err = kdb.PutDocument("occdb", stale)
+	if !errors.Is(err, ErrDocumentConflict) {
+		t.Fatalf("expected conflict on stale rev, got %v", err)
+	}
+
+	ok, _ := ParseDocument([]byte(`{"_id":"x","_rev":1,"v":3}`))
+	out, err := kdb.PutDocument("occdb", ok)
 	if err != nil {
-		t.Errorf("unable put document")
+		t.Fatal(err)
 	}
-
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc.ID == "" || odoc.Version != 1 {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
+	if out.Version != 2 {
+		t.Fatalf("expected rev 2, got %d", out.Version)
 	}
 }
 
-func TestDBPutDocumentConflict(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
+func TestDatabaseRecreateAfterDelete(t *testing.T) {
+	kdb, _ := testDB(t, "recreate")
 
-	db.Open(testConnectionString, false)
-	writer.Reset()
-
-	doc, _ := ParseDocument([]byte(`{"_id":1}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("expected fail put document. %w", err)
+	doc, _ := ParseDocument([]byte(`{"_id":"r1","n":1}`))
+	if _, err := kdb.PutDocument("recreate", doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kdb.DeleteDocument("recreate", &Document{ID: "r1", Version: 1}); err != nil {
+		t.Fatal(err)
 	}
 
-	if err != nil && err != ErrDocConflict {
-		t.Errorf("expected fail put document with %s ", ErrDocConflict)
-	}
-
-	if !writer.begin || !writer.rollback || writer.commit {
-		t.Errorf("expected to call begin and rollback, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("expected to have nil, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-		return
-	}
-}
-
-func Test1DBPutDocumentConflict(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-	writer.Reset()
-
-	doc, _ := ParseDocument([]byte(`{"_id":1, "_version":2}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("expected fail put document. ")
-	}
-
-	if err != nil && err != ErrDocConflict {
-		t.Errorf("expected fail put document with %s ", ErrDocConflict)
-	}
-
-	if !writer.begin || !writer.rollback || writer.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("expected to have nil, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentUpdateDoc(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
-	odoc, err := db.PutDocument(doc)
+	again, _ := ParseDocument([]byte(`{"_id":"r1","_rev":2,"n":2}`))
+	out, err := kdb.PutDocument("recreate", again)
 	if err != nil {
-		t.Errorf("unable put document")
+		t.Fatal(err)
 	}
-
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc.ID == "" || odoc.Version != 2 {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
+	if out.Version < 3 {
+		t.Fatalf("expected rev >= 3 after recreate, got %d", out.Version)
 	}
 }
 
-func TestDBPutDocumentUpdateDocNoDocExists(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
+func TestDatabaseStatAndChanges(t *testing.T) {
+	kdb, _ := testDB(t, "statdb")
 
-	db.Open(testConnectionString, false)
+	doc, _ := ParseDocument([]byte(`{"_id":"s1"}`))
+	if _, err := kdb.PutDocument("statdb", doc); err != nil {
+		t.Fatal(err)
+	}
 
-	doc, _ := ParseDocument([]byte(`{"_id": "151", "_version":4}`))
-	_, err := db.PutDocument(doc)
+	stat, err := kdb.DBStat("statdb")
 	if err != nil {
-		t.Errorf("unexpected err %s", ErrDocConflict)
+		t.Fatal(err)
+	}
+	if stat.DocCount < 1 {
+		t.Fatalf("expected doc_count >= 1, got %d", stat.DocCount)
+	}
+	if stat.UpdateSeq < 1 {
+		t.Fatalf("expected update_seq >= 1, got %d", stat.UpdateSeq)
 	}
 
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and rollback, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have same seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentBeginError(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	writer.beginerr = true
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-	writer.Reset()
-	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("unable put document")
-	}
-
-	if err != nil && err != ErrInternalError {
-		t.Errorf("expected to fail with %s, failed", ErrInternalError)
-	}
-
-	if writer.begin || writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("unexpected to have return doc, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentCommitError(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	writer.commiterr = true
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("unable put document")
-	}
-
-	if err != nil && err != ErrInternalError {
-		t.Errorf("expected to fail with %s, failed", ErrInternalError)
-	}
-
-	if !writer.begin || writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("unexpected to have return doc, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentRollbackError(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	writer.roolbackerr = true
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
-	_, _ = db.PutDocument(doc)
-
-	if !writer.begin || !writer.commit || writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-}
-
-func TestDBPutDocumentWriterPutDocumentError(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	writer.putdocerror = true
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-	writer.Reset()
-	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("unable put document")
-	}
-
-	if err != nil && err != ErrInternalError {
-		t.Errorf("expected to fail with %s, failed", ErrInternalError)
-	}
-
-	if !writer.begin || writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("unexpected to have return doc, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentWriterGetDocumentError(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	writer.getdocerror = true
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-	writer.Reset()
-	doc, _ := ParseDocument([]byte(`{"_id": "12"}`))
-	odoc, err := db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("expected fail put document. ")
-	}
-
-	if err != nil && !errors.Is(err, ErrInternalError) {
-		t.Errorf("expected fail put document with %s, got %s", ErrInternalError, err.Error())
-	}
-
-	if !writer.begin || !writer.rollback || writer.commit {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc != nil {
-		t.Errorf("expected to have nil, failed.")
-	}
-
-	if db.UpdateSequence != db.GetLastUpdateSequence() {
-		t.Errorf("unexpected to have new seq id, failed.")
-	}
-}
-
-func TestDBPutDocumentUpdateDeletedDoc(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
-
-	db.Open(testConnectionString, false)
-
-	doc, _ := ParseDocument([]byte(`{"_id": "2","_version":2}`))
-	odoc, err := db.PutDocument(doc)
+	changes, err := kdb.Changes("statdb", 0, 10, false)
 	if err != nil {
-		t.Errorf("unable put document")
+		t.Fatal(err)
 	}
-
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc.ID == "" || odoc.Version != 3 {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
-	}
-
-	doc, _ = ParseDocument([]byte(`{"_id": "2", "_version": 1}`))
-	odoc, err = db.PutDocument(doc)
-	if err == nil {
-		t.Errorf("expected to fail, when you update deleted doc with old verison")
+	if len(changes) == 0 {
+		t.Fatal("expected changes payload")
 	}
 }
 
-func TestDBDeleteDocument(t *testing.T) {
-	db := &Database{}
-	reader := new(FakeDatabaseReader)
-	writer := new(FakeDatabaseWriter)
-	db.idSeq = NewSequenceUUIDGenarator()
-	pool := NewTestFakeDatabaseReaderPool(reader)
-	db.readers = pool
-	db.writer = writer
-	sl := &FakeServiceLocator{}
-	db.viewManager = sl.GetViewManager()
+func TestNewDatabaseServiceLocatorPaths(t *testing.T) {
+	dir := t.TempDir()
+	sl := NewServiceLocator(dir)
+	if sl.GetDBDirPath() != filepath.Join(dir, "dbs") {
+		t.Fatalf("unexpected db path %s", sl.GetDBDirPath())
+	}
+	if sl.GetViewDirPath() != filepath.Join(dir, "views") {
+		t.Fatalf("unexpected view path %s", sl.GetViewDirPath())
+	}
+}
 
-	db.Open(testConnectionString, false)
+func TestDatabaseAllDocsView(t *testing.T) {
+	kdb, _ := testDB(t, "alldocs")
+	doc, _ := ParseDocument([]byte(`{"_id":"d1","title":"t"}`))
+	if _, err := kdb.PutDocument("alldocs", doc); err != nil {
+		t.Fatal(err)
+	}
 
-	doc, _ := ParseDocument([]byte(`{"_id": "1", "_version":1}`))
-	odoc, err := db.DeleteDocument(doc)
+	rs, err := kdb.SelectView("alldocs", "_design/_views", "_all_docs", "default", url.Values{
+		"limit":  []string{"10"},
+		"offset": []string{"0"},
+	}, false)
 	if err != nil {
-		t.Errorf("unable delete document")
+		t.Fatal(err)
 	}
-
-	if !writer.begin || !writer.commit || !writer.rollback {
-		t.Errorf("expected to call begin and commit, failed.")
-	}
-
-	if odoc.ID == "" || odoc.Version != 2 || !odoc.Deleted {
-		t.Errorf("expected to have id and version, failed.")
-	}
-
-	if db.UpdateSequence == db.GetLastUpdateSequence() {
-		t.Errorf("expected to have new seq id, failed.")
+	if len(rs) == 0 {
+		t.Fatal("expected all_docs result")
 	}
 }
 
-func TestNewDatabaseNew(t *testing.T) {
-	db, err := NewDatabase("testdb", "testdb", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
-	if err != nil {
-		t.Errorf("unexpected err %s", err)
+func TestOpenReadersNeverEnqueuesNil(t *testing.T) {
+	kdb, _ := testDB(t, "c7readers")
+	db := kdb.dbs["c7readers"].(*DefaultDatabase)
+
+	n := cap(db.reader)
+	pending := make([]DatabaseReader, 0, n)
+	for i := 0; i < n; i++ {
+		pending = append(pending, <-db.reader)
 	}
-	if db.DBPath != "data/dbs/testdb.db" {
-		t.Errorf("expected to dbpath %s, got %s", "data/dbs/testdb.db", db.DBPath)
-	}
-	if db.Name != "testdb" {
-		t.Errorf("expected name property value %s, got %s", "testdb", db.Name)
-	}
-	if db.idSeq == nil || db.writer == nil || db.readers == nil || db.viewManager == nil {
-		t.Errorf("db instance is not properly created.")
+	for i := 0; i < n; i++ {
+		db.reader <- &failOpenReader{}
 	}
 
-	err = db.Close()
-	if err != nil {
-		t.Errorf("unexpected err %s", err)
+	err := db.openReaders()
+	if !errors.Is(err, errFakeOpen) {
+		t.Fatalf("expected fake open error, got %v", err)
 	}
-}
-
-func TestNewDatabaseOpenNoDatabase(t *testing.T) {
-	_, err := NewDatabase("testdb", "testdb", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
-	if err == nil {
-		t.Errorf("expected err %s, got %s", ErrDBNotFound, err)
+	if len(db.reader) != n {
+		t.Fatalf("expected %d readers in pool after failure, got %d", n, len(db.reader))
 	}
-}
-
-func TestNewDatabaseExists(t *testing.T) {
-	_, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", true, &FakeServiceLocator{})
-	if err == nil {
-		t.Errorf("expected err %s, failed", err)
-	}
-}
-
-func TestNewDatabaseReopen(t *testing.T) {
-	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
-	if err != nil {
-		t.Errorf("expected err %s, failed", err)
+	for i := 0; i < n; i++ {
+		r := <-db.reader
+		if r == nil {
+			t.Fatal("nil reader enqueued after Open failure")
+		}
+		db.reader <- r
 	}
 
-	if db.DBPath != "data/dbs/testdb1.db" {
-		t.Errorf("expected to dbpath %s, got %s", "data/dbs/testdb.db", db.DBPath)
+	// Restore working readers so cleanup can Close.
+	for i := 0; i < n; i++ {
+		<-db.reader
 	}
-	if db.Name != "testdb1" {
-		t.Errorf("expected name property value %s, got %s", "testdb", db.Name)
-	}
-	if db.idSeq == nil || db.writer == nil || db.readers == nil || db.viewManager == nil {
-		t.Errorf("db instance is not properly created.")
+	for _, r := range pending {
+		db.reader <- r
 	}
 }
 
-func TestDatabaseValidateDesignDocument(t *testing.T) {
-	designDoc, err := ParseDocument([]byte("{}"))
-	if err != nil {
-		panic(err)
-	}
-	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
-	if err != nil {
-		t.Errorf("unexpected err %s, failed", err)
+func TestCloseWriterFailureReturnsToken(t *testing.T) {
+	kdb, _ := testDB(t, "c8close")
+	db := kdb.dbs["c8close"].(*DefaultDatabase)
+
+	real := <-db.writer
+	db.writer <- &failCloseWriter{DatabaseWriter: real, failClose: true}
+
+	err := db.Close(false)
+	if !errors.Is(err, errFakeClose) {
+		t.Fatalf("expected fake close error, got %v", err)
 	}
 
-	err = db.ValidateDesignDocument(designDoc)
+	// Writer token must be available; Put must not hang.
+	done := make(chan error, 1)
+	go func() {
+		doc, _ := ParseDocument([]byte(`{"_id":"after_close_fail"}`))
+		_, err := kdb.PutDocument("c8close", doc)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Put after failed Close: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Put hung — writer token likely dropped on Close failure")
+	}
+
+	// Allow clean Close: unwrap fake.
+	fake := <-db.writer
+	fw := fake.(*failCloseWriter)
+	fw.failClose = false
+	db.writer <- fw
 }
 
-func TestDatabaseVacuum(t *testing.T) {
-	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
-	if err != nil {
-		t.Errorf("unexpected err %s, failed", err)
+func TestCountDeltaOnDeleteUndelete(t *testing.T) {
+	kdb, _ := testDB(t, "h5counts")
+	db := kdb.dbs["h5counts"].(*DefaultDatabase)
+	baseDocs := db.DocumentCount()
+	baseDeleted := db.DeletedDocumentCount()
+
+	doc, _ := ParseDocument([]byte(`{"_id":"c1","n":1}`))
+	if _, err := kdb.PutDocument("h5counts", doc); err != nil {
+		t.Fatal(err)
 	}
-	err = db.Vacuum()
+	if db.DocumentCount() != baseDocs+1 {
+		t.Fatalf("after put: docs=%d want %d", db.DocumentCount(), baseDocs+1)
+	}
+
+	if _, err := kdb.DeleteDocument("h5counts", &Document{ID: "c1", Version: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if db.DocumentCount() != baseDocs || db.DeletedDocumentCount() != baseDeleted+1 {
+		t.Fatalf("after delete: docs=%d deleted=%d", db.DocumentCount(), db.DeletedDocumentCount())
+	}
+
+	// Re-delete with correct rev should conflict / no-op counts if conflict.
+	_, err := kdb.DeleteDocument("h5counts", &Document{ID: "c1", Version: 1})
+	if !errors.Is(err, ErrDocumentConflict) {
+		t.Fatalf("expected conflict re-deleting with stale rev, got %v", err)
+	}
+	if db.DocumentCount() != baseDocs || db.DeletedDocumentCount() != baseDeleted+1 {
+		t.Fatalf("counts changed on conflicting re-delete: docs=%d deleted=%d", db.DocumentCount(), db.DeletedDocumentCount())
+	}
+
+	again, _ := ParseDocument([]byte(`{"_id":"c1","_rev":2,"n":2}`))
+	if _, err := kdb.PutDocument("h5counts", again); err != nil {
+		t.Fatal(err)
+	}
+	if db.DocumentCount() != baseDocs+1 || db.DeletedDocumentCount() != baseDeleted {
+		t.Fatalf("after undelete: docs=%d deleted=%d", db.DocumentCount(), db.DeletedDocumentCount())
+	}
 }
-
-func TestDatabaseReOpen(t *testing.T) {
-	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", false, &FakeServiceLocator{})
-	if err != nil {
-		t.Errorf("unexpected err %s, failed", err)
-	}
-
-	//db.Open(false)
-	doc, err := ParseDocument([]byte(`{"_id":1}`))
-	doc, err = db.GetDocument(doc, false)
-	db.Close()
-
-	db.Open(testConnectionString, false)
-	doc, err = ParseDocument([]byte(`{"_id":1}`))
-	doc, err = db.GetDocument(doc, false)
-	db.Close()
-
-}
-
-func TestDatabaseSelectView(t *testing.T) {
-	deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
-	sl := NewServiceLocator()
-	db, err := NewDatabase("testdb1", "testdb1", "./data/dbs", "./data/mrviews", true, sl)
-	if err != nil {
-		t.Errorf("unexpected err %s, failed", err)
-	}
-	data, err := db.SelectView("_design/_views", "_all_docs", "default", nil, false)
-	output := `{"offset":0,"rows":[{"key":"_design/_views","value":{"version":1},"id":"_design/_views"}],"total_rows":1}`
-
-	if string(data) != output {
-		fmt.Println(output)
-		t.Errorf("expected %s, got %s", output, data)
-	}
-
-	db.Close()
-
-	deleteDBFiles("./data/dbs", "./data/mrviews", "testdb1")
-}
-
-
-*/
