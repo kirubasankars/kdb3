@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 type ViewSQLChangeSet struct {
@@ -140,7 +140,7 @@ func NewViewSQL(dbName, DBPath, qualifiedViewName string, setup, scripts []Query
 	vs := new(ViewSQLChangeSet)
 	absoluteDatabasePath, err := filepath.Abs(DBPath)
 	if err != nil {
-		panic(err)
+		absoluteDatabasePath = DBPath
 	}
 	vs.absoluteDatabasePath = absoluteDatabasePath
 	vs.setupScripts = setup

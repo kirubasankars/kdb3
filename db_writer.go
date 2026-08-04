@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 type DatabaseWriter interface {
@@ -54,8 +54,15 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 	writer.conn = con
 	writer.reader.conn = con
 
-	if err = con.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		return err
+	for _, p := range []string{
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA synchronous=NORMAL;",
+		"PRAGMA busy_timeout=5000;",
+		"PRAGMA cache_size=-64000;",
+	} {
+		if err = con.Exec(p); err != nil {
+			return err
+		}
 	}
 
 	if createIfNotExists {
@@ -81,7 +88,13 @@ func (writer *DefaultDatabaseWriter) Open(createIfNotExists bool) error {
 
 // Close connection
 func (writer *DefaultDatabaseWriter) Close() error {
-	writer.stmtPutDocument.Close()
+	if writer.stmtPutDocument != nil {
+		_ = writer.stmtPutDocument.Close()
+	}
+	// Checkpoint WAL so the main file is self-contained before rename/delete.
+	if writer.conn != nil {
+		_ = writer.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+	}
 	return writer.reader.Close()
 }
 

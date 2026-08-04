@@ -2,10 +2,9 @@ package main
 
 import "C"
 import (
-	"fmt"
 	"strings"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 // DatabaseReader DatabaseReader interface
@@ -45,6 +44,19 @@ type DefaultDatabaseReader struct {
 	stmtDocumentCount                  *sqlite3.Stmt
 }
 
+func applyReaderPragmas(con *sqlite3.Conn) error {
+	pragmas := []string{
+		"PRAGMA busy_timeout=5000;",
+		"PRAGMA cache_size=-64000;",
+	}
+	for _, p := range pragmas {
+		if err := con.Exec(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Open open database reader with connectionString
 func (reader *DefaultDatabaseReader) Open() error {
 	con, err := sqlite3.Open(reader.connectionString)
@@ -52,6 +64,9 @@ func (reader *DefaultDatabaseReader) Open() error {
 		return err
 	}
 	reader.conn = con
+	if err := applyReaderPragmas(con); err != nil {
+		return err
+	}
 
 	return reader.Prepare()
 }
@@ -111,7 +126,7 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 		(
 			SELECT (CASE WHEN deleted != 1 THEN JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version) ELSE JSON_OBJECT('update_seq', update_seq, 'id', doc_id, 'rev', version, 'deleted', JSON('true'))  END) as obj FROM all_changes_metadata
 		)
-		SELECT JSON_OBJECT('results', JSON_GROUP_ARRAY(obj)) FROM changes_object
+		SELECT JSON_OBJECT('results', JSON_GROUP_ARRAY(json(obj))) FROM changes_object
 	`
 	reader.stmtChanges, err = con.Prepare(strings.ReplaceAll(changesQuery, "$ORDER$", "ASC"))
 	if err != nil {
@@ -212,17 +227,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByID(ID string) (*Document, erro
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_rev":%d`, doc.ID, doc.Version)
-		if len(doc.Data) != 2 {
-			meta = meta + ","
-		}
-
-		data := make([]byte, len(meta))
-		copy(data, meta)
-		if len(doc.Data) > 0 {
-			data = append(data, doc.Data[1:]...)
-		}
-		doc.Data = data
+		doc.Data = prependDocMeta(doc.ID, doc.Version, doc.Data)
 
 		if doc.Deleted {
 			return doc, ErrDocumentNotFound
@@ -254,17 +259,7 @@ func (reader *DefaultDatabaseReader) GetDocumentByIDandVersion(ID string, Versio
 			return nil, err
 		}
 
-		var meta = fmt.Sprintf(`{"_id":"%s","_rev":%d`, doc.ID, doc.Version)
-		if len(doc.Data) != 2 {
-			meta = meta + ","
-		}
-
-		data := make([]byte, len(meta))
-		copy(data, meta)
-		if len(doc.Data) > 0 {
-			data = append(data, doc.Data[1:]...)
-		}
-		doc.Data = data
+		doc.Data = prependDocMeta(doc.ID, doc.Version, doc.Data)
 
 		if doc.Deleted {
 			return doc, ErrDocumentNotFound
@@ -336,7 +331,9 @@ func (reader *DefaultDatabaseReader) GetChanges(since int64, limit int, desc boo
 				return nil, err
 			}
 		}
-
+		if changes == nil {
+			return []byte(`{"results":[]}`), nil
+		}
 		return changes, nil
 	}
 
@@ -360,7 +357,9 @@ func (reader *DefaultDatabaseReader) GetChanges(since int64, limit int, desc boo
 			return nil, err
 		}
 	}
-
+	if changes == nil {
+		return []byte(`{"results":[]}`), nil
+	}
 	return changes, nil
 
 }
@@ -371,7 +370,7 @@ func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int64 {
 	defer reader.stmtLastUpdateSequence.Reset()
 	hasRow, err := reader.stmtLastUpdateSequence.Step()
 	if err != nil {
-		panic(err)
+		return 0
 	}
 
 	if hasRow {
@@ -380,7 +379,7 @@ func (reader *DefaultDatabaseReader) GetLastUpdateSequence() int64 {
 		return maxUpdateSeq
 	}
 
-	panic("No row found")
+	return 0
 }
 
 // GetDocumentCount get document count
@@ -389,7 +388,7 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 	defer reader.stmtDocumentCount.Reset()
 	hasRow, err := reader.stmtDocumentCount.Step()
 	if err != nil {
-		panic(err)
+		return 0, 0
 	}
 
 	deleted, count, docCount, deletedDocCount := 0, 0, 0, 0
@@ -402,7 +401,7 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 		}
 		hasRow, err = reader.stmtDocumentCount.Step()
 		if err != nil {
-			panic(err)
+			return docCount, deletedDocCount
 		}
 	}
 

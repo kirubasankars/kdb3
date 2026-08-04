@@ -2,6 +2,18 @@ package main
 
 import "path/filepath"
 
+func absPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
+}
+
+func sqliteFileURI(path, mode string) string {
+	return "file:" + absPath(path) + "?cache=shared&mode=" + mode
+}
+
 // ServiceLocator interface
 type ServiceLocator interface {
 	GetFileHandler() FileHandler
@@ -10,7 +22,7 @@ type ServiceLocator interface {
 	GetDBDirPath() string
 	GetViewDirPath() string
 
-	GetDatabase(dbName string, createIfNotExists bool) Database
+	GetDatabase(dbName string, createIfNotExists bool) (Database, error)
 	GetDatabaseWriter(dbName string) DatabaseWriter
 	GetDatabaseReader(dbName string) DatabaseReader
 
@@ -52,19 +64,19 @@ func (serviceLocator *DefaultServiceLocator) GetVacuumManager(dbName string) Vac
 // GetDatabaseWriter resolve DatabaseWriter instance
 func (serviceLocator *DefaultServiceLocator) GetDatabaseWriter(dbName string) DatabaseWriter {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	connectionString := "file:" + filepath.Join(serviceLocator.dbDirPath, fileName+dbExt) + "?cache=shared&mode=rwc"
+	dbPath := filepath.Join(serviceLocator.dbDirPath, fileName+dbExt)
 	databaseWriter := new(DefaultDatabaseWriter)
 	databaseWriter.reader = new(DefaultDatabaseReader)
-	databaseWriter.connectionString = connectionString
+	databaseWriter.connectionString = sqliteFileURI(dbPath, "rwc")
 	return databaseWriter
 }
 
 // GetDatabaseReader resolve DatabaseReader instance
 func (serviceLocator *DefaultServiceLocator) GetDatabaseReader(dbName string) DatabaseReader {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	connectionString := "file:" + filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt) + "?cache=shared&mode=ro"
+	dbPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
 	databaseReader := new(DefaultDatabaseReader)
-	databaseReader.connectionString = connectionString
+	databaseReader.connectionString = sqliteFileURI(dbPath, "ro")
 	return databaseReader
 }
 
@@ -76,19 +88,19 @@ func (serviceLocator *DefaultServiceLocator) GetViewManager(dbName string) ViewM
 // GetViewReader resolve ViewReader instance
 func (serviceLocator *DefaultServiceLocator) GetViewReader(dbName, docID, viewName string, scripts []Query, selectScripts map[string]Query) ViewReader {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
+	DBPath := absPath(filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt))
 
 	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
-	connectionString := "file:" + viewFilePath + "?cache=shared&mode=rw"
+	connectionString := sqliteFileURI(viewFilePath, "rw")
 	return NewViewReader(dbName, DBPath, connectionString, scripts, selectScripts)
 }
 
 // GetViewSQL resolve ViewSQLChangeSet instance
 func (serviceLocator *DefaultServiceLocator) GetViewSQLBuilder(dbName, docID, viewName string, setup, scripts []Query) *ViewSQLChangeSet {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
+	DBPath := absPath(filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt))
 	qualifiedViewName := docID + "$" + viewName
 	return NewViewSQL(dbName, DBPath, qualifiedViewName, setup, scripts)
 }
@@ -96,12 +108,12 @@ func (serviceLocator *DefaultServiceLocator) GetViewSQLBuilder(dbName, docID, vi
 // GetViewWriter resolve ViewWriter instance
 func (serviceLocator *DefaultServiceLocator) GetViewWriter(dbName, docID, viewName string, setup, scripts []Query) ViewWriter {
 	fileName := serviceLocator.localDB.GetDatabaseFileName(dbName)
-	DBPath := filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt)
+	DBPath := absPath(filepath.Join(serviceLocator.GetDBDirPath(), fileName+dbExt))
 
 	qualifiedViewName := docID + "$" + viewName
 	_, viewFileName := serviceLocator.localDB.GetViewFileName(dbName, qualifiedViewName)
 	viewFilePath := filepath.Join(serviceLocator.GetViewDirPath(), viewFileName+dbExt)
-	connectionString := "file:" + viewFilePath + "?cache=shared&mode=rwc"
+	connectionString := sqliteFileURI(viewFilePath, "rwc")
 	return NewViewWriter(dbName, DBPath, connectionString, setup, scripts)
 }
 
@@ -111,15 +123,18 @@ func (serviceLocator *DefaultServiceLocator) GetLocalDB() LocalDB {
 }
 
 // GetDatabase resolve database instance
-func (serviceLocator *DefaultServiceLocator) GetDatabase(dbName string, createIfNotExists bool) Database {
+func (serviceLocator *DefaultServiceLocator) GetDatabase(dbName string, createIfNotExists bool) (Database, error) {
 	return NewDatabase(dbName, createIfNotExists, serviceLocator)
 }
 
-// NewServiceLocator create new ServiceLocator
-func NewServiceLocator() ServiceLocator {
+// NewServiceLocator create new ServiceLocator under dataDir (dbs + views subdirs).
+func NewServiceLocator(dataDir string) ServiceLocator {
+	if dataDir == "" {
+		dataDir = "./data"
+	}
 	serviceLocator := new(DefaultServiceLocator)
-	serviceLocator.dbDirPath = "./data/dbs"
-	serviceLocator.viewDirPath = "./data/views"
+	serviceLocator.dbDirPath = filepath.Join(dataDir, "dbs")
+	serviceLocator.viewDirPath = filepath.Join(dataDir, "views")
 	serviceLocator.fileHandler = new(DefaultFileHandler)
 	serviceLocator.localDB = NewLocalDB()
 	return serviceLocator

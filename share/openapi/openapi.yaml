@@ -1,0 +1,852 @@
+openapi: 3.0.3
+info:
+  title: kdb3 API
+  version: "1.0"
+  description: |
+    Document database with SQLite storage, change tracking, and incrementally
+    updated materialized views.
+
+    **Trust model:** design documents run SQL against SQLite. Prefer a Bearer
+    token and a restricted bind address when not on localhost.
+  contact:
+    name: kdb3
+servers:
+  - url: /
+    description: This kdb3 instance
+tags:
+  - name: Server
+  - name: Databases
+  - name: Documents
+  - name: Bulk
+  - name: Changes
+  - name: Views
+  - name: Admin
+paths:
+  /:
+    get:
+      tags: [Server]
+      summary: Server info
+      operationId: getInfo
+      responses:
+        "200":
+          description: Server identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /_cat/dbs:
+    get:
+      tags: [Server]
+      summary: List databases
+      operationId: listDatabases
+      responses:
+        "200":
+          description: Database names
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example: ["blog", "testdb"]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /_uuids:
+    get:
+      tags: [Server]
+      summary: Generate document IDs
+      operationId: getUUIDs
+      parameters:
+        - name: count
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        "200":
+          description: Generated IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /{db}:
+    parameters:
+      - $ref: "#/components/parameters/db"
+    get:
+      tags: [Databases]
+      summary: Database stats
+      operationId: getDatabase
+      responses:
+        "200":
+          description: Database statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseStat"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Databases]
+      summary: Create database
+      operationId: putDatabase
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          description: Database already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Documents]
+      summary: Create or update a document
+      description: |
+        Body must be JSON (`Content-Type: application/json`). If `_id` is omitted,
+        one is assigned. Updates require the current `_rev`.
+      operationId: postDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentWrite"
+            example:
+              _id: "1"
+              title: "hello"
+      responses:
+        "200":
+          description: Saved document meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "406":
+          description: Unsupported Content-Type
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Databases]
+      summary: Delete database
+      operationId: deleteDatabase
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_all_docs:
+    get:
+      tags: [Documents]
+      summary: List all documents
+      description: Shortcut over `_design/_views/_all_docs`.
+      operationId: allDocs
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+        - name: include_docs
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: View result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllDocsResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_changes:
+    get:
+      tags: [Changes]
+      summary: Change feed
+      operationId: changes
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - name: since
+          in: query
+          schema:
+            type: integer
+            format: int64
+            default: 0
+          description: Return changes with update_seq greater than this value
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 1000
+        - name: descending
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Changes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_bulk_docs:
+    post:
+      tags: [Bulk]
+      summary: Bulk write documents
+      operationId: bulkDocs
+      parameters:
+        - $ref: "#/components/parameters/db"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkDocsRequest"
+      responses:
+        "200":
+          description: Per-document results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  oneOf:
+                    - $ref: "#/components/schemas/DocumentMeta"
+                    - $ref: "#/components/schemas/BulkItemError"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+
+  /{db}/_bulk_gets:
+    post:
+      tags: [Bulk]
+      summary: Bulk get documents
+      operationId: bulkGets
+      parameters:
+        - $ref: "#/components/parameters/db"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkGetsRequest"
+      responses:
+        "200":
+          description: Per-document results (full docs or errors)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  oneOf:
+                    - $ref: "#/components/schemas/Document"
+                    - $ref: "#/components/schemas/BulkItemError"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+
+  /{db}/_vacuum:
+    post:
+      tags: [Admin]
+      summary: Vacuum database
+      operationId: vacuum
+      parameters:
+        - $ref: "#/components/parameters/db"
+      responses:
+        "200":
+          description: Vacuum started/completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /{db}/{docid}:
+    parameters:
+      - $ref: "#/components/parameters/db"
+      - $ref: "#/components/parameters/docid"
+    get:
+      tags: [Documents]
+      summary: Get document
+      operationId: getDocument
+      parameters:
+        - name: rev
+          in: query
+          schema:
+            type: integer
+          description: Optional revision to fetch
+      responses:
+        "200":
+          description: Document
+          headers:
+            E-Tag:
+              schema:
+                type: string
+              description: Document revision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    head:
+      tags: [Documents]
+      summary: Document existence / E-Tag
+      operationId: headDocument
+      parameters:
+        - name: rev
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Exists
+          headers:
+            E-Tag:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Documents]
+      summary: Create or update document by ID
+      operationId: putDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentWrite"
+      responses:
+        "200":
+          description: Saved document meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Documents]
+      summary: Delete document
+      operationId: deleteDocument
+      parameters:
+        - name: rev
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Current revision (required)
+      responses:
+        "200":
+          description: Tombstone meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_design/{docid}:
+    parameters:
+      - $ref: "#/components/parameters/db"
+      - $ref: "#/components/parameters/designDocid"
+    get:
+      tags: [Views]
+      summary: Get design document
+      operationId: getDesignDocument
+      responses:
+        "200":
+          description: Design document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesignDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Views]
+      summary: Create or update design document (POST)
+      operationId: postDesignDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesignDocument"
+      responses:
+        "200":
+          description: Saved design doc meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+        "409":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Views]
+      summary: Create or update design document (PUT)
+      operationId: putDesignDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesignDocument"
+      responses:
+        "200":
+          description: Saved design doc meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "406":
+          description: Unsupported Content-Type
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Views]
+      summary: Delete design document
+      operationId: deleteDesignDocument
+      parameters:
+        - name: rev
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tombstone meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_design/{docid}/{view}:
+    get:
+      tags: [Views]
+      summary: Execute view (default select)
+      operationId: selectView
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - $ref: "#/components/parameters/designDocid"
+        - $ref: "#/components/parameters/view"
+        - $ref: "#/components/parameters/stale"
+        - $ref: "#/components/parameters/include_docs"
+      responses:
+        "200":
+          description: View select result (shape defined by the view SQL)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /{db}/_design/{docid}/{view}/{select}:
+    get:
+      tags: [Views]
+      summary: Execute named view select
+      operationId: selectViewNamed
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - $ref: "#/components/parameters/designDocid"
+        - $ref: "#/components/parameters/view"
+        - $ref: "#/components/parameters/select"
+        - $ref: "#/components/parameters/stale"
+        - $ref: "#/components/parameters/include_docs"
+      responses:
+        "200":
+          description: View select result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Required when the server was started with `-token` or `KDB3_TOKEN`.
+        Swagger UI and `/_docs` themselves are public; authorize here before Try it out.
+
+  parameters:
+    db:
+      name: db
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9_]{1,50}$"
+      description: Database name (`[a-z0-9_]`, 1–50 chars, not starting with `_`)
+      example: testdb
+    docid:
+      name: docid
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_]{1,50}$"
+      description: Document ID
+      example: "1"
+    designDocid:
+      name: docid
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Design document name without `_design/` prefix
+      example: _views
+    view:
+      name: view
+      in: path
+      required: true
+      schema:
+        type: string
+      example: _all_docs
+    select:
+      name: select
+      in: path
+      required: true
+      schema:
+        type: string
+      example: default
+    stale:
+      name: stale
+      in: query
+      schema:
+        type: boolean
+        default: false
+      description: If true, read without waiting for the view to catch up
+    include_docs:
+      name: include_docs
+      in: query
+      schema:
+        type: boolean
+        default: false
+      description: Prefer `{select}_with_docs` when present
+
+  schemas:
+    OK:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          example: true
+
+    ServerInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          example: kdb
+        version:
+          type: object
+          properties:
+            sqlite:
+              type: string
+              example: "3.53.4"
+
+    DatabaseStat:
+      type: object
+      properties:
+        name:
+          type: string
+        update_seq:
+          type: integer
+          format: int64
+        doc_count:
+          type: integer
+        deleted_doc_count:
+          type: integer
+      example:
+        name: testdb
+        update_seq: 1
+        doc_count: 1
+        deleted_doc_count: 0
+
+    DocumentMeta:
+      type: object
+      required: [_id, _rev]
+      properties:
+        _id:
+          type: string
+        _rev:
+          type: integer
+        _deleted:
+          type: boolean
+
+    DocumentWrite:
+      type: object
+      additionalProperties: true
+      properties:
+        _id:
+          type: string
+        _rev:
+          type: integer
+        _deleted:
+          type: boolean
+
+    Document:
+      type: object
+      additionalProperties: true
+      required: [_id, _rev]
+      properties:
+        _id:
+          type: string
+        _rev:
+          type: integer
+
+    DesignDocumentView:
+      type: object
+      properties:
+        setup:
+          type: array
+          items:
+            type: string
+          description: SQL DDL run when the view DB opens
+        run:
+          type: array
+          items:
+            type: string
+          description: Incremental update SQL using latest_changes / latest_documents
+        select:
+          type: object
+          additionalProperties:
+            type: string
+          description: Named select queries; `${param}` placeholders from query string
+
+    DesignDocument:
+      type: object
+      required: [_id, views]
+      properties:
+        _id:
+          type: string
+          example: _design/posts
+        _rev:
+          type: integer
+        views:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/DesignDocumentView"
+
+    BulkDocsRequest:
+      type: object
+      required: [_docs]
+      properties:
+        _docs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentWrite"
+
+    BulkGetsRequest:
+      type: object
+      required: [_docs]
+      properties:
+        _docs:
+          type: array
+          items:
+            type: object
+            required: [_id]
+            properties:
+              _id:
+                type: string
+              _rev:
+                type: integer
+
+    BulkItemError:
+      type: object
+      properties:
+        _id:
+          type: string
+        error:
+          type: string
+        reason:
+          type: string
+
+    ChangesResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              update_seq:
+                type: integer
+                format: int64
+              id:
+                type: string
+              rev:
+                type: integer
+              deleted:
+                type: boolean
+
+    AllDocsResult:
+      type: object
+      properties:
+        offset:
+          type: integer
+        total_rows:
+          type: integer
+        rows:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              id:
+                type: string
+              rev:
+                type: integer
+              doc:
+                $ref: "#/components/schemas/Document"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: db_not_found
+        reason:
+          type: string
+          example: database not found
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: unauthorized
+            reason: missing or invalid bearer token
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+security:
+  - bearerAuth: []
+  - {}

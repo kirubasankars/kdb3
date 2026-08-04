@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path"
@@ -14,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 type ViewManager interface {
@@ -51,11 +50,11 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 
 	diskViewFiles, err := mgr.ListViewFiles()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	localDBViewFiles, err := mgr.localDB.ListViewFiles(mgr.DBName)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// cleanup unused files
@@ -67,10 +66,7 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 			}
 		}
 		if !found {
-			err = os.Remove(path.Join(mgr.viewDirPath, diskViewFile+dbExt))
-			if err != nil {
-				panic(err)
-			}
+			removeSQLiteFiles(path.Join(mgr.viewDirPath, diskViewFile+dbExt))
 		}
 	}
 
@@ -90,7 +86,7 @@ func (mgr *DefaultViewManager) Initialize(designDocs []Document) error {
 }
 
 func (mgr *DefaultViewManager) ListViewFiles() ([]string, error) {
-	list, err := ioutil.ReadDir(mgr.viewDirPath)
+	list, err := os.ReadDir(mgr.viewDirPath)
 	if err != nil {
 		return nil, err
 	}
@@ -145,11 +141,13 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 			view.runScripts = runScripts
 			view.selectScripts = selectScripts
 
-			view.ReInitialize() // safe initialize to writer and readers
+			if err := view.ReInitialize(); err != nil {
+				return err
+			}
 			mgr.deleteViewFileIfNoReference(currentViewFileName)
 		}
 	} else {
-		view = NewView(mgr.DBName, docID, viewName, &designDocumentView, mgr, mgr.serviceLocator)
+		view = NewView(mgr.DBName, viewName, docID, &designDocumentView, mgr, mgr.serviceLocator)
 		if err := view.Open(); err != nil {
 			return err
 		}
@@ -158,70 +156,67 @@ func (mgr *DefaultViewManager) OpenView(docID, viewName string, designDocumentVi
 	return nil
 }
 
+func (mgr *DefaultViewManager) openOrUpdateView(doc Document, viewName, qualifiedViewName string) (*View, error) {
+	mgr.rwMutex.Lock()
+	defer mgr.rwMutex.Unlock()
+
+	designDoc := &DesignDocument{}
+	err := json.Unmarshal(doc.Data, designDoc)
+	designDoc.Version = designDoc.Rev
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid design document %s", ErrDocumentInvalidInput, doc.ID)
+	}
+	if _, ok := mgr.designDocs[doc.ID]; !ok {
+		mgr.designDocs[doc.ID] = designDoc
+	}
+
+	designDocView := designDoc.Views[viewName]
+	if designDocView == nil {
+		return nil, ErrViewNotFound
+	}
+	err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
+	mgr.designDocs[doc.ID] = designDoc
+	if err != nil {
+		return nil, err
+	}
+
+	view := mgr.views[qualifiedViewName]
+	if view == nil {
+		return nil, ErrViewNotFound
+	}
+
+	selectScripts := make(map[string]Query)
+	for k, v := range designDocView.Select {
+		text, params := mgr.ParseQueryParams(v)
+		selectScripts[k] = Query{text: text, params: params}
+	}
+	view.selectScripts = selectScripts
+	return view, nil
+}
+
 func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
 	designDocID := doc.ID
 	qualifiedViewName := designDocID + "$" + viewName
 
+	// Lookup under RLock only — never hold mgr locks while blocking on view channels
+	// (Build/Select), or Vacuum's ReinitializeViews can deadlock.
 	mgr.rwMutex.RLock()
-	defer mgr.rwMutex.RUnlock()
-
-	update := func() (*View, error) {
-		mgr.rwMutex.RUnlock() // remove read lock, if any
-		mgr.rwMutex.Lock()    // put write lock
-
-		// in the end
-		defer mgr.rwMutex.RLock()  // put read lock back on.
-		defer mgr.rwMutex.Unlock() // remove write lock
-		// in the end
-
-		designDoc := &DesignDocument{}
-		err := json.Unmarshal(doc.Data, designDoc)
-		designDoc.Version = designDoc.Rev
-		if err != nil {
-			panic("invalid_design_document " + doc.ID)
-		}
-		if _, ok := mgr.designDocs[doc.ID]; !ok {
-			// document is new
-			mgr.designDocs[doc.ID] = designDoc
-		}
-
-		designDocView := designDoc.Views[viewName]
-		if designDocView == nil {
-			return nil, ErrViewNotFound
-		}
-		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
-		mgr.designDocs[doc.ID] = designDoc
-
-		if err != nil {
-			return nil, err
-		}
-
-		view := mgr.views[qualifiedViewName]
-
-		//TODO: duplicate code
-		selectScripts := make(map[string]Query)
-		for k, v := range designDocView.Select {
-			text, params := mgr.ParseQueryParams(v)
-			selectScripts[k] = Query{text: text, params: params}
-		}
-		view.selectScripts = selectScripts
-
-		return view, nil
+	view, ok := mgr.views[qualifiedViewName]
+	var designVer int
+	if dd := mgr.designDocs[designDocID]; dd != nil {
+		designVer = dd.Version
 	}
+	mgr.rwMutex.RUnlock()
 
 	var err error
-	view, ok := mgr.views[qualifiedViewName]
 	if !ok {
-		// if view not found. try to find and open
-		// new doc handled here
-		view, err = update()
+		view, err = mgr.openOrUpdateView(doc, viewName, qualifiedViewName)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if view == nil {
-		// no view found
 		return nil, ErrViewNotFound
 	}
 
@@ -229,25 +224,19 @@ func (mgr *DefaultViewManager) SelectView(updateSeq int64, doc Document, viewNam
 		return view.Select(selectName, values)
 	}
 
-	currentDesignDoc := mgr.designDocs[designDocID]
-	if doc.Version != currentDesignDoc.Version {
-		view, err = update()
+	if doc.Version != designVer {
+		view, err = mgr.openOrUpdateView(doc, viewName, qualifiedViewName)
 		if err != nil {
 			return nil, err
 		}
 	}
-
 	if view == nil {
-		// no view found
 		return nil, ErrViewNotFound
 	}
 
-	// refresh view data
-	err = view.Build(updateSeq)
-	if err != nil {
+	if err = view.Build(updateSeq); err != nil {
 		return nil, err
 	}
-
 	return view.Select(selectName, values)
 }
 
@@ -256,88 +245,72 @@ func (mgr *DefaultViewManager) SQL(fromSeq int64, doc Document, viewName string)
 	qualifiedViewName := designDocID + "$" + viewName
 
 	mgr.rwMutex.RLock()
-	defer mgr.rwMutex.RUnlock()
-
-	update := func() (*View, error) {
-		mgr.rwMutex.RUnlock() // remove read lock, if any
-		mgr.rwMutex.Lock()    // put write lock
-
-		// in the end
-		defer mgr.rwMutex.RLock()  // put read lock back on.
-		defer mgr.rwMutex.Unlock() // remove write lock
-		// in the end
-
-		designDoc := &DesignDocument{}
-		err := json.Unmarshal(doc.Data, designDoc)
-		if err != nil {
-			panic("invalid_design_document " + doc.ID)
-		}
-		if _, ok := mgr.designDocs[doc.ID]; !ok {
-			// document is new
-			mgr.designDocs[doc.ID] = designDoc
-		}
-
-		designDocView := designDoc.Views[viewName]
-		err = mgr.OpenView(designDoc.ID, viewName, *designDocView)
-		mgr.designDocs[doc.ID] = designDoc
-		if err != nil {
-			return nil, err
-		}
-
-		view := mgr.views[qualifiedViewName]
-		return view, nil
-	}
+	view, ok := mgr.views[qualifiedViewName]
+	mgr.rwMutex.RUnlock()
 
 	var err error
-	view, ok := mgr.views[qualifiedViewName]
 	if !ok {
-		// if view not found. try to find and open
-		// new doc handled here
-		view, err = update()
+		view, err = mgr.openOrUpdateView(doc, viewName, qualifiedViewName)
 		if err != nil {
 			return nil, err
 		}
 	}
-
 	if view == nil {
-		// no view found
 		return nil, ErrViewNotFound
 	}
-
 	return view.SQL(fromSeq)
 }
 
 func (mgr *DefaultViewManager) Close(closeChannel bool) error {
 	mgr.rwMutex.Lock()
-	defer mgr.rwMutex.Unlock()
-
+	views := make([]*View, 0, len(mgr.views))
+	keys := make([]string, 0, len(mgr.views))
 	for k, v := range mgr.views {
-		err := v.Close(closeChannel)
-		if err != nil {
-			return err
-		}
-		if closeChannel {
+		views = append(views, v)
+		keys = append(keys, k)
+	}
+	if closeChannel {
+		for _, k := range keys {
 			delete(mgr.views, k)
 		}
 	}
+	mgr.rwMutex.Unlock()
 
+	// Close without holding rwMutex so SelectView (RLock + channel ops) cannot deadlock.
+	for _, v := range views {
+		if err := v.Close(closeChannel); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (mgr *DefaultViewManager) ReinitializeViews() error {
 	mgr.rwMutex.Lock()
-	defer mgr.rwMutex.Unlock()
+	views := make([]*View, 0, len(mgr.views))
 	for _, v := range mgr.views {
-		v.ReInitialize()
+		views = append(views, v)
+	}
+	mgr.rwMutex.Unlock()
+
+	for _, v := range views {
+		if err := v.ReInitialize(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (mgr *DefaultViewManager) Vacuum() error {
 	mgr.rwMutex.Lock()
-	defer mgr.rwMutex.Unlock()
+	views := make([]*View, 0, len(mgr.views))
 	for _, v := range mgr.views {
-		v.Vacuum()
+		views = append(views, v)
+	}
+	mgr.rwMutex.Unlock()
+
+	for _, v := range views {
+		_ = v.Vacuum()
 	}
 	return nil
 }
@@ -373,7 +346,7 @@ func (mgr *DefaultViewManager) deleteViewFileIfNoReference(viewFileName string) 
 	}
 	if referenceCount <= 0 {
 		// delete data file, only if its used by one view
-		os.Remove(path.Join(mgr.viewDirPath, viewFileName+dbExt))
+		removeSQLiteFiles(path.Join(mgr.viewDirPath, viewFileName+dbExt))
 	}
 }
 
@@ -400,7 +373,7 @@ func (mgr *DefaultViewManager) DeleteViewsIfRemoved(doc Document) {
 		newDesignDoc := &DesignDocument{}
 		err := json.Unmarshal(doc.Data, newDesignDoc)
 		if err != nil {
-			panic("invalid_design_document " + doc.ID)
+			return
 		}
 
 		var deletedViews []string
@@ -444,32 +417,41 @@ func (mgr *DefaultViewManager) ParseQueryParams(query string) (string, []string)
 	return text, params
 }
 
+func containsInvalidSQLKeyword(query string, invalidKeywords []string) string {
+	q := strings.ToLower(query)
+	for _, invalidKeyword := range invalidKeywords {
+		kw := strings.ToLower(invalidKeyword)
+		if strings.Contains(q, kw) {
+			return invalidKeyword
+		}
+	}
+	return ""
+}
+
 func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 	var invalidKeywords = []string{
-		"PRAGMA", "ALTER", "ATTACH", "TRANSACTION", "DETACH", "DROP", "EXPLAIN", "REINDEX", "SAVEPOINT", "CONFLICT", "UPDATE", "VACUUM",
+		"PRAGMA", "ALTER", "ATTACH", "TRANSACTION", "DETACH", "DROP", "EXPLAIN", "REINDEX", "SAVEPOINT", "VACUUM",
 	}
 	newDDoc := &DesignDocument{}
 	err := json.Unmarshal(doc.Data, newDDoc)
 	if err != nil {
-		panic("invalid_design_document " + doc.ID)
+		return fmt.Errorf("%w: invalid design document %s", ErrDocumentInvalidInput, doc.ID)
 	}
 
 	db, err := sqlite3.Open(":memory:")
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
 	err = db.WithTx(func() error {
-		err = db.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '', 0 as doc_id;")
-		if err != nil {
+		if err = db.Exec("CREATE VIEW latest_changes (doc_id, deleted) AS select '', 0 as doc_id;"); err != nil {
 			return err
 		}
-		err = db.Exec("CREATE VIEW latest_documents (doc_id, rev, deleted, data) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data;")
-		if err != nil {
+		if err = db.Exec("CREATE VIEW latest_documents (doc_id, rev, deleted, data) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data;"); err != nil {
 			return err
 		}
-		err = db.Exec("CREATE VIEW documents (doc_id, rev, deleted, data) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data;")
-		if err != nil {
+		if err = db.Exec("CREATE VIEW documents (doc_id, rev, deleted, data) AS select '' as doc_id, '1-xxxxxxxxxxxxxx' as rev, 0, '{}' as data;"); err != nil {
 			return err
 		}
 		return nil
@@ -480,61 +462,43 @@ func (mgr *DefaultViewManager) ValidateDesignDocument(doc Document) error {
 
 	var sqlErr = ""
 	for _, v := range newDDoc.Views {
+		if v == nil {
+			continue
+		}
+		checkList := append(append([]string{}, v.Setup...), v.Run...)
+		for _, sel := range v.Select {
+			checkList = append(checkList, sel)
+		}
+		for _, x := range checkList {
+			if kw := containsInvalidSQLKeyword(x, invalidKeywords); kw != "" {
+				return fmt.Errorf("%s: invalid keyword: %w", kw, ErrInvalidSQLStmt)
+			}
+		}
 		for _, x := range v.Setup {
-			for _, invalidKeyword := range invalidKeywords {
-				query := strings.ToLower(x)
-				if strings.Contains(query, strings.ToLower(invalidKeyword)) {
-					sqlErr += fmt.Sprintf("%s: %s; ", invalidKeyword, "invalid keyword")
-				}
-			}
-
-			if sqlErr != "" {
-				return errors.New(sqlErr)
-			}
-
-			err := db.Exec(x)
-			if err != nil {
+			if err := db.Exec(x); err != nil {
 				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
 			}
 		}
-
 		if sqlErr != "" {
 			break
 		}
-
 		for _, x := range v.Run {
-			for _, invalidKeyword := range invalidKeywords {
-				query := strings.ToLower(x)
-				if strings.Contains(query, " "+strings.ToLower(invalidKeyword)+" ") {
-					sqlErr += fmt.Sprintf("%s: %s; ", invalidKeyword, "invalid keyword")
-				}
-			}
-
-			if sqlErr != "" {
-				return errors.New(sqlErr)
-			}
-
-			err := db.Exec(x)
-			if err != nil {
+			if err := db.Exec(x); err != nil {
 				sqlErr += fmt.Sprintf("%s: %s; ", x, err.Error())
 			}
 		}
-
 		if sqlErr != "" {
 			break
 		}
 	}
 
-	err = db.Exec("SELECT * FROM latest_changes WHERE 1 = 2")
-	if err != nil {
+	if err = db.Exec("SELECT * FROM latest_changes WHERE 1 = 2"); err != nil {
 		return errors.New("your script can't drop latest_changes")
 	}
-	err = db.Exec("SELECT * FROM latest_documents WHERE 1 = 2")
-	if err != nil {
+	if err = db.Exec("SELECT * FROM latest_documents WHERE 1 = 2"); err != nil {
 		return errors.New("your script can't drop latest_documents")
 	}
-	err = db.Exec("SELECT * FROM documents WHERE 1 = 2")
-	if err != nil {
+	if err = db.Exec("SELECT * FROM documents WHERE 1 = 2"); err != nil {
 		return errors.New("your script can't drop documents")
 	}
 
@@ -586,14 +550,19 @@ type View struct {
 }
 
 func (view *View) ReInitialize() error {
-	viewWriter := view.serviceLocator.GetViewWriter(view.DBName, view.name, view.designDocID, view.setupScripts, view.runScripts)
-	viewWriter.Open()
+	viewWriter := view.serviceLocator.GetViewWriter(view.DBName, view.designDocID, view.name, view.setupScripts, view.runScripts)
+	if err := viewWriter.Open(); err != nil {
+		return err
+	}
 	view.viewWriter <- viewWriter
 
 	readersCount := cap(view.viewReader)
 	for i := 0; i < readersCount; i++ {
-		viewReader := view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.setupScripts, view.selectScripts)
-		viewReader.Open()
+		viewReader := view.serviceLocator.GetViewReader(view.DBName, view.designDocID, view.name, view.setupScripts, view.selectScripts)
+		if err := viewReader.Open(); err != nil {
+			_ = viewReader.Close()
+			return err
+		}
 		view.viewReader <- viewReader
 	}
 
@@ -609,23 +578,36 @@ func (view *View) Open() error {
 		return err
 	}
 
-	// open all readers
-	func() {
-		readersCount := cap(view.viewReader)
-		readers := make([]ViewReader, readersCount)
-		for i := 0; i < readersCount; i++ {
-			viewReader := <-view.viewReader
-			err := viewReader.Open()
-			if err != nil {
-				viewReader.Close()
-				continue
-			}
-			readers[i] = viewReader
+	readersCount := cap(view.viewReader)
+	pending := make([]ViewReader, 0, readersCount)
+	for i := 0; i < readersCount; i++ {
+		pending = append(pending, <-view.viewReader)
+	}
+	opened := make([]ViewReader, 0, readersCount)
+	var openErr error
+	for _, viewReader := range pending {
+		if openErr != nil {
+			view.viewReader <- viewReader
+			continue
 		}
-		for _, reader := range readers {
-			view.viewReader <- reader
+		if err := viewReader.Open(); err != nil {
+			_ = viewReader.Close()
+			openErr = err
+			view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.designDocID, view.name, view.setupScripts, view.selectScripts)
+			continue
 		}
-	}()
+		opened = append(opened, viewReader)
+	}
+	if openErr != nil {
+		for _, r := range opened {
+			_ = r.Close()
+			view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.designDocID, view.name, view.setupScripts, view.selectScripts)
+		}
+		return openErr
+	}
+	for _, reader := range opened {
+		view.viewReader <- reader
+	}
 
 	return nil
 }
@@ -634,6 +616,7 @@ func (view *View) Close(closeChannel bool) error {
 	viewWriter := <-view.viewWriter
 	err := viewWriter.Close()
 	if err != nil {
+		view.viewWriter <- viewWriter
 		return err
 	}
 
@@ -737,20 +720,22 @@ func NewView(DBName, viewName, docID string, designDocumentView *DesignDocumentV
 	view.runScripts = runScripts
 	view.selectScripts = selectScripts
 
-	view.viewReader = make(chan ViewReader, 1)
+	view.viewReader = make(chan ViewReader, viewReaderPoolSize)
 	view.viewWriter = make(chan ViewWriter, 1)
 
-	view.viewWriter <- view.serviceLocator.GetViewWriter(view.DBName, view.name, view.designDocID, view.setupScripts, view.runScripts)
+	view.viewWriter <- view.serviceLocator.GetViewWriter(view.DBName, view.designDocID, view.name, view.setupScripts, view.runScripts)
 	readersCount := cap(view.viewReader)
 	for i := 0; i < readersCount; i++ {
-		view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.name, view.designDocID, view.setupScripts, view.selectScripts)
+		view.viewReader <- view.serviceLocator.GetViewReader(view.DBName, view.designDocID, view.name, view.setupScripts, view.selectScripts)
 	}
 
 	return view
 }
 
 func setupViewDatabase(db *sqlite3.Conn, absoluteDatabasePath string) error {
-	err := db.Exec("ATTACH DATABASE 'file:" + absoluteDatabasePath + "?cache=shared&mode=ro' as docsdb;")
+	// Attach without cache=shared: a shared-cache readonly attach can mark the
+	// main DB readonly for writers and surface as SQLITE_READONLY / DBMOVED.
+	err := db.Exec("ATTACH DATABASE 'file:" + absoluteDatabasePath + "?mode=ro' as docsdb;")
 	if err != nil {
 		return err
 	}

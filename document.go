@@ -24,11 +24,12 @@ func (doc *Document) CalculateNextVersion() {
 
 func ParseDocument(value []byte) (*Document, error) {
 	parser := parserPool.Get()
+	defer parserPool.Put(parser)
+
 	v, err := parser.ParseBytes(value)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err, ErrBadJSON)
 	}
-	parserPool.Put(parser)
 
 	obj := v.GetObject()
 	if obj == nil {
@@ -71,14 +72,14 @@ func ParseDocument(value []byte) (*Document, error) {
 		return &Document{ID: id}, fmt.Errorf("%s: %w", "document missing _id", ErrDocumentInvalidInput)
 	}
 
-	var b []byte
-	value = v.MarshalTo(b)
+	// Copy out of the pooled parser buffer before Put (via defer).
+	data := append([]byte(nil), v.MarshalTo(nil)...)
 	doc := &Document{}
 	doc.ID = id
 	doc.Version = version
 	doc.Kind = kind
 	doc.Deleted = deleted
-	doc.Data = value
+	doc.Data = data
 
 	return doc, nil
 }

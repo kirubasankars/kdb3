@@ -3,7 +3,7 @@ package main
 import (
 	"path/filepath"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 type VacuumManager interface {
@@ -82,14 +82,15 @@ func (vm DefaultVacuumManager) CopyData(minUpdateSequence int64, maxUpdateSequen
 		con.Close()
 	}()
 
+	// Compaction: copy only live documents; tombstones (deleted = 1) are purged.
 	if minUpdateSequence == 0 {
-		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE update_seq <= ?", maxUpdateSequence)
+		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE update_seq <= ? AND deleted = 0", maxUpdateSequence)
 		if err != nil {
 			return err
 		}
 		con.Commit()
 	} else {
-		err = con.Exec("INSERT INTO documents SELECT * FROM currentdb.documents WHERE update_seq > ? AND update_seq <= ?", minUpdateSequence, maxUpdateSequence)
+		err = con.Exec("INSERT OR REPLACE INTO documents SELECT * FROM currentdb.documents WHERE update_seq > ? AND update_seq <= ? AND deleted = 0", minUpdateSequence, maxUpdateSequence)
 		if err != nil {
 			return err
 		}

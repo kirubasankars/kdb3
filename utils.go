@@ -3,18 +3,75 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
 
-func formatDocumentString(id string, version int, deleted bool) string {
-	var item []string
-	item = append(item, fmt.Sprintf(`"_id":"%s"`, id))
-	item = append(item, fmt.Sprintf(`"_rev":%d`, version))
-	if deleted {
-		item = append(item, `"_deleted":true`)
+// removeSQLiteFiles deletes a database file and its WAL/SHM sidecars.
+// Leaving -wal/-shm behind after rename/delete causes SQLITE_READONLY_DBMOVED (1032).
+func removeSQLiteFiles(dbPath string) {
+	_ = os.Remove(dbPath)
+	_ = os.Remove(dbPath + "-wal")
+	_ = os.Remove(dbPath + "-shm")
+}
+
+func jsonEscapeString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '\\', '"':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if c < 0x20 {
+				b.WriteString(`\u00`)
+				const hex = "0123456789abcdef"
+				b.WriteByte(hex[c>>4])
+				b.WriteByte(hex[c&0xf])
+			} else {
+				b.WriteByte(c)
+			}
+		}
 	}
-	return fmt.Sprintf(`{%s}`, strings.Join(item, ","))
+	b.WriteByte('"')
+	return b.String()
+}
+
+func prependDocMeta(id string, version int, data []byte) []byte {
+	meta := `{"_id":` + jsonEscapeString(id) + `,"_rev":` + strconv.Itoa(version)
+	if len(data) != 2 {
+		meta += ","
+	}
+	out := make([]byte, 0, len(meta)+len(data))
+	out = append(out, meta...)
+	if len(data) > 0 {
+		out = append(out, data[1:]...)
+	}
+	return out
+}
+
+func formatDocumentString(id string, version int, deleted bool) string {
+	var b strings.Builder
+	b.Grow(64 + len(id))
+	b.WriteString(`{"_id":`)
+	b.WriteString(jsonEscapeString(id))
+	b.WriteString(`,"_rev":`)
+	b.WriteString(strconv.Itoa(version))
+	if deleted {
+		b.WriteString(`,"_deleted":true`)
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 func OK(ok bool, json string) string {

@@ -3,7 +3,7 @@ package main
 import (
 	"path/filepath"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 )
 
 type ViewWriter interface {
@@ -22,6 +22,7 @@ type DefaultViewWriter struct {
 	scripts              []Query
 
 	stmtUpdateViewMeta *sqlite3.Stmt
+	stmtRunScripts     []*sqlite3.Stmt
 }
 
 func (vw *DefaultViewWriter) Open() error {
@@ -35,6 +36,7 @@ func (vw *DefaultViewWriter) Open() error {
 	if err != nil {
 		return err
 	}
+	_ = db.Exec("PRAGMA busy_timeout=5000;")
 
 	buildSQL := `
 		CREATE TABLE IF NOT EXISTS view_meta (
@@ -61,15 +63,34 @@ func (vw *DefaultViewWriter) Open() error {
 		}
 
 		vw.stmtUpdateViewMeta, err = db.Prepare("UPDATE view_meta SET current_update_seq = next_update_seq, next_update_seq = ?")
+		if err != nil {
+			return err
+		}
 
-		return err
+		vw.stmtRunScripts = make([]*sqlite3.Stmt, 0, len(vw.scripts))
+		for _, x := range vw.scripts {
+			stmt, err := db.Prepare(x.text)
+			if err != nil {
+				return err
+			}
+			vw.stmtRunScripts = append(vw.stmtRunScripts, stmt)
+		}
+		return nil
 	})
 
 	return err
 }
 
 func (vw *DefaultViewWriter) Close() error {
-	vw.stmtUpdateViewMeta.Close()
+	if vw.stmtUpdateViewMeta != nil {
+		_ = vw.stmtUpdateViewMeta.Close()
+	}
+	for _, stmt := range vw.stmtRunScripts {
+		if stmt != nil {
+			_ = stmt.Close()
+		}
+	}
+	vw.stmtRunScripts = nil
 	return vw.con.Close()
 }
 
@@ -81,11 +102,12 @@ func (vw *DefaultViewWriter) Build(nextSeq int64) error {
 		if err := vw.stmtUpdateViewMeta.Exec(nextSeq); err != nil {
 			return err
 		}
-		//TODO: use complied stmt
-		for _, x := range vw.scripts {
-			if err := db.Exec(x.text); err != nil {
+		for _, stmt := range vw.stmtRunScripts {
+			if err := stmt.Exec(); err != nil {
+				_ = stmt.Reset()
 				return err
 			}
+			_ = stmt.Reset()
 		}
 		return nil
 	})
@@ -102,7 +124,7 @@ func NewViewWriter(DBName, DBPath, connectionString string, setupScripts, script
 
 	absoluteDatabasePath, err := filepath.Abs(DBPath)
 	if err != nil {
-		panic(err)
+		absoluteDatabasePath = DBPath
 	}
 	viewWriter.absoluteDatabasePath = absoluteDatabasePath
 

@@ -232,12 +232,12 @@ func (handler KDBHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	db := vars["db"]
 	docid := vars["docid"]
-	fmt.Print("dasdsad")
 
 	kdb := handler.kdb
 	_, err := kdb.DBStat(db)
 	if err != nil {
 		NotOK(err, w)
+		return
 	}
 
 	handler.deleteDocument(db, docid, w, r)
@@ -368,23 +368,6 @@ func (handler KDBHandler) SelectView(w http.ResponseWriter, r *http.Request) {
 		NotOK(err, w)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(rs)
-}
-
-func (handler KDBHandler) SQL(w http.ResponseWriter, r *http.Request) {
-	kdb := handler.kdb
-	vars := mux.Vars(r)
-
-	db := vars["db"]
-	ddocID := "_design/" + vars["docid"]
-	view := vars["view"]
-
-	r.ParseForm()
-	fromSeq, _ := strconv.Atoi(r.FormValue("from"))
-	rs, _ := kdb.SQL(db, ddocID, view, int64(fromSeq))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

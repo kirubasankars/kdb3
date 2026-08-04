@@ -4,24 +4,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 )
 
 func main() {
-	kdb, err := NewKDB()
+	cfg := LoadConfig()
+
+	kdb, err := NewKDBWithDataDir(cfg.DataDir)
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to start kdb3: %v", err)
 	}
-	router := NewRouter(kdb)
+	router := NewRouter(kdb, cfg.Token)
 
 	srv := &http.Server{
 		Handler:      router,
-		Addr:         "0.0.0.0:8001",
-		WriteTimeout: 1 * time.Hour,
-		ReadTimeout:  1 * time.Hour,
+		Addr:         cfg.Addr,
+		WriteTimeout: cfg.WriteTimeout,
+		ReadTimeout:  cfg.ReadTimeout,
 	}
 
-	fmt.Println("Listening on port 8001")
-
+	fmt.Printf("Listening on %s (data=%s)\n", cfg.Addr, cfg.DataDir)
 	log.Fatal(srv.ListenAndServe())
 }

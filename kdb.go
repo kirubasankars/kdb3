@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
-	"github.com/bvinc/go-sqlite-lite/sqlite3"
+	"kdb3/sqlite3"
 	"github.com/valyala/fastjson"
 )
 
@@ -24,12 +23,17 @@ type KDB struct {
 	localDB        LocalDB
 }
 
-// NewKDB create kdb instance
+// NewKDB create kdb instance with default ./data directory
 func NewKDB() (*KDB, error) {
+	return NewKDBWithDataDir("./data")
+}
+
+// NewKDBWithDataDir create kdb instance using the given data directory
+func NewKDBWithDataDir(dataDir string) (*KDB, error) {
 	kdb := new(KDB)
 	kdb.dbs = make(map[string]Database)
 	kdb.rwMutex = sync.RWMutex{}
-	kdb.serviceLocator = NewServiceLocator()
+	kdb.serviceLocator = NewServiceLocator(dataDir)
 
 	kdb.localDB = kdb.serviceLocator.GetLocalDB()
 	fileHandler := kdb.serviceLocator.GetFileHandler()
@@ -101,7 +105,11 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 		return ErrDatabaseNotFound
 	}
 
-	kdb.dbs[name] = kdb.serviceLocator.GetDatabase(name, createIfNotExists)
+	db, err := kdb.serviceLocator.GetDatabase(name, createIfNotExists)
+	if err != nil {
+		return err
+	}
+	kdb.dbs[name] = db
 
 	return nil
 }
@@ -109,24 +117,26 @@ func (kdb *KDB) Open(name string, createIfNotExists bool) error {
 // Delete delete the kdb database
 func (kdb *KDB) Delete(name string) error {
 	kdb.rwMutex.Lock()
-	defer kdb.rwMutex.Unlock()
-
 	db, ok := kdb.dbs[name]
 	if !ok {
+		kdb.rwMutex.Unlock()
 		return ErrDatabaseNotFound
 	}
+	// Unregister first so concurrent Vacuum/Open cannot start; Close waits on db.mutex
+	// so an in-flight Vacuum finishes before files are removed.
+	delete(kdb.dbs, name)
+	kdb.rwMutex.Unlock()
 
+	_ = db.Close(true)
+
+	kdb.rwMutex.Lock()
 	fileName := kdb.localDB.GetDatabaseFileName(name)
 	viewFileNames, _ := kdb.localDB.ListViewFiles(name)
-
 	kdb.localDB.DeleteViews(name)
 	kdb.localDB.DeleteDatabase(name)
-
-	delete(kdb.dbs, name)
-	db.Close(true)
+	kdb.rwMutex.Unlock()
 
 	kdb.deleteDBFiles(fileName, viewFileNames)
-
 	return nil
 }
 
@@ -145,11 +155,8 @@ func (kdb *KDB) PutDocument(name string, newDoc *Document) (*Document, error) {
 	}
 
 	if strings.HasPrefix(newDoc.ID, "_design/") && len(newDoc.Data) != 0 {
-		if newDoc.ID == "_design/_views" {
-			err := db.ValidateDesignDocument(*newDoc)
-			if err != nil {
-				return nil, err
-			}
+		if err := db.ValidateDesignDocument(*newDoc); err != nil {
+			return nil, err
 		}
 	}
 
@@ -180,31 +187,80 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
 	}
-	docs := fValues.GetArray("_docs")
-	if docs == nil {
+	if fValues.GetArray("_docs") == nil {
 		return nil, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
 	}
-	outputs, _ := fastjson.ParseBytes([]byte("[]"))
-	for idx, item := range fValues.GetArray("_docs") {
-		var jsonb []byte
-		var outputDoc *Document
 
-		inputDoc, err := ParseDocument([]byte(item.String()))
-		if err == nil {
-			outputDoc, err = kdb.PutDocument(name, inputDoc)
-		}
-
-		if err != nil {
-			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"_id":"%s", "error":"%s","reason":"%s"}`, inputDoc.ID, code, reason))
-		} else {
-			jsonb = []byte(formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
-		}
-
-		v := fastjson.MustParse(string(jsonb))
-		outputs.SetArrayItem(idx, v)
+	kdb.rwMutex.RLock()
+	db, ok := kdb.dbs[name]
+	kdb.rwMutex.RUnlock()
+	if !ok {
+		return nil, ErrDatabaseNotFound
 	}
-	return []byte(outputs.String()), nil
+
+	items := fValues.GetArray("_docs")
+	docs := make([]*Document, len(items))
+	parseErrs := make([]error, len(items))
+	for idx, item := range items {
+		raw := item.MarshalTo(nil)
+		inputDoc, err := ParseDocument(raw)
+		if err != nil {
+			parseErrs[idx] = err
+			continue
+		}
+		if !ValidateDocumentID(inputDoc.ID) {
+			parseErrs[idx] = ErrDocumentInvalidID
+			continue
+		}
+		if strings.HasPrefix(inputDoc.ID, "_design/") && len(inputDoc.Data) != 0 {
+			if err := db.ValidateDesignDocument(*inputDoc); err != nil {
+				parseErrs[idx] = err
+				continue
+			}
+		}
+		docs[idx] = inputDoc
+	}
+
+	defDB, isDefault := db.(*DefaultDatabase)
+	var outs []*Document
+	var putErrs []error
+	if isDefault {
+		outs, putErrs = defDB.BulkPutDocuments(docs)
+	} else {
+		outs = make([]*Document, len(docs))
+		putErrs = make([]error, len(docs))
+		for i, d := range docs {
+			if d == nil {
+				continue
+			}
+			outs[i], putErrs[i] = db.PutDocument(d)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteByte('[')
+	for idx := range items {
+		if idx > 0 {
+			b.WriteByte(',')
+		}
+		err := parseErrs[idx]
+		if err == nil {
+			err = putErrs[idx]
+		}
+		if err != nil {
+			id := ""
+			if docs[idx] != nil {
+				id = docs[idx].ID
+			}
+			code, reason := errorString(err)
+			b.WriteString(fmt.Sprintf(`{"_id":%s,"error":%s,"reason":%s}`, jsonEscapeString(id), jsonEscapeString(code), jsonEscapeString(reason)))
+			continue
+		}
+		out := outs[idx]
+		b.WriteString(formatDocumentString(out.ID, out.Version, out.Deleted))
+	}
+	b.WriteByte(']')
+	return []byte(b.String()), nil
 }
 
 // BulkGetDocuments get multiple documents
@@ -213,36 +269,38 @@ func (kdb *KDB) BulkGetDocuments(name string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
 	}
-	docs := fValues.GetArray("_docs")
-	if docs == nil {
+	if fValues.GetArray("_docs") == nil {
 		return nil, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
 	}
 
-	outputs, _ := fastjson.ParseBytes([]byte("[]"))
+	var b strings.Builder
+	b.WriteByte('[')
 	for idx, item := range fValues.GetArray("_docs") {
-		var jsonb []byte
-		var outputDoc *Document
-
-		inputDoc, err := ParseDocument([]byte(item.String()))
+		if idx > 0 {
+			b.WriteByte(',')
+		}
+		raw := item.MarshalTo(nil)
+		inputDoc, err := ParseDocument(raw)
+		id := ""
+		if inputDoc != nil {
+			id = inputDoc.ID
+		}
 		if inputDoc == nil || inputDoc.ID == "" {
 			err = fmt.Errorf("%s:%w", "id is missing", ErrDocumentInvalidInput)
 		}
-
+		var outputDoc *Document
 		if err == nil {
 			outputDoc, err = kdb.GetDocument(name, inputDoc, true)
 		}
-
 		if err != nil {
 			code, reason := errorString(err)
-			jsonb = []byte(fmt.Sprintf(`{"_id":"%s", "error":"%s","reason":"%s"}`, inputDoc.ID, code, reason))
-		} else {
-			jsonb = outputDoc.Data
+			b.WriteString(fmt.Sprintf(`{"_id":%s,"error":%s,"reason":%s}`, jsonEscapeString(id), jsonEscapeString(code), jsonEscapeString(reason)))
+			continue
 		}
-
-		v := fastjson.MustParse(string(jsonb))
-		outputs.SetArrayItem(idx, v)
+		b.Write(outputDoc.Data)
 	}
-	return []byte(outputs.String()), nil
+	b.WriteByte(']')
+	return []byte(b.String()), nil
 }
 
 // DBStat kdb stat
@@ -259,8 +317,8 @@ func (kdb *KDB) DBStat(name string) (*DatabaseStat, error) {
 // Vacuum vacuum
 func (kdb *KDB) Vacuum(name string) error {
 	kdb.rwMutex.RLock()
-	defer kdb.rwMutex.RUnlock()
 	db, ok := kdb.dbs[name]
+	kdb.rwMutex.RUnlock()
 	if !ok {
 		return ErrDatabaseNotFound
 	}
@@ -331,16 +389,19 @@ func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {
 	viewPath := kdb.serviceLocator.GetViewDirPath()
 
 	for _, vf := range viewFiles {
-		os.Remove(filepath.Join(viewPath, vf+dbExt))
+		removeSQLiteFiles(filepath.Join(viewPath, vf+dbExt))
 	}
-	fileName := dbname + dbExt
-	os.Remove(filepath.Join(dbPath, fileName))
+	removeSQLiteFiles(filepath.Join(dbPath, dbname+dbExt))
 }
+
+var (
+	dbNameRe = regexp.MustCompile(`^([a-z0-9_]+)$`)
+	docIDRe  = regexp.MustCompile(`^([A-Za-z0-9_]+)$`)
+)
 
 // ValidateDatabaseName validate correctness of the name
 func ValidateDatabaseName(name string) bool {
-	re := regexp.MustCompile(`^([a-z0-9_]+)$`)
-	if len(name) == 0 || len(name) > 50 || name[0] == '_' || !re.Match([]byte(name)) {
+	if len(name) == 0 || len(name) > 50 || name[0] == '_' || !dbNameRe.MatchString(name) {
 		return false
 	}
 	return true
@@ -348,14 +409,16 @@ func ValidateDatabaseName(name string) bool {
 
 // ValidateDocumentID validate correctness of the document id
 func ValidateDocumentID(id string) bool {
-	id = strings.Trim(id, " ")
-	re := regexp.MustCompile(`^([A-Za-z0-9_]+)$`)
-
-	if len(id) > 0 && !strings.HasPrefix(id, "_design/") {
-		if len(id) > 50 || id[0] == '_' || !re.Match([]byte(id)) {
-			return false
-		}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return true // server may assign
 	}
-
+	if strings.HasPrefix(id, "_design/") {
+		rest := strings.TrimPrefix(id, "_design/")
+		return len(rest) > 0 && len(rest) <= 50 && docIDRe.MatchString(rest)
+	}
+	if len(id) > 50 || id[0] == '_' || !docIDRe.MatchString(id) {
+		return false
+	}
 	return true
 }

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kdb3</title>
+    <link rel="icon" href="/_utils/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/_utils/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail" aria-label="Workspace">
+        <a class="rail-brand" href="#/" title="kdb3 home">
+          <span class="rail-mark">k3</span>
+        </a>
+        <button type="button" class="rail-home" id="rail-home" title="All databases" aria-label="All databases">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+            <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/>
+          </svg>
+        </button>
+        <nav class="rail-dbs" id="rail-dbs" aria-label="Databases"></nav>
+        <div class="rail-footer">
+          <button type="button" class="rail-token-btn" id="token-toggle" title="API token" aria-expanded="false" aria-controls="token-panel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+              <circle cx="8" cy="12" r="3"/><path d="M11 12h10M17 9v6M20 10v4"/>
+            </svg>
+          </button>
+          <div class="rail-identity" id="server-identity" title="Server">…</div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar" id="topbar"></header>
+        <div class="work-body">
+          <aside class="index" id="index"></aside>
+          <main class="stage" id="stage" tabindex="-1">
+            <div class="empty">Loading…</div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <div class="token-panel is-hidden" id="token-panel" role="dialog" aria-label="API token">
+      <label for="token">API token</label>
+      <input id="token" type="password" autocomplete="off" placeholder="Bearer token (optional)" />
+      <p class="token-hint">Stored in this browser. Sent as <code>Authorization: Bearer</code>.</p>
+    </div>
+
+    <div class="toast-container" id="toasts"></div>
+    <div id="modal-root"></div>
+
+    <script src="/_utils/app.js"></script>
+  </body>
+</html>

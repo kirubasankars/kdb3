@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Database interface
@@ -36,12 +36,13 @@ type Database interface {
 
 // DefaultDatabase default implementation of database
 type DefaultDatabase struct {
-	Name                 string
-	UpdateSequence       int64
-	DocumentCount        int
-	DeletedDocumentCount int
+	Name string
 
-	mutex     sync.Mutex
+	updateSeq    atomic.Int64
+	docCount     atomic.Int64
+	deletedCount atomic.Int64
+
+	mutex     sync.RWMutex
 	changeSeq *ChangeSequenceGenarator
 	idSeq     *SequenceUUIDGenarator
 
@@ -54,21 +55,46 @@ type DefaultDatabase struct {
 	serviceLocator ServiceLocator
 }
 
-func (db *DefaultDatabase) openReaders() {
+// legacy field accessors used by tests expecting struct fields — keep via methods
+func (db *DefaultDatabase) UpdateSequence() int64 { return db.updateSeq.Load() }
+func (db *DefaultDatabase) DocumentCount() int    { return int(db.docCount.Load()) }
+func (db *DefaultDatabase) DeletedDocumentCount() int {
+	return int(db.deletedCount.Load())
+}
+
+func (db *DefaultDatabase) openReaders() error {
 	readersCount := cap(db.reader)
-	readers := make([]DatabaseReader, readersCount)
+	pending := make([]DatabaseReader, 0, readersCount)
 	for i := 0; i < readersCount; i++ {
-		reader := <-db.reader
-		err := reader.Open()
-		if err != nil {
-			reader.Close()
+		pending = append(pending, <-db.reader)
+	}
+
+	opened := make([]DatabaseReader, 0, readersCount)
+	var openErr error
+	for _, reader := range pending {
+		if openErr != nil {
+			db.reader <- reader
 			continue
 		}
-		readers[i] = reader
+		if err := reader.Open(); err != nil {
+			_ = reader.Close()
+			openErr = err
+			db.reader <- db.serviceLocator.GetDatabaseReader(db.Name)
+			continue
+		}
+		opened = append(opened, reader)
 	}
-	for _, reader := range readers {
+	if openErr != nil {
+		for _, r := range opened {
+			_ = r.Close()
+			db.reader <- db.serviceLocator.GetDatabaseReader(db.Name)
+		}
+		return openErr
+	}
+	for _, reader := range opened {
 		db.reader <- reader
 	}
+	return nil
 }
 
 // Open open kdb database
@@ -76,16 +102,20 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	writer := <-db.writer
 	err := writer.Open(createIfNotExists)
 	if err != nil {
-		panic(err)
+		db.writer <- writer
+		return err
 	}
 	db.writer <- writer
 
-	// open all readers
-	db.openReaders()
+	if err := db.openReaders(); err != nil {
+		return err
+	}
 
-	db.DocumentCount, db.DeletedDocumentCount = db.GetDocumentCount()
-	db.UpdateSequence = db.GetLastUpdateSequence()
-	db.changeSeq = NewChangeSequenceGenarator(db.UpdateSequence)
+	docs, deleted := db.getDocumentCountUnlocked()
+	db.docCount.Store(int64(docs))
+	db.deletedCount.Store(int64(deleted))
+	db.updateSeq.Store(db.getLastUpdateSequenceUnlocked())
+	db.changeSeq = NewChangeSequenceGenarator(db.updateSeq.Load())
 
 	if createIfNotExists {
 		if err = db.SetupAllDocsViews(); err != nil {
@@ -93,7 +123,7 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 		}
 	}
 
-	designDocs, err := db.GetAllDesignDocuments()
+	designDocs, err := db.getAllDesignDocumentsUnlocked()
 	if err != nil {
 		return err
 	}
@@ -101,34 +131,27 @@ func (db *DefaultDatabase) Open(createIfNotExists bool) error {
 	return db.viewManager.Initialize(designDocs)
 }
 
-// Close close the kdb database
-func (db *DefaultDatabase) Close(closeChannel bool) error {
-	db.mutex.Lock()
-	defer db.mutex.Unlock()
-
+func (db *DefaultDatabase) closePoolsUnlocked(closeChannel bool) error {
 	err := db.viewManager.Close(closeChannel)
 	if err != nil {
 		return err
 	}
 
 	writer := <-db.writer
-	err = writer.Close()
-	if err != nil {
-		return err
+	werr := writer.Close()
+	if werr != nil {
+		db.writer <- writer
+		return werr
 	}
 
 	var foundError error
-	// close all readers
-	func() {
-		readersCount := cap(db.reader)
-		for i := 0; i < readersCount; i++ {
-			reader := <-db.reader
-			err = reader.Close()
-			if err != nil {
-				foundError = err
-			}
+	readersCount := cap(db.reader)
+	for i := 0; i < readersCount; i++ {
+		reader := <-db.reader
+		if err = reader.Close(); err != nil {
+			foundError = err
 		}
-	}()
+	}
 
 	if foundError != nil {
 		return foundError
@@ -140,6 +163,34 @@ func (db *DefaultDatabase) Close(closeChannel bool) error {
 	}
 
 	return nil
+}
+
+// Close close the kdb database
+func (db *DefaultDatabase) Close(closeChannel bool) error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+	return db.closePoolsUnlocked(closeChannel)
+}
+
+func (db *DefaultDatabase) applyCountDelta(currentDoc *Document, doc *Document) {
+	wasDeleted := currentDoc != nil && currentDoc.Deleted
+	isNew := currentDoc == nil
+
+	if doc.Deleted {
+		if !wasDeleted && !isNew {
+			db.docCount.Add(-1)
+			db.deletedCount.Add(1)
+		}
+		return
+	}
+	if isNew {
+		db.docCount.Add(1)
+		return
+	}
+	if wasDeleted {
+		db.docCount.Add(1)
+		db.deletedCount.Add(-1)
+	}
 }
 
 // PutDocument put a document
@@ -157,43 +208,8 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	if doc.ID == "" {
-		doc.ID = db.idSeq.Next()
-	}
-
-	currentDoc, err := writer.GetDocumentMetadataByID(doc.ID)
-	if err != nil && err != ErrDocumentNotFound {
-		return nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
-	}
-
-	if currentDoc != nil {
-		if currentDoc.Deleted {
-			// delete document
-			if doc.Version > 0 && currentDoc.Version > doc.Version {
-				return nil, ErrDocumentConflict
-			}
-			doc.Version = currentDoc.Version
-		} else {
-			// update document
-			if doc.Version != 0 {
-				if currentDoc.Version != doc.Version {
-					return nil, ErrDocumentConflict
-				}
-			} else {
-				return nil, ErrDocumentConflict
-			}
-		}
-	} else {
-		// insert document
-		if doc.Version > 0 {
-			return nil, ErrDocumentConflict
-		}
-	}
-
-	doc.CalculateNextVersion()
-	updateSeq := db.changeSeq.Next()
-
-	if err = writer.PutDocument(updateSeq, doc); err != nil {
+	out, currentDoc, err := db.putDocumentWithWriter(writer, doc)
+	if err != nil {
 		return nil, err
 	}
 
@@ -201,23 +217,123 @@ func (db *DefaultDatabase) PutDocument(doc *Document) (*Document, error) {
 		return nil, err
 	}
 
-	db.UpdateSequence = updateSeq
+	db.updateSeq.Store(out.updateSeq)
+	db.applyCountDelta(currentDoc, out.doc)
 
-	if currentDoc == nil {
-		db.DocumentCount++
+	if currentDoc != nil && strings.HasPrefix(out.doc.ID, "_design/") {
+		db.viewManager.DeleteViewsIfRemoved(*out.doc)
 	}
 
-	if doc.Deleted {
-		db.DocumentCount--
-		db.DeletedDocumentCount++
+	return out.doc, nil
+}
+
+type putResult struct {
+	doc       *Document
+	updateSeq int64
+}
+
+func (db *DefaultDatabase) putDocumentWithWriter(writer DatabaseWriter, doc *Document) (*putResult, *Document, error) {
+	if doc.ID == "" {
+		doc.ID = db.idSeq.Next()
 	}
 
-	if currentDoc != nil && strings.HasPrefix(doc.ID, "_design/") {
-		// call only if design doc changed
-		db.viewManager.DeleteViewsIfRemoved(*doc)
+	currentDoc, err := writer.GetDocumentMetadataByID(doc.ID)
+	if err != nil && err != ErrDocumentNotFound {
+		return nil, nil, fmt.Errorf("%s: %w", err.Error(), ErrInternalError)
 	}
 
-	return doc, nil
+	if currentDoc != nil {
+		if currentDoc.Deleted {
+			if doc.Version == 0 || currentDoc.Version != doc.Version {
+				return nil, nil, ErrDocumentConflict
+			}
+			doc.Version = currentDoc.Version
+		} else {
+			if doc.Version == 0 || currentDoc.Version != doc.Version {
+				return nil, nil, ErrDocumentConflict
+			}
+		}
+	} else {
+		if doc.Version > 0 {
+			return nil, nil, ErrDocumentConflict
+		}
+	}
+
+	doc.CalculateNextVersion()
+	updateSeq := db.changeSeq.Next()
+
+	if err = writer.PutDocument(updateSeq, doc); err != nil {
+		return nil, nil, err
+	}
+
+	return &putResult{doc: doc, updateSeq: updateSeq}, currentDoc, nil
+}
+
+// BulkPutDocuments put many documents in a single transaction
+func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []error) {
+	outs := make([]*Document, len(docs))
+	errs := make([]error, len(docs))
+
+	writer, ok := <-db.writer
+	if !ok {
+		for i := range docs {
+			errs[i] = ErrDatabaseNotFound
+		}
+		return outs, errs
+	}
+	defer func() { db.writer <- writer }()
+
+	defer writer.Rollback()
+	if err := writer.Begin(); err != nil {
+		for i := range docs {
+			errs[i] = err
+		}
+		return outs, errs
+	}
+
+	type pending struct {
+		out     *Document
+		current *Document
+		seq     int64
+	}
+	pendings := make([]*pending, len(docs))
+	var lastSeq int64
+	for i, doc := range docs {
+		if doc == nil {
+			errs[i] = ErrDocumentInvalidInput
+			continue
+		}
+		res, currentDoc, err := db.putDocumentWithWriter(writer, doc)
+		if err != nil {
+			errs[i] = err
+			continue
+		}
+		pendings[i] = &pending{out: res.doc, current: currentDoc, seq: res.updateSeq}
+		lastSeq = res.updateSeq
+	}
+
+	if err := writer.Commit(); err != nil {
+		for i := range docs {
+			if errs[i] == nil && pendings[i] != nil {
+				errs[i] = err
+			}
+		}
+		return outs, errs
+	}
+	if lastSeq > 0 {
+		db.updateSeq.Store(lastSeq)
+	}
+	for i, p := range pendings {
+		if p == nil {
+			continue
+		}
+		outs[i] = p.out
+		db.applyCountDelta(p.current, p.out)
+		if p.current != nil && strings.HasPrefix(p.out.ID, "_design/") {
+			db.viewManager.DeleteViewsIfRemoved(*p.out)
+		}
+	}
+	return outs, errs
 }
 
 // DeleteDocument delete a document
@@ -228,7 +344,12 @@ func (db *DefaultDatabase) DeleteDocument(doc *Document) (*Document, error) {
 
 // GetDocument get a document
 func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Document, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	return db.getDocumentUnlocked(doc, includeData)
+}
 
+func (db *DefaultDatabase) getDocumentUnlocked(doc *Document, includeData bool) (*Document, error) {
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -255,6 +376,12 @@ func (db *DefaultDatabase) GetDocument(doc *Document, includeData bool) (*Docume
 
 // GetAllDesignDocuments get all design document
 func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	return db.getAllDesignDocumentsUnlocked()
+}
+
+func (db *DefaultDatabase) getAllDesignDocumentsUnlocked() ([]Document, error) {
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -271,9 +398,15 @@ func (db *DefaultDatabase) GetAllDesignDocuments() ([]Document, error) {
 
 // GetLastUpdateSequence get last sequence number
 func (db *DefaultDatabase) GetLastUpdateSequence() int64 {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	return db.getLastUpdateSequenceUnlocked()
+}
+
+func (db *DefaultDatabase) getLastUpdateSequenceUnlocked() int64 {
 	reader, ok := <-db.reader
 	if !ok {
-		panic(ErrDatabaseNotFound)
+		return 0
 	}
 	defer func() {
 		db.reader <- reader
@@ -287,6 +420,9 @@ func (db *DefaultDatabase) GetLastUpdateSequence() int64 {
 
 // GetChanges get changes
 func (db *DefaultDatabase) GetChanges(since int64, limit int, desc bool) ([]byte, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
 	reader, ok := <-db.reader
 	if !ok {
 		return nil, ErrDatabaseNotFound
@@ -303,9 +439,15 @@ func (db *DefaultDatabase) GetChanges(since int64, limit int, desc bool) ([]byte
 
 // GetDocumentCount get document count
 func (db *DefaultDatabase) GetDocumentCount() (int, int) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+	return db.getDocumentCountUnlocked()
+}
+
+func (db *DefaultDatabase) getDocumentCountUnlocked() (int, int) {
 	reader, ok := <-db.reader
 	if !ok {
-		panic(ErrDatabaseNotFound)
+		return 0, 0
 	}
 	defer func() {
 		db.reader <- reader
@@ -319,81 +461,120 @@ func (db *DefaultDatabase) GetDocumentCount() (int, int) {
 
 // GetStat get database stat
 func (db *DefaultDatabase) GetStat() *DatabaseStat {
-	db.mutex.Lock()
-	defer db.mutex.Unlock()
-
-	stat := &DatabaseStat{}
-	stat.DBName = db.Name
-	stat.UpdateSeq = db.UpdateSequence
-	stat.DocCount = db.DocumentCount
-	stat.DeletedDocCount = db.DeletedDocumentCount
-
-	return stat
+	return &DatabaseStat{
+		DBName:          db.Name,
+		UpdateSeq:       db.updateSeq.Load(),
+		DocCount:        int(db.docCount.Load()),
+		DeletedDocCount: int(db.deletedCount.Load()),
+	}
 }
 
-// Vacuum vacuum
+// Vacuum vacuum — quiesces writer, copies live docs, swaps file; errors abort without rename/delete.
 func (db *DefaultDatabase) Vacuum() error {
 	vacuumManager := <-db.vacuumManager
 	defer func() {
 		db.vacuumManager <- vacuumManager
 	}()
 
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+
 	currentFileName := db.serviceLocator.GetLocalDB().GetDatabaseFileName(db.Name)
 	currentDBPath := filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt)
-	currentConnectionString := currentDBPath
 
 	id := NewSequenceUUIDGenarator().Next()
 	newFileName := db.Name + "_" + id
 	newConnectionString := filepath.Join(db.serviceLocator.GetDBDirPath(), newFileName+dbExt)
 
 	vacuumManager.SetNewConnectionString(newConnectionString)
-	vacuumManager.SetCurrentConnectionString(currentDBPath, currentConnectionString)
+	vacuumManager.SetCurrentConnectionString(currentDBPath, currentDBPath)
 
-	vacuumManager.SetupDatabase()
+	if err := vacuumManager.SetupDatabase(); err != nil {
+		removeSQLiteFiles(newConnectionString)
+		return err
+	}
 
-	maxUpdateSequence := db.UpdateSequence
-	vacuumManager.CopyData(0, maxUpdateSequence)
+	// Quiesce writes for the entire compact.
+	writer := <-db.writer
+	maxUpdateSequence := db.updateSeq.Load()
 
-	vacuumManager.Vacuum()
+	restorePools := func() {
+		_ = db.reinitializeUnlocked()
+		_ = db.viewManager.ReinitializeViews()
+	}
 
-	db.Close(false)
+	if err := vacuumManager.CopyData(0, maxUpdateSequence); err != nil {
+		db.writer <- writer
+		removeSQLiteFiles(newConnectionString)
+		return err
+	}
 
-	minUpdateSequence := maxUpdateSequence
-	maxUpdateSequence = db.UpdateSequence
+	if err := vacuumManager.Vacuum(); err != nil {
+		db.writer <- writer
+		removeSQLiteFiles(newConnectionString)
+		return err
+	}
 
-	vacuumManager.CopyData(minUpdateSequence, maxUpdateSequence)
+	if err := writer.Close(); err != nil {
+		db.writer <- writer
+		removeSQLiteFiles(newConnectionString)
+		return err
+	}
+
+	var readerErr error
+	readersCount := cap(db.reader)
+	for i := 0; i < readersCount; i++ {
+		reader := <-db.reader
+		if err := reader.Close(); err != nil {
+			readerErr = err
+		}
+	}
+	if err := db.viewManager.Close(false); err != nil {
+		removeSQLiteFiles(newConnectionString)
+		restorePools()
+		return err
+	}
+	if readerErr != nil {
+		removeSQLiteFiles(newConnectionString)
+		restorePools()
+		return readerErr
+	}
 
 	localDB := db.serviceLocator.GetLocalDB()
-	localDB.UpdateDatabaseFileName(db.Name, newFileName)
+	if err := localDB.UpdateDatabaseFileName(db.Name, newFileName); err != nil {
+		removeSQLiteFiles(newConnectionString)
+		restorePools()
+		return err
+	}
 
-	db.ReInitialize()
+	if err := db.reinitializeUnlocked(); err != nil {
+		return err
+	}
 
-	db.viewManager.ReinitializeViews()
+	if err := db.viewManager.ReinitializeViews(); err != nil {
+		return err
+	}
 
-	dbPath := db.serviceLocator.GetDBDirPath()
-	oldFile := currentFileName + dbExt
-	os.Remove(filepath.Join(dbPath, oldFile))
+	docs, deleted := db.getDocumentCountUnlocked()
+	db.docCount.Store(int64(docs))
+	db.deletedCount.Store(int64(deleted))
+	db.updateSeq.Store(db.getLastUpdateSequenceUnlocked())
+	db.changeSeq = NewChangeSequenceGenarator(db.updateSeq.Load())
 
-	/*
-				1. Copy data (with max update seq) to new data file
-				2. Close Writer
-				3. Copy remaining data (with min (max from step 1) and max new update seq) to new data file
-				4. Close all readers
-				5. Close all views
-				6. Update localDB with new data file name
-				7. Create writer and open it
-				8. Create Readers and open it all
-				9. Push writer and readers to its corresponding channels
-		       10. Delete old data file
-	*/
-
+	// Remove old DB + WAL/SHM. Orphan sidecars make SQLite report READONLY_DBMOVED (1032).
+	removeSQLiteFiles(filepath.Join(db.serviceLocator.GetDBDirPath(), currentFileName+dbExt))
 	return nil
 }
 
 // SelectView select view
 func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, values url.Values, stale bool) ([]byte, error) {
+	// Hold RLock for the whole select so Vacuum (Lock + pool drain) cannot interleave
+	// and deadlock against GetDocument/view channel ops.
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
 	inputDoc := &Document{ID: designDocID}
-	outputDoc, err := db.GetDocument(inputDoc, true)
+	outputDoc, err := db.getDocumentUnlocked(inputDoc, true)
 	if err != nil {
 		return nil, err
 	}
@@ -406,17 +587,20 @@ func (db *DefaultDatabase) SelectView(designDocID, viewName, selectName string, 
 		values.Set("offset", "0")
 	}
 
-	return db.viewManager.SelectView(db.UpdateSequence, *outputDoc, viewName, selectName, values, stale)
+	return db.viewManager.SelectView(db.updateSeq.Load(), *outputDoc, viewName, selectName, values, stale)
 }
 
 // SQL build sql
 func (db *DefaultDatabase) SQL(fromSeq int64, designDocID, viewName string) ([]byte, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
 	inputDoc := &Document{ID: designDocID}
-	outputDoc, err := db.GetDocument(inputDoc, true)
+	outputDoc, err := db.getDocumentUnlocked(inputDoc, true)
 	if err != nil {
 		return nil, err
 	}
-	if fromSeq == db.UpdateSequence {
+	if fromSeq == db.updateSeq.Load() {
 		return nil, nil
 	}
 	return db.viewManager.SQL(fromSeq, *outputDoc, viewName)
@@ -440,15 +624,18 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 			"views" : {
 				"_all_docs" : {
 					"setup" : [
-						"CREATE TABLE IF NOT EXISTS all_docs (key, rev, doc_id, PRIMARY KEY(doc_id)) WITHOUT ROWID"
+						"CREATE TABLE IF NOT EXISTS all_docs (key, rev, doc_id, PRIMARY KEY(doc_id)) WITHOUT ROWID",
+						"CREATE TABLE IF NOT EXISTS all_docs_meta (id INTEGER PRIMARY KEY, total_rows INTEGER) WITHOUT ROWID",
+						"INSERT OR IGNORE INTO all_docs_meta (id, total_rows) VALUES (1, 0)"
 					],
 					"run" : [
 						"DELETE FROM all_docs WHERE doc_id in (SELECT doc_id FROM latest_changes WHERE deleted = 1)",
-						"INSERT OR REPLACE INTO all_docs (key, rev, doc_id) SELECT doc_id, rev, doc_id FROM latest_documents WHERE deleted = 0"
+						"INSERT OR REPLACE INTO all_docs (key, rev, doc_id) SELECT doc_id, rev, doc_id FROM latest_documents WHERE deleted = 0",
+						"UPDATE all_docs_meta SET total_rows = (SELECT COUNT(1) FROM all_docs) WHERE id = 1"
 					],
 					"select" : {
-						"default" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
-						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT COUNT(1) FROM all_docs)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"
+						"default" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev)),'total_rows', (SELECT total_rows FROM all_docs_meta WHERE id = 1)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT))",
+						"with_docs" : "SELECT JSON_OBJECT('offset', ifnull(min(offset) + 1, 0),'rows', JSON_GROUP_ARRAY(JSON_OBJECT('key', doc_id, 'id', doc_id, 'rev', rev, 'doc', JSON((SELECT data FROM documents WHERE doc_id = o.doc_id)))),'total_rows', (SELECT total_rows FROM all_docs_meta WHERE id = 1)) as data FROM (SELECT (ROW_NUMBER() OVER(ORDER BY doc_id) - 1) as offset, * FROM all_docs WHERE (${startkey} IS NULL OR doc_id >= ${startkey}) AND (${endkey} IS NULL OR doc_id <= ${endkey}) ORDER BY doc_id LIMIT CAST(${limit} AS INT) OFFSET CAST(${offset} AS INT)) o"
 					}
 				}
 			}
@@ -457,15 +644,11 @@ func (db *DefaultDatabase) SetupAllDocsViews() error {
 
 	designDoc, err := ParseDocument([]byte(doc))
 	if err != nil {
-		panic(err)
-	}
-
-	_, err = db.PutDocument(designDoc)
-	if err != nil {
 		return err
 	}
 
-	return nil
+	_, err = db.PutDocument(designDoc)
+	return err
 }
 
 func (db *DefaultDatabase) Initialize() error {
@@ -477,11 +660,11 @@ func (db *DefaultDatabase) Initialize() error {
 	return nil
 }
 
-func (db *DefaultDatabase) ReInitialize() error {
-
+func (db *DefaultDatabase) reinitializeUnlocked() error {
 	writer := db.serviceLocator.GetDatabaseWriter(db.Name)
-	writer.Open(false)
-
+	if err := writer.Open(false); err != nil {
+		return err
+	}
 	db.writer <- writer
 
 	readersCount := cap(db.reader)
@@ -495,14 +678,20 @@ func (db *DefaultDatabase) ReInitialize() error {
 	return nil
 }
 
+func (db *DefaultDatabase) ReInitialize() error {
+	db.mutex.Lock()
+	defer db.mutex.Unlock()
+	return db.reinitializeUnlocked()
+}
+
 // NewDatabase create database instance
-func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) Database {
+func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLocator) (Database, error) {
 	db := &DefaultDatabase{Name: name}
 	db.idSeq = NewSequenceUUIDGenarator()
 	db.serviceLocator = serviceLocator
 
 	db.writer = make(chan DatabaseWriter, 1)
-	db.reader = make(chan DatabaseReader, 2)
+	db.reader = make(chan DatabaseReader, dbReaderPoolSize)
 	db.vacuumManager = make(chan VacuumManager, 1)
 	db.vacuumManager <- serviceLocator.GetVacuumManager(name)
 
@@ -512,8 +701,8 @@ func NewDatabase(name string, createIfNotExists bool, serviceLocator ServiceLoca
 
 	err := db.Open(createIfNotExists)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return db
+	return db, nil
 }
