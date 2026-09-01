@@ -34,6 +34,10 @@ var (
 	ErrInvalidSQLStmt = errors.New("invalid_sql_stmt")
 	// ErrInternalError internal_error
 	ErrInternalError = errors.New("internal_error")
+	// ErrBulkFailed bulk_failed
+	ErrBulkFailed = errors.New("bulk_failed")
+	// ErrBulkAllOrNothingUnsupported bulk_all_or_nothing_unsupported
+	ErrBulkAllOrNothingUnsupported = errors.New("bulk_all_or_nothing_unsupported")
 
 	// MessageBadJSON error message for ErrBadJSON
 	MessageBadJSON = "invalid json format"
@@ -53,6 +57,10 @@ var (
 	MessageViewNotFound = "view not found"
 	// MessageInternalError error message for ErrInternalError
 	MessageInternalError = "internal error"
+	// MessageBulkFailed error message for ErrBulkFailed
+	MessageBulkFailed = "one or more documents failed; no changes were committed"
+	// MessageBulkAllOrNothingUnsupported error message for ErrBulkAllOrNothingUnsupported
+	MessageBulkAllOrNothingUnsupported = "all_or_nothing requires default database storage"
 )
 
 func getErrorDescription(err error) string {
@@ -87,6 +95,10 @@ func errorString(err error) (string, string) {
 		return ErrInvalidSQLStmt.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocumentInvalidRev):
 		return ErrDocumentInvalidRev.Error(), getErrorDescription(err)
+	case errors.Is(err, ErrBulkFailed):
+		return ErrBulkFailed.Error(), MessageBulkFailed
+	case errors.Is(err, ErrBulkAllOrNothingUnsupported):
+		return ErrBulkAllOrNothingUnsupported.Error(), MessageBulkAllOrNothingUnsupported
 	default:
 		return ErrInternalError.Error(), getErrorDescription(err)
 	}
@@ -102,8 +114,10 @@ func NotOK(err error, w http.ResponseWriter) {
 	switch {
 	case errors.Is(err, ErrDatabaseExists):
 		statusCode = http.StatusPreconditionFailed
-	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev) || errors.Is(err, ErrDocumentInvalidInput) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrBadJSON):
+	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev) || errors.Is(err, ErrDocumentInvalidInput) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrBadJSON) || errors.Is(err, ErrBulkAllOrNothingUnsupported):
 		statusCode = http.StatusBadRequest
+	case errors.Is(err, ErrBulkFailed):
+		statusCode = http.StatusConflict
 	case errors.Is(err, ErrDocumentConflict):
 		statusCode = http.StatusConflict
 	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound):

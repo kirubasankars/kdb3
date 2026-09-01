@@ -183,6 +183,15 @@ curl -X POST http://127.0.0.1:8001/testdb/_bulk_gets \
 
 Each array element is either a document result or `{"_id":"…","error":"…","reason":"…"}`.
 
+Atomic batches (`all_or_nothing: true`) commit every document or none. On failure the server returns HTTP `409` with `{"error":"bulk_failed","reason":"…","results":[…]}` and leaves the database unchanged.
+
+```sh
+curl -X POST http://127.0.0.1:8001/testdb/_bulk_docs \
+  -H 'Content-Type: application/json' \
+  -d '{"all_or_nothing":true,"_docs":[{"_id":"a"},{"_id":"b","_rev":99}]}'
+# HTTP 409 — no documents committed
+```
+
 ### Changes
 
 One-shot (poll):

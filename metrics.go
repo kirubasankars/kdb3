@@ -112,6 +112,11 @@ var (
 		Name: "kdb_view_reader_pool_in_use",
 		Help: "Number of view readers currently checked out, aggregated per database.",
 	}, []string{"db"})
+
+	bulkAllOrNothingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kdb_bulk_all_or_nothing_total",
+		Help: "Total all_or_nothing bulk write attempts.",
+	}, []string{"db", "result"})
 )
 
 func metricsResult(err error) string {
@@ -125,6 +130,13 @@ func metricsResult(err error) string {
 		return "not_found"
 	}
 	return "error"
+}
+
+func metricsBulkAllOrNothingResult(failed bool) string {
+	if failed {
+		return "failed"
+	}
+	return "ok"
 }
 
 func syncDatabaseStatGauges(db *DefaultDatabase) {

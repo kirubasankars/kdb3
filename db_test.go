@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"testing"
@@ -270,5 +272,80 @@ func TestCountDeltaOnDeleteUndelete(t *testing.T) {
 	}
 	if db.DocumentCount() != baseDocs+1 || db.DeletedDocumentCount() != baseDeleted {
 		t.Fatalf("after undelete: docs=%d deleted=%d", db.DocumentCount(), db.DeletedDocumentCount())
+	}
+}
+
+func TestBulkPutAllOrNothingSuccess(t *testing.T) {
+	kdb, _ := testDB(t, "bulkatomic")
+	db := kdb.dbs["bulkatomic"].(*DefaultDatabase)
+	countBefore := db.DocumentCount()
+	seqBefore := db.UpdateSequence()
+
+	body := []byte(`{"all_or_nothing":true,"_docs":[{"_id":"a"},{"_id":"b"}]}`)
+	result, err := kdb.BulkDocuments("bulkatomic", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", result.StatusCode, result.Body)
+	}
+	if db.UpdateSequence() != seqBefore+2 {
+		t.Fatalf("expected update_seq %d, got %d", seqBefore+2, db.UpdateSequence())
+	}
+	if db.DocumentCount() != countBefore+2 {
+		t.Fatalf("expected %d docs, got %d", countBefore+2, db.DocumentCount())
+	}
+}
+
+func TestBulkPutAllOrNothingRollback(t *testing.T) {
+	kdb, _ := testDB(t, "bulkrollback")
+	db := kdb.dbs["bulkrollback"].(*DefaultDatabase)
+
+	okBody := []byte(`{"_docs":[{"_id":"seed"}]}`)
+	if _, err := kdb.BulkDocuments("bulkrollback", okBody); err != nil {
+		t.Fatal(err)
+	}
+	seqBefore := db.UpdateSequence()
+	countBefore := db.DocumentCount()
+
+	body := []byte(`{"all_or_nothing":true,"_docs":[{"_id":"good"},{"_id":"seed","_rev":99}]}`)
+	result, err := kdb.BulkDocuments("bulkrollback", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", result.StatusCode, result.Body)
+	}
+	if db.UpdateSequence() != seqBefore {
+		t.Fatalf("update_seq changed on rollback: before=%d after=%d", seqBefore, db.UpdateSequence())
+	}
+	if db.DocumentCount() != countBefore {
+		t.Fatalf("doc count changed on rollback: before=%d after=%d", countBefore, db.DocumentCount())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(result.Body, &resp); err != nil {
+		t.Fatalf("invalid bulk_failed JSON: %v", err)
+	}
+	if string(resp["error"]) != `"bulk_failed"` {
+		t.Fatalf("expected bulk_failed error, got %s", resp["error"])
+	}
+}
+
+func TestBulkPutPartialSuccessUnchanged(t *testing.T) {
+	kdb, _ := testDB(t, "bulkpartial")
+	db := kdb.dbs["bulkpartial"].(*DefaultDatabase)
+	countBefore := db.DocumentCount()
+
+	body := []byte(`{"_docs":[{"_id":"p1"},{"_id":"p1"}]}`)
+	result, err := kdb.BulkDocuments("bulkpartial", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", result.StatusCode)
+	}
+	if db.DocumentCount() != countBefore+1 {
+		t.Fatalf("partial bulk should commit first doc, got count %d want %d", db.DocumentCount(), countBefore+1)
 	}
 }

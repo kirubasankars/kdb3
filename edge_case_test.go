@@ -224,15 +224,15 @@ func TestEdgeBulkNilSafeNoPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out, []byte("error")) {
-		t.Fatalf("expected per-item errors, got %s", out)
+	if !bytes.Contains(out.Body, []byte("error")) {
+		t.Fatalf("expected per-item errors, got %s", out.Body)
 	}
-	if !bytes.Contains(out, []byte(`"_id":"ok1"`)) && !bytes.Contains(out, []byte(`"ok1"`)) {
+	if !bytes.Contains(out.Body, []byte(`"_id":"ok1"`)) && !bytes.Contains(out.Body, []byte(`"ok1"`)) {
 		// ok1 may succeed; at least response must be valid JSON array
 	}
 	var arr []json.RawMessage
-	if err := json.Unmarshal(out, &arr); err != nil {
-		t.Fatalf("bulk response not JSON array: %v %s", err, out)
+	if err := json.Unmarshal(out.Body, &arr); err != nil {
+		t.Fatalf("bulk response not JSON array: %v %s", err, out.Body)
 	}
 }
 

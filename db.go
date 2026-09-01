@@ -295,8 +295,13 @@ func (db *DefaultDatabase) putDocumentWithWriter(writer DatabaseWriter, doc *Doc
 	return &putResult{doc: doc, updateSeq: updateSeq}, currentDoc, nil
 }
 
+// BulkPutOptions controls bulk write behavior.
+type BulkPutOptions struct {
+	AllOrNothing bool
+}
+
 // BulkPutDocuments put many documents in a single transaction
-func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []error) {
+func (db *DefaultDatabase) BulkPutDocuments(docs []*Document, opts BulkPutOptions) ([]*Document, []error) {
 	start := time.Now()
 	outs := make([]*Document, len(docs))
 	errs := make([]error, len(docs))
@@ -351,6 +356,25 @@ func (db *DefaultDatabase) BulkPutDocuments(docs []*Document) ([]*Document, []er
 		}
 		pendings[i] = &pending{out: res.doc, current: currentDoc, seq: res.updateSeq}
 		lastSeq = res.updateSeq
+	}
+
+	if opts.AllOrNothing {
+		failed := false
+		for _, err := range errs {
+			if err != nil {
+				failed = true
+				break
+			}
+		}
+		bulkAllOrNothingTotal.WithLabelValues(db.Name, metricsBulkAllOrNothingResult(failed)).Inc()
+		if failed {
+			for i := range errs {
+				if errs[i] == nil && docs[i] != nil {
+					errs[i] = ErrBulkFailed
+				}
+			}
+			return outs, errs
+		}
 	}
 
 	if err := writer.Commit(); err != nil {

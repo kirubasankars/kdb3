@@ -352,9 +352,13 @@ func (handler KDBHandler) BulkPutDocuments(w http.ResponseWriter, r *http.Reques
 		NotOK(err, w)
 		return
 	}
+	statusCode := outputs.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(outputs)
+	w.WriteHeader(statusCode)
+	w.Write(outputs.Body)
 }
 
 func (handler KDBHandler) BulkGetDocuments(w http.ResponseWriter, r *http.Request) {
