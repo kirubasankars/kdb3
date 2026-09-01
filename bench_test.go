@@ -30,7 +30,7 @@ func BenchmarkBulkPut(b *testing.B) {
 				for j := 0; j < n; j++ {
 					batch[j], _ = ParseDocument([]byte(fmt.Sprintf(`{"_id":"b%d_%d","n":%d}`, i, j, j)))
 				}
-				_, errs := db.BulkPutDocuments(batch)
+				_, errs := db.BulkPutDocuments(batch, BulkPutOptions{})
 				for _, e := range errs {
 					if e != nil {
 						b.Fatal(e)

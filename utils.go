@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -72,6 +73,52 @@ func formatDocumentString(id string, version int, deleted bool) string {
 	}
 	b.WriteByte('}')
 	return b.String()
+}
+
+func formatBulkItemError(id string, err error) string {
+	code, reason := errorString(err)
+	return fmt.Sprintf(`{"_id":%s,"error":%s,"reason":%s}`, jsonEscapeString(id), jsonEscapeString(code), jsonEscapeString(reason))
+}
+
+func buildBulkResultsArray(docs []*Document, parseErrs, putErrs []error, outs []*Document) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for idx := range docs {
+		if idx > 0 {
+			b.WriteByte(',')
+		}
+		var err error
+		if idx < len(parseErrs) {
+			err = parseErrs[idx]
+		}
+		if err == nil && idx < len(putErrs) {
+			err = putErrs[idx]
+		}
+		if err != nil {
+			id := ""
+			if docs[idx] != nil {
+				id = docs[idx].ID
+			}
+			b.WriteString(formatBulkItemError(id, err))
+			continue
+		}
+		if idx >= len(outs) || outs[idx] == nil {
+			b.WriteString(formatBulkItemError("", ErrInternalError))
+			continue
+		}
+		out := outs[idx]
+		b.WriteString(formatDocumentString(out.ID, out.Version, out.Deleted))
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+func buildBulkFailedResponse(resultsJSON string) BulkPutResult {
+	body := fmt.Sprintf(`{"error":%s,"reason":%s,"results":%s}`,
+		jsonEscapeString(ErrBulkFailed.Error()),
+		jsonEscapeString(MessageBulkFailed),
+		resultsJSON)
+	return BulkPutResult{Body: []byte(body), StatusCode: http.StatusConflict}
 }
 
 func OK(ok bool, json string) string {

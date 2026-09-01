@@ -308,6 +308,12 @@ paths:
                   oneOf:
                     - $ref: "#/components/schemas/DocumentMeta"
                     - $ref: "#/components/schemas/BulkItemError"
+        "409":
+          description: Atomic bulk write failed (all_or_nothing)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkFailedResponse"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -975,6 +981,13 @@ components:
       type: object
       required: [_docs]
       properties:
+        all_or_nothing:
+          type: boolean
+          default: false
+          description: |
+            When true, the batch is atomic: if any document fails validation or
+            write, no documents from the batch are committed. On failure the
+            response is HTTP 409 with a bulk_failed envelope and per-item results.
         _docs:
           type: array
           items:
@@ -1004,6 +1017,23 @@ components:
           type: string
         reason:
           type: string
+
+    BulkFailedResponse:
+      type: object
+      required: [error, reason, results]
+      properties:
+        error:
+          type: string
+          example: bulk_failed
+        reason:
+          type: string
+          example: one or more documents failed; no changes were committed
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/DocumentMeta"
+              - $ref: "#/components/schemas/BulkItemError"
 
     ChangesResult:
       type: object

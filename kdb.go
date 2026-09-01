@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,12 @@ import (
 )
 
 var dbExt = ".db"
+
+// BulkPutResult is the HTTP response for a bulk write request.
+type BulkPutResult struct {
+	Body       []byte
+	StatusCode int
+}
 
 // KDB kdb
 type KDB struct {
@@ -190,20 +197,28 @@ func (kdb *KDB) GetDocument(name string, doc *Document, includeDoc bool) (*Docum
 }
 
 // BulkDocuments insert multiple documents
-func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
+func (kdb *KDB) BulkDocuments(name string, body []byte) (BulkPutResult, error) {
 	fValues, err := fastjson.ParseBytes(body)
 	if err != nil {
-		return nil, fmt.Errorf("%s:%w", err, ErrBadJSON)
+		return BulkPutResult{}, fmt.Errorf("%s:%w", err, ErrBadJSON)
 	}
 	if fValues.GetArray("_docs") == nil {
-		return nil, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
+		return BulkPutResult{}, fmt.Errorf("%s:%w", "_docs is missing", ErrDocumentInvalidInput)
+	}
+
+	allOrNothing := false
+	if v := fValues.Get("all_or_nothing"); v != nil {
+		allOrNothing, err = v.Bool()
+		if err != nil {
+			return BulkPutResult{}, fmt.Errorf("invalid all_or_nothing:%w", ErrDocumentInvalidInput)
+		}
 	}
 
 	kdb.rwMutex.RLock()
 	db, ok := kdb.dbs[name]
 	kdb.rwMutex.RUnlock()
 	if !ok {
-		return nil, ErrDatabaseNotFound
+		return BulkPutResult{}, ErrDatabaseNotFound
 	}
 
 	items := fValues.GetArray("_docs")
@@ -229,46 +244,63 @@ func (kdb *KDB) BulkDocuments(name string, body []byte) ([]byte, error) {
 		docs[idx] = inputDoc
 	}
 
+	if allOrNothing && hasBulkErrors(parseErrs) {
+		return buildBulkFailedResponse(buildBulkResultsArray(docs, parseErrs, nil, nil)), nil
+	}
+
 	defDB, isDefault := db.(*DefaultDatabase)
+	if allOrNothing && !isDefault {
+		return BulkPutResult{}, ErrBulkAllOrNothingUnsupported
+	}
+
+	opts := BulkPutOptions{AllOrNothing: allOrNothing}
 	var outs []*Document
 	var putErrs []error
 	if isDefault {
-		outs, putErrs = defDB.BulkPutDocuments(docs)
+		outs, putErrs = defDB.BulkPutDocuments(docs, opts)
 	} else {
 		outs = make([]*Document, len(docs))
 		putErrs = make([]error, len(docs))
 		for i, d := range docs {
 			if d == nil {
+				if parseErrs[i] != nil {
+					putErrs[i] = parseErrs[i]
+				}
 				continue
 			}
 			outs[i], putErrs[i] = db.PutDocument(d)
 		}
 	}
 
-	var b strings.Builder
-	b.WriteByte('[')
-	for idx := range items {
-		if idx > 0 {
-			b.WriteByte(',')
-		}
-		err := parseErrs[idx]
-		if err == nil {
-			err = putErrs[idx]
-		}
-		if err != nil {
-			id := ""
-			if docs[idx] != nil {
-				id = docs[idx].ID
-			}
-			code, reason := errorString(err)
-			b.WriteString(fmt.Sprintf(`{"_id":%s,"error":%s,"reason":%s}`, jsonEscapeString(id), jsonEscapeString(code), jsonEscapeString(reason)))
-			continue
-		}
-		out := outs[idx]
-		b.WriteString(formatDocumentString(out.ID, out.Version, out.Deleted))
+	if allOrNothing && hasBulkErrors(mergeBulkErrors(parseErrs, putErrs)) {
+		return buildBulkFailedResponse(buildBulkResultsArray(docs, parseErrs, putErrs, outs)), nil
 	}
-	b.WriteByte(']')
-	return []byte(b.String()), nil
+
+	return BulkPutResult{
+		Body:       []byte(buildBulkResultsArray(docs, parseErrs, putErrs, outs)),
+		StatusCode: http.StatusOK,
+	}, nil
+}
+
+func hasBulkErrors(errs []error) bool {
+	for _, err := range errs {
+		if err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeBulkErrors(parseErrs, putErrs []error) []error {
+	merged := make([]error, len(parseErrs))
+	for i := range parseErrs {
+		if parseErrs[i] != nil {
+			merged[i] = parseErrs[i]
+		} else if i < len(putErrs) {
+			merged[i] = putErrs[i]
+		}
+	}
+	return merged
 }
 
 // BulkGetDocuments get multiple documents

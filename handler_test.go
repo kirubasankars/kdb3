@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -331,6 +332,55 @@ func TestHandlerBulkDocuments(t *testing.T) {
 	expected := `[{"_id":"3","_rev":1},{"_id":"4","_rev":1}]`
 	if expected != rr.Body.String() {
 		t.Errorf(`expected to have %s, got %s`, expected, rr.Body.String())
+	}
+
+	req, _ = http.NewRequest("DELETE", "/testdb", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+}
+
+func TestHandlerBulkAllOrNothing(t *testing.T) {
+	kdb, _ := NewKDB()
+	handler := NewRouter(kdb, "")
+
+	req, _ := http.NewRequest("PUT", "/testdb", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	rr = httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"all_or_nothing":true,"_docs":[{"_id":"a"},{"_id":"b"}]}`)
+	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+
+	testExpect200(t, rr)
+	testExpectJSONContentType(t, rr)
+
+	expected := `[{"_id":"a","_rev":1},{"_id":"b","_rev":1}]`
+	if expected != rr.Body.String() {
+		t.Errorf("expected %s, got %s", expected, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	body = bytes.NewBufferString(`{"all_or_nothing":true,"_docs":[{"_id":"c"},{"_id":"a","_rev":99}]}`)
+	req, _ = http.NewRequest("POST", "/testdb/_bulk_docs", body)
+	req.Header.Add("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d %s", rr.Code, rr.Body.String())
+	}
+	var failed map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &failed); err != nil {
+		t.Fatalf("invalid bulk_failed response: %v", err)
+	}
+	if string(failed["error"]) != `"bulk_failed"` {
+		t.Fatalf("expected bulk_failed, got %s", failed["error"])
+	}
+
+	_, err := kdb.GetDocument("testdb", &Document{ID: "c"}, true)
+	if !errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("expected c not created after rollback, got %v", err)
 	}
 
 	req, _ = http.NewRequest("DELETE", "/testdb", nil)

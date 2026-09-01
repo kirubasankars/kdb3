@@ -67,6 +67,20 @@ func TestErrorVIEW_RESULT_ERROR(t *testing.T) {
 	}
 }
 
+func TestErrorBULK_FAILED(t *testing.T) {
+	code, reason := errorString(ErrBulkFailed)
+	if code != ErrBulkFailed.Error() || reason != MessageBulkFailed {
+		t.Errorf("expected %s, got %s", ErrBulkFailed, code)
+	}
+}
+
+func TestErrorBULK_ALL_OR_NOTHING_UNSUPPORTED(t *testing.T) {
+	code, reason := errorString(ErrBulkAllOrNothingUnsupported)
+	if code != ErrBulkAllOrNothingUnsupported.Error() || reason != MessageBulkAllOrNothingUnsupported {
+		t.Errorf("expected %s, got %s", ErrBulkAllOrNothingUnsupported, code)
+	}
+}
+
 func TestErrorINTERAL_ERROR(t *testing.T) {
 	code, reason := errorString(ErrInternalError)
 	if code != ErrInternalError.Error() || reason != ErrInternalError.Error() {
