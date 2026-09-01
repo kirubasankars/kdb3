@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -430,13 +431,18 @@ func (kdb *KDB) GetViewStatus(dbName, designDocID, viewName string) (*ViewStatus
 
 // Info get kdb info
 func (kdb *KDB) Info() []byte {
-	var version string
-	conn, _ := sqlite3.Open(":memory:")
-	defer conn.Close()
-	stmt, _ := conn.Prepare("SELECT sqlite_version()")
-	stmt.Step()
-	stmt.Scan(&version)
-	return []byte(fmt.Sprintf(`{"name":"kdb","version":{"sqlite":"%s"}}`, version))
+	b, err := json.Marshal(map[string]any{
+		"name": "kdb3",
+		"version": map[string]string{
+			"kdb3":   Version,
+			"commit": GitHash,
+			"sqlite": sqlite3.Version(),
+		},
+	})
+	if err != nil {
+		return []byte(`{"name":"kdb3"}`)
+	}
+	return b
 }
 
 func (kdb *KDB) deleteDBFiles(dbname string, viewFiles []string) {

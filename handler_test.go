@@ -95,6 +95,21 @@ func TestGetInfo(t *testing.T) {
 
 	testExpect200(t, rr)
 	testExpectJSONContentType(t, rr)
+
+	var info struct {
+		Name    string `json:"name"`
+		Version struct {
+			KDB3   string `json:"kdb3"`
+			Commit string `json:"commit"`
+			SQLite string `json:"sqlite"`
+		} `json:"version"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Name != "kdb3" || info.Version.KDB3 == "" || info.Version.SQLite == "" {
+		t.Fatalf("unexpected server info: %s", rr.Body.String())
+	}
 }
 
 func TestHandlerPutDatabase(t *testing.T) {

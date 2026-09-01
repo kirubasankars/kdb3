@@ -759,10 +759,16 @@ components:
       properties:
         name:
           type: string
-          example: kdb
+          example: kdb3
         version:
           type: object
           properties:
+            kdb3:
+              type: string
+              example: "1.0.0"
+            commit:
+              type: string
+              example: "abc1234"
             sqlite:
               type: string
               example: "3.53.4"

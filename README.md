@@ -21,11 +21,14 @@ Document database written in Go with SQLite as storage and query/view engine.
 Requires Go 1.22+ and CGO (for the in-tree SQLite driver).
 
 ```sh
-make build          # produces ./kdb3
-# or: go build -o kdb3 .
+make build          # produces ./kdb3, stamps VERSION + git hash
+# or: go build -ldflags "-X main.Version=$(cat VERSION) -X main.GitHash=$(git rev-parse --short HEAD)" -o kdb3 .
+./kdb3 -version     # kdb3 1.0.0 (abc1234)
 ```
 
 SQLite is provided by [`sqlite3/`](sqlite3/) (fork of go-sqlite-lite) with amalgamation **3.53.4**. Regenerate with `make sqlite-amalgamation` (see [`sqlite3/README.md`](sqlite3/README.md)).
+
+Prebuilt binaries for Linux and macOS (`amd64` / `arm64`) are attached to [GitHub Releases](https://github.com/kirubasankars/kdb3/releases). Each asset is `kdb3-vVERSION-OS-ARCH.tar.gz` plus `SHA256SUMS`.
 
 ## Run
 
@@ -41,6 +44,7 @@ SQLite is provided by [`sqlite3/`](sqlite3/) (fork of go-sqlite-lite) with amalg
 | `-token` | _(empty)_ | Bearer token; empty disables auth. Env `KDB3_TOKEN` used if flag is empty |
 | `-read-timeout` | `60s` | HTTP read timeout |
 | `-write-timeout` | `60s` | HTTP write timeout |
+| `-version` | `false` | Print stamped version and git hash, then exit |
 
 ```sh
 make run                    # build and run
@@ -128,7 +132,7 @@ curl 'http://127.0.0.1:8001/blog/_changes?since=2&limit=100'
 ### Server
 
 ```sh
-curl http://127.0.0.1:8001/                 # {"name":"kdb","version":{"sqlite":"…"}}
+curl http://127.0.0.1:8001/                 # {"name":"kdb3","version":{"kdb3":"…","commit":"…","sqlite":"…"}}
 curl http://127.0.0.1:8001/_cat/dbs         # ["blog","testdb"]
 curl 'http://127.0.0.1:8001/_uuids?count=3' # ["…","…","…"]
 ```
@@ -334,6 +338,18 @@ Default `_all_docs` definition (for reference):
 ## SQLite durability
 
 Databases open with `journal_mode=WAL` and `synchronous=NORMAL` (plus `busy_timeout=5000` and a 64MB page cache). `NORMAL` is faster than `FULL`, but after a hard power loss the last WAL transactions may need recovery; a clean process restart is fine. Prefer an UPS and/or periodic `POST /{db}/_vacuum` for stronger operational hygiene.
+
+## Releases
+
+Version is the contents of [`VERSION`](VERSION). `make build` embeds it and the current git hash (`./kdb3 -version` and `GET /`).
+
+To cut a release:
+
+1. Set `VERSION` (for example `1.0.0`) and commit.
+2. `make tag` — creates annotated `v1.0.0` on a clean tree.
+3. `git push origin master && git push origin v1.0.0`
+
+Pushing `v*` runs [`.github/workflows/release.yml`](.github/workflows/release.yml): tests, a GitHub Release, and CGO binaries for `linux`/`darwin` × `amd64`/`arm64`.
 
 ## License
 

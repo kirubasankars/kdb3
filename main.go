@@ -4,10 +4,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
 	cfg := LoadConfig()
+	if cfg.ShowVersion {
+		fmt.Printf("kdb3 %s (%s)\n", Version, GitHash)
+		os.Exit(0)
+	}
 
 	kdb, err := NewKDBWithDataDir(cfg.DataDir)
 	if err != nil {

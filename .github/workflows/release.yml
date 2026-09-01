@@ -1,0 +1,136 @@
+name: Release
+
+# Native CGO builds (SQLite amalgamation) attached to a GitHub Release.
+# Push an annotated tag `v*` (see `make tag`) or re-upload via workflow_dispatch.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to upload binaries to (e.g. v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: CI
+        run: make ci
+
+  prepare:
+    name: Prepare release
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            --verify-tag
+
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - os: macos-14
+            goos: darwin
+            goarch: arm64
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          VERSION="${{ needs.prepare.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          GIT_HASH="$(git rev-parse --short HEAD)"
+          OUT="kdb3-v${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          make build VERSION="$VERSION" GIT_HASH="$GIT_HASH"
+          tar -czf "${OUT}.tar.gz" kdb3 LICENSE README.md
+          shasum -a 256 "${OUT}.tar.gz" | awk '{print $1}' > "${OUT}.tar.gz.sha256"
+          echo "ASSET_BASE=${OUT}" >> "$GITHUB_ENV"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release upload "$TAG" \
+            "${ASSET_BASE}.tar.gz" \
+            "${ASSET_BASE}.tar.gz.sha256" \
+            --clobber
+
+  checksums:
+    name: SHA256SUMS
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish combined SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release download "$TAG" --pattern '*.tar.gz.sha256' --dir sums
+          {
+            echo "# SHA256 checksums for ${TAG}"
+            for f in sums/*.sha256; do
+              base="$(basename "$f" .sha256)"
+              printf '%s  %s\n' "$(tr -d ' \n' < "$f")" "$base"
+            done | sort
+          } > SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber

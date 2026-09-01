@@ -13,6 +13,7 @@ type Config struct {
 	Token        string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	ShowVersion  bool
 }
 
 // LoadConfig parses CLI flags and environment (KDB3_TOKEN overrides empty -token).
@@ -23,6 +24,7 @@ func LoadConfig() Config {
 	flag.StringVar(&cfg.Token, "token", "", "bearer token required for API access (empty disables auth)")
 	flag.DurationVar(&cfg.ReadTimeout, "read-timeout", 60*time.Second, "HTTP read timeout")
 	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 60*time.Second, "HTTP write timeout")
+	flag.BoolVar(&cfg.ShowVersion, "version", false, "print version and exit")
 	flag.Parse()
 
 	if cfg.Token == "" {
