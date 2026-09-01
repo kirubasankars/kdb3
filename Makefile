@@ -6,7 +6,7 @@ TOKEN  ?=
 # Silence harmless sqlite3.c amalgamation warnings from the vendored driver.
 export CGO_CFLAGS ?= -Wno-implicit-const-int-float-conversion
 
-.PHONY: all build test race bench cover run clean help sqlite-amalgamation
+.PHONY: all build test race ci bench cover run clean help sqlite-amalgamation
 
 all: build
 
@@ -18,6 +18,11 @@ test:
 
 race:
 	go test -race ./...
+
+ci:
+	$(MAKE) build
+	$(MAKE) test
+	$(MAKE) race
 
 bench:
 	go test -bench=. -benchmem ./...
@@ -42,6 +47,7 @@ help:
 	@echo "  make build              # build ./kdb3 (CGO required)"
 	@echo "  make test               # go test ./..."
 	@echo "  make race               # go test -race ./..."
+	@echo "  make ci                 # build, test, and race (GitHub Actions gate)"
 	@echo "  make bench              # go test -bench=. -benchmem ./..."
 	@echo "  make cover              # test with coverage summary"
 	@echo "  make run                # build and run (ADDR/DATA/TOKEN env overrides)"

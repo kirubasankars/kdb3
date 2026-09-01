@@ -12,11 +12,5 @@ jobs:
       with:
         go-version: '1.22'
 
-    - name: Build
-      run: go build -v .
-
-    - name: Test
-      run: go test ./...
-
-    - name: Test race
-      run: go test -race ./...
+    - name: CI
+      run: make ci
