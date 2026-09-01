@@ -90,13 +90,19 @@ func (vm DefaultVacuumManager) CopyData(minUpdateSequence int64, maxUpdateSequen
 		if err != nil {
 			return err
 		}
-		con.Commit()
 	} else {
 		err = con.Exec("INSERT OR REPLACE INTO documents SELECT * FROM currentdb.documents WHERE update_seq > ? AND update_seq <= ? AND deleted = 0", minUpdateSequence, maxUpdateSequence)
 		if err != nil {
 			return err
 		}
-		con.Commit()
+	}
+
+	copyAtt := "INSERT OR REPLACE INTO attachments SELECT a.* FROM currentdb.attachments a INNER JOIN documents d ON d.doc_id = a.doc_id"
+	if err = con.Exec(copyAtt); err != nil {
+		return err
+	}
+	if err = con.Commit(); err != nil {
+		return err
 	}
 	return nil
 }

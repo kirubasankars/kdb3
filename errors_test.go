@@ -81,6 +81,13 @@ func TestErrorBULK_ALL_OR_NOTHING_UNSUPPORTED(t *testing.T) {
 	}
 }
 
+func TestErrorATTACHMENT_NOT_FOUND(t *testing.T) {
+	code, reason := errorString(ErrAttachmentNotFound)
+	if code != ErrAttachmentNotFound.Error() || reason != MessageAttachmentNotFound {
+		t.Errorf("expected %s, got %s", ErrAttachmentNotFound, code)
+	}
+}
+
 func TestErrorINTERAL_ERROR(t *testing.T) {
 	code, reason := errorString(ErrInternalError)
 	if code != ErrInternalError.Error() || reason != ErrInternalError.Error() {

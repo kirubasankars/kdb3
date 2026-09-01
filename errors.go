@@ -34,6 +34,12 @@ var (
 	ErrInvalidSQLStmt = errors.New("invalid_sql_stmt")
 	// ErrInternalError internal_error
 	ErrInternalError = errors.New("internal_error")
+	// ErrAttachmentNotFound att_not_found
+	ErrAttachmentNotFound = errors.New("att_not_found")
+	// ErrAttachmentInvalidName invalid_att_name
+	ErrAttachmentInvalidName = errors.New("invalid_att_name")
+	// ErrAttachmentTooLarge att_too_large
+	ErrAttachmentTooLarge = errors.New("att_too_large")
 	// ErrBulkFailed bulk_failed
 	ErrBulkFailed = errors.New("bulk_failed")
 	// ErrBulkAllOrNothingUnsupported bulk_all_or_nothing_unsupported
@@ -57,6 +63,12 @@ var (
 	MessageViewNotFound = "view not found"
 	// MessageInternalError error message for ErrInternalError
 	MessageInternalError = "internal error"
+	// MessageAttachmentNotFound error message for ErrAttachmentNotFound
+	MessageAttachmentNotFound = "attachment not found"
+	// MessageAttachmentInvalidName error message for ErrAttachmentInvalidName
+	MessageAttachmentInvalidName = "invalid attachment name"
+	// MessageAttachmentTooLarge error message for ErrAttachmentTooLarge
+	MessageAttachmentTooLarge = "attachment exceeds 16 MiB limit"
 	// MessageBulkFailed error message for ErrBulkFailed
 	MessageBulkFailed = "one or more documents failed; no changes were committed"
 	// MessageBulkAllOrNothingUnsupported error message for ErrBulkAllOrNothingUnsupported
@@ -95,6 +107,12 @@ func errorString(err error) (string, string) {
 		return ErrInvalidSQLStmt.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocumentInvalidRev):
 		return ErrDocumentInvalidRev.Error(), getErrorDescription(err)
+	case errors.Is(err, ErrAttachmentNotFound):
+		return ErrAttachmentNotFound.Error(), MessageAttachmentNotFound
+	case errors.Is(err, ErrAttachmentInvalidName):
+		return ErrAttachmentInvalidName.Error(), MessageAttachmentInvalidName
+	case errors.Is(err, ErrAttachmentTooLarge):
+		return ErrAttachmentTooLarge.Error(), MessageAttachmentTooLarge
 	case errors.Is(err, ErrBulkFailed):
 		return ErrBulkFailed.Error(), MessageBulkFailed
 	case errors.Is(err, ErrBulkAllOrNothingUnsupported):
@@ -114,13 +132,13 @@ func NotOK(err error, w http.ResponseWriter) {
 	switch {
 	case errors.Is(err, ErrDatabaseExists):
 		statusCode = http.StatusPreconditionFailed
-	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev) || errors.Is(err, ErrDocumentInvalidInput) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrBadJSON) || errors.Is(err, ErrBulkAllOrNothingUnsupported):
+	case errors.Is(err, ErrDatabaseInvalidName) || errors.Is(err, ErrDocumentInvalidRev) || errors.Is(err, ErrDocumentInvalidInput) || errors.Is(err, ErrInvalidSQLStmt) || errors.Is(err, ErrBadJSON) || errors.Is(err, ErrBulkAllOrNothingUnsupported) || errors.Is(err, ErrAttachmentInvalidName) || errors.Is(err, ErrAttachmentTooLarge):
 		statusCode = http.StatusBadRequest
 	case errors.Is(err, ErrBulkFailed):
 		statusCode = http.StatusConflict
 	case errors.Is(err, ErrDocumentConflict):
 		statusCode = http.StatusConflict
-	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound):
+	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound) || errors.Is(err, ErrAttachmentNotFound):
 		statusCode = http.StatusNotFound
 	}
 

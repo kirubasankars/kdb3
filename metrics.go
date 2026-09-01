@@ -54,6 +54,16 @@ var (
 		Help: "Total document read attempts.",
 	}, []string{"db", "result"})
 
+	attachmentsWrittenTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kdb_attachments_written_total",
+		Help: "Total attachment write attempts.",
+	}, []string{"db", "result"})
+
+	attachmentsReadTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kdb_attachments_read_total",
+		Help: "Total attachment read attempts.",
+	}, []string{"db", "result"})
+
 	documentWriteDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "kdb_document_write_duration_seconds",
 		Help:    "Document write duration in seconds.",

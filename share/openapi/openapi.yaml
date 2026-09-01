@@ -17,6 +17,7 @@ tags:
   - name: Server
   - name: Databases
   - name: Documents
+  - name: Attachments
   - name: Bulk
   - name: Changes
   - name: Views
@@ -375,6 +376,119 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /{db}/{docid}/{attname}:
+    parameters:
+      - $ref: "#/components/parameters/db"
+      - $ref: "#/components/parameters/docid"
+      - $ref: "#/components/parameters/attname"
+    get:
+      tags: [Attachments]
+      summary: Get attachment
+      operationId: getAttachment
+      responses:
+        "200":
+          description: Attachment bytes
+          headers:
+            E-Tag:
+              schema:
+                type: string
+              description: Current document revision
+            Content-MD5:
+              schema:
+                type: string
+              description: Base64 MD5 of the attachment body
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    head:
+      tags: [Attachments]
+      summary: Attachment headers
+      operationId: headAttachment
+      responses:
+        "200":
+          description: Exists
+          headers:
+            E-Tag:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Attachments]
+      summary: Upload or replace an attachment
+      description: |
+        Raw body. `Content-Type` is stored as the attachment MIME type
+        (default `application/octet-stream`). Existing documents require `rev`
+        or `If-Match`. Missing documents with no revision create an empty
+        document plus the attachment. Document JSON updates never remove
+        attachments.
+      operationId: putAttachment
+      parameters:
+        - name: rev
+          in: query
+          schema:
+            type: integer
+          description: Current document revision (required if the document exists)
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Saved document meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Attachments]
+      summary: Delete attachment
+      operationId: deleteAttachment
+      parameters:
+        - name: rev
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Current document revision (or send If-Match)
+      responses:
+        "200":
+          description: Saved document meta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentMeta"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /{db}/{docid}:
     parameters:
       - $ref: "#/components/parameters/db"
@@ -714,6 +828,14 @@ components:
         pattern: "^[A-Za-z0-9_]{1,50}$"
       description: Document ID
       example: "1"
+    attname:
+      name: attname
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Attachment name (`[A-Za-z0-9._- ]`, length 1–200)
+      example: photo.jpg
     designDocid:
       name: docid
       in: path
@@ -828,6 +950,27 @@ components:
           type: string
         _rev:
           type: integer
+        _attachments:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AttachmentStub"
+          description: Injected stubs on GET; not stored in document JSON and ignored on PUT/POST
+
+    AttachmentStub:
+      type: object
+      properties:
+        content_type:
+          type: string
+        revpos:
+          type: integer
+        digest:
+          type: string
+          example: md5-Q2hlY2sgSW50ZWdyaXR5IQ==
+        length:
+          type: integer
+        stub:
+          type: boolean
+          example: true
 
     DesignDocumentView:
       type: object
