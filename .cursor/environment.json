@@ -1,0 +1,10 @@
+{
+  "name": "kdb3",
+  "install": "go mod download && make build",
+  "terminals": [
+    {
+      "name": "kdb3-server",
+      "command": "./kdb3 -addr 127.0.0.1:8001 -data ./data"
+    }
+  ]
+}
