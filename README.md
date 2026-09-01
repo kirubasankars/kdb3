@@ -16,6 +16,19 @@ Document database written in Go with SQLite as storage and query/view engine.
 
 **Trust model:** design documents run SQL against SQLite. Do not expose kdb3 on an untrusted network without a token and a restricted bind address. Default listen address is `127.0.0.1:8001`.
 
+## Contents
+
+- [Build](#build)
+- [Run](#run)
+- [Test](#test)
+- [Development](#development) — prerequisites, common tasks, project layout
+- [Quick start](#quick-start)
+- [Naming rules](#naming-rules)
+- [HTTP API](#http-api)
+- [SQLite durability](#sqlite-durability)
+- [Releases](#releases)
+- [License](#license)
+
 ## Build
 
 Requires Go 1.22+ and CGO (for the in-tree SQLite driver).
@@ -78,7 +91,52 @@ make bench   # go test -bench=. -benchmem ./...
 make cover   # coverage summary
 ```
 
-Optional integration coverage: start `./kdb3`, then run `pytest test_main.py`.
+Optional HTTP integration coverage (needs Python): `pip install requests pytest`, start `./kdb3`, then run `pytest test_main.py`.
+
+## Development
+
+### Prerequisites
+
+- **Go 1.22+** with **CGO enabled** — the in-tree SQLite driver is C code
+- A **C compiler** (`gcc` or `clang`) plus standard build tools
+- **`make`** for the helper targets below
+- _(optional)_ **Python 3** with `requests` + `pytest` for the HTTP integration suite
+
+These are standard on Linux/macOS. On a fresh Debian/Ubuntu box: `sudo apt-get install -y build-essential`. Cloud Agents boot from [`.cursor/environment.json`](.cursor/environment.json), which builds the binary and starts the server automatically.
+
+### Common tasks
+
+| Command | What it does |
+|---------|--------------|
+| `make build` | Build `./kdb3` (stamps VERSION + git hash) |
+| `make run` | Build and run (`ADDR` / `DATA` / `TOKEN` overrides) |
+| `make test` | `go test ./...` |
+| `make race` | `go test -race ./...` |
+| `make ci` | `build` + `test` + `race` — the same gate GitHub Actions runs |
+| `make bench` | Benchmarks with allocation stats |
+| `make cover` | Coverage summary |
+| `make clean` | Remove the binary, coverage, and `./data` |
+
+Run `make help` for the full list. Before opening a pull request, run `make ci` — it mirrors the [`Go` workflow](.github/workflows/go.yml).
+
+### Project layout
+
+| Path | Responsibility |
+|------|----------------|
+| `main.go`, `config.go` | Process entry point and flag/env configuration |
+| `routes.go`, `handlers.go`, `auth.go` | HTTP router, request handlers, and bearer-token middleware |
+| `kdb.go`, `service_locator.go` | Engine top level: database registry, wiring, lifecycle |
+| `db.go`, `db_reader.go`, `db_writer.go`, `local_db.go` | Per-database storage over SQLite |
+| `document.go`, `sequence.go`, `model.go` | Document model and `_rev` / change-sequence bookkeeping |
+| `mrview*.go` | Materialized views: SQL `setup` / `run` / `select`, incremental update, and the view atelier |
+| `vacuum_manager.go` | Live vacuum |
+| `metrics.go` | Prometheus instrumentation |
+| `errors.go`, `utils.go`, `filehandler.go` | Shared error types and helpers |
+| `ui_embed.go`, `share/www/` | Embedded Admin UI served at `/_utils/` |
+| `share/openapi/` | Embedded Swagger UI + OpenAPI spec served at `/_docs/` |
+| `share/js/follow.js` | Browser helper for the authenticated `_changes` SSE feed |
+| `sqlite3/` | Vendored SQLite driver + amalgamation (see [`sqlite3/README.md`](sqlite3/README.md)) |
+| `*_test.go`, `test_main.py` | Go unit/race/bench tests and optional Python HTTP integration tests |
 
 ## Quick start
 
@@ -127,7 +185,7 @@ curl 'http://127.0.0.1:8001/blog/_changes?since=2&limit=100'
 ## HTTP API
 
 - Interactive docs: http://127.0.0.1:8001/_docs/ ([`share/openapi/openapi.yaml`](share/openapi/openapi.yaml))
-- Route cheat sheet: [`supported_api`](supported_api)
+- Full route list: [`routes.go`](routes.go)
 
 ### Server
 
