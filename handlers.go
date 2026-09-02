@@ -513,6 +513,42 @@ func (handler KDBHandler) ViewStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
+func (handler KDBHandler) Replicate(w http.ResponseWriter, r *http.Request) {
+	if err := ValidateRequestJSON(w, r); err != nil {
+		return
+	}
+	// A one-shot replication can run longer than the default write timeout.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	var req ReplicationRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		NotOK(fmt.Errorf("%w: %s", ErrBadJSON, err.Error()), w)
+		return
+	}
+
+	result, err := handler.kdb.Replicate(req)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (handler KDBHandler) ActiveTasks(w http.ResponseWriter, r *http.Request) {
+	tasks := handler.kdb.ActiveReplications()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tasks)
+}
+
 func (handler KDBHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	kdb := handler.kdb
 	w.Header().Set("Content-Type", "application/json")

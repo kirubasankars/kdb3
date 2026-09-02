@@ -20,6 +20,7 @@ tags:
   - name: Bulk
   - name: Changes
   - name: Views
+  - name: Replication
   - name: Admin
 paths:
   /:
@@ -99,6 +100,80 @@ paths:
                   # HELP kdb_databases_open Number of open databases.
                   # TYPE kdb_databases_open gauge
                   kdb_databases_open 0
+
+  /_replicate:
+    post:
+      tags: [Replication]
+      summary: Replicate a database (CouchDB-style)
+      description: |
+        Copies documents from `source` to `target`. Each endpoint is either a
+        local database name (`"blog"`) or a remote kdb3 URL
+        (`"http://host:8001/blog"`); the object form
+        `{"url":"…","token":"…","headers":{…}}` carries auth for a protected
+        remote.
+
+        - **One-shot** (default): drains every pending change, then returns a
+          summary.
+        - **Continuous** (`"continuous": true`): subscribes to the source's
+          change feed and keeps the target in sync, returning immediately with a
+          `replication_id`.
+        - **Cancel**: `{"cancel": true, "replication_id": "…"}` (or the same
+          `source`/`target`) stops a continuous replication.
+
+        Revisions are per-database integers, so replication is last-writer-wins
+        by document id and preserves document content, not the source `_rev`
+        number. Documents whose content already matches are skipped (`no_ops`),
+        which also prevents echo loops between bidirectional replications.
+      operationId: replicate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplicationRequest"
+            examples:
+              oneShot:
+                summary: One-shot local replication
+                value: { source: "blog", target: "blog_backup", create_target: true }
+              continuous:
+                summary: Continuous replication
+                value: { source: "blog", target: "blog_backup", continuous: true }
+              remotePull:
+                summary: Pull from a remote server
+                value: { source: { url: "http://other:8001/blog", token: "secret" }, target: "blog", create_target: true }
+              cancel:
+                summary: Cancel a continuous replication
+                value: { cancel: true, replication_id: "0f1e2d…" }
+      responses:
+        "200":
+          description: Replication summary or continuous handle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplicationResult"
+        "400":
+          description: Invalid request body
+        "404":
+          description: Source/target database or replication id not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /_active_tasks:
+    get:
+      tags: [Replication]
+      summary: List running continuous replications
+      operationId: activeTasks
+      responses:
+        "200":
+          description: Active replication tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReplicationTask"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /{db}:
     parameters:
@@ -753,6 +828,116 @@ components:
         ok:
           type: boolean
           example: true
+
+    ReplicationEndpoint:
+      description: |
+        A local database name, a remote kdb3 URL, or an object carrying auth.
+      oneOf:
+        - type: string
+          example: "blog"
+        - type: object
+          properties:
+            url:
+              type: string
+              example: "http://other:8001/blog"
+            name:
+              type: string
+              example: "blog"
+            token:
+              type: string
+              description: Bearer token for a protected remote.
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+
+    ReplicationRequest:
+      type: object
+      properties:
+        source:
+          $ref: "#/components/schemas/ReplicationEndpoint"
+        target:
+          $ref: "#/components/schemas/ReplicationEndpoint"
+        continuous:
+          type: boolean
+          default: false
+          description: Subscribe to the source feed and keep replicating.
+        create_target:
+          type: boolean
+          default: false
+          description: Create the target database if it does not exist.
+        cancel:
+          type: boolean
+          default: false
+          description: Cancel a running continuous replication.
+        replication_id:
+          type: string
+          description: Identifies the replication to cancel.
+        since_seq:
+          type: integer
+          format: int64
+          description: Start from this source update sequence (default 0).
+
+    ReplicationResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        replication_id:
+          type: string
+        session_id:
+          type: string
+        continuous:
+          type: boolean
+        cancelled:
+          type: boolean
+        source_last_seq:
+          type: integer
+          format: int64
+        docs_read:
+          type: integer
+          format: int64
+        docs_written:
+          type: integer
+          format: int64
+        doc_write_failures:
+          type: integer
+          format: int64
+        no_ops:
+          type: integer
+          format: int64
+          description: Documents skipped because the target already matched.
+
+    ReplicationTask:
+      type: object
+      properties:
+        type:
+          type: string
+          example: replication
+        replication_id:
+          type: string
+        continuous:
+          type: boolean
+        source:
+          type: string
+        target:
+          type: string
+        docs_read:
+          type: integer
+          format: int64
+        docs_written:
+          type: integer
+          format: int64
+        doc_write_failures:
+          type: integer
+          format: int64
+        checkpointed_source_seq:
+          type: integer
+          format: int64
+        started_on:
+          type: integer
+          format: int64
+          description: Unix timestamp when the replication started.
 
     ServerInfo:
       type: object

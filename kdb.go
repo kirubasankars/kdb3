@@ -22,6 +22,7 @@ type KDB struct {
 	rwMutex        sync.RWMutex
 	serviceLocator ServiceLocator
 	localDB        LocalDB
+	replicator     *ReplicationManager
 }
 
 // NewKDB create kdb instance with default ./data directory
@@ -70,6 +71,8 @@ func NewKDBWithDataDir(dataDir string) (*KDB, error) {
 			return nil, err
 		}
 	}
+
+	kdb.replicator = NewReplicationManager(kdb)
 
 	return kdb, nil
 }
@@ -187,6 +190,47 @@ func (kdb *KDB) GetDocument(name string, doc *Document, includeDoc bool) (*Docum
 	}
 
 	return db.GetDocument(doc, includeDoc)
+}
+
+// DocumentMeta returns the current revision and state of a document.
+// found is true when a live document exists; deleted is true when only a
+// tombstone remains. Both are false when the id was never written.
+func (kdb *KDB) DocumentMeta(name, id string) (version int, found bool, deleted bool, err error) {
+	kdb.rwMutex.RLock()
+	db, ok := kdb.dbs[name]
+	kdb.rwMutex.RUnlock()
+	if !ok {
+		return 0, false, false, ErrDatabaseNotFound
+	}
+
+	doc, derr := db.GetDocument(&Document{ID: id}, false)
+	if derr == nil {
+		return doc.Version, true, false, nil
+	}
+	if errors.Is(derr, ErrDocumentNotFound) {
+		if doc != nil && doc.Version > 0 {
+			return doc.Version, true, true, nil
+		}
+		return 0, false, false, nil
+	}
+	return 0, false, false, derr
+}
+
+// Replicate runs a one-shot replication, starts a continuous one, or cancels.
+func (kdb *KDB) Replicate(req ReplicationRequest) (*ReplicationResult, error) {
+	return kdb.replicator.Replicate(req)
+}
+
+// ActiveReplications lists running continuous replications.
+func (kdb *KDB) ActiveReplications() []map[string]any {
+	return kdb.replicator.ActiveTasks()
+}
+
+// StopReplications cancels all running replications (used on shutdown/tests).
+func (kdb *KDB) StopReplications() {
+	if kdb.replicator != nil {
+		kdb.replicator.Shutdown()
+	}
 }
 
 // BulkDocuments insert multiple documents

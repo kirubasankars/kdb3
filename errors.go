@@ -87,6 +87,8 @@ func errorString(err error) (string, string) {
 		return ErrInvalidSQLStmt.Error(), getErrorDescription(err)
 	case errors.Is(err, ErrDocumentInvalidRev):
 		return ErrDocumentInvalidRev.Error(), getErrorDescription(err)
+	case errors.Is(err, ErrReplicationNotFound):
+		return ErrReplicationNotFound.Error(), "replication not found"
 	default:
 		return ErrInternalError.Error(), getErrorDescription(err)
 	}
@@ -106,7 +108,7 @@ func NotOK(err error, w http.ResponseWriter) {
 		statusCode = http.StatusBadRequest
 	case errors.Is(err, ErrDocumentConflict):
 		statusCode = http.StatusConflict
-	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound):
+	case errors.Is(err, ErrDatabaseNotFound) || errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrViewNotFound) || errors.Is(err, ErrReplicationNotFound):
 		statusCode = http.StatusNotFound
 	}
 

@@ -47,6 +47,8 @@ func NewRouter(kdb *KDB, token string) *mux.Router {
 		Route{"AllDatabases", "GET", "/_cat/dbs", kdbHandler.AllDatabases},
 		Route{"UUID", "GET", "/_uuids", kdbHandler.GetUUIDs},
 		Route{"Metrics", "GET", "/metrics", promhttp.Handler().ServeHTTP},
+		Route{"Replicate", "POST", "/_replicate", kdbHandler.Replicate},
+		Route{"ActiveTasks", "GET", "/_active_tasks", kdbHandler.ActiveTasks},
 		Route{"GetDatabase", "GET", "/{db}", kdbHandler.GetDatabase},
 		Route{"PutDatabase", "PUT", "/{db}", kdbHandler.PutDatabase},
 		Route{"DeleteDatabase", "DELETE", "/{db}", kdbHandler.DeleteDatabase},

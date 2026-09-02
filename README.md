@@ -8,11 +8,12 @@ Document database written in Go with SQLite as storage and query/view engine.
 2. RESTful HTTP API
 3. Change tracking (`_changes`, including continuous SSE `feed=eventsource`)
 4. Incrementally updated materialized views (SQL over SQLite)
-5. Live vacuum
-6. Admin UI at `/_utils/`
-7. Swagger UI at `/_docs/`
-8. Optional Bearer-token auth
-9. Prometheus metrics at `/metrics` (always public)
+5. CouchDB-style replication (`_replicate`, one-shot and continuous)
+6. Live vacuum
+7. Admin UI at `/_utils/`
+8. Swagger UI at `/_docs/`
+9. Optional Bearer-token auth
+10. Prometheus metrics at `/metrics` (always public)
 
 **Trust model:** design documents run SQL against SQLite. Do not expose kdb3 on an untrusted network without a token and a restricted bind address. Default listen address is `127.0.0.1:8001`.
 
@@ -334,6 +335,65 @@ Default `_all_docs` definition (for reference):
   }
 }
 ```
+
+## Replication
+
+CouchDB-style replication copies documents from a `source` to a `target`. Each
+endpoint is either a **local database name** or a **remote kdb3 URL**; use the
+object form to pass a Bearer token for a protected remote.
+
+```sh
+# One-shot: copy blog -> blog_backup (create the target if missing)
+curl -X POST http://127.0.0.1:8001/_replicate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"blog","target":"blog_backup","create_target":true}'
+# {"ok":true,"replication_id":"…","source_last_seq":12,"docs_read":12,"docs_written":12,"doc_write_failures":0}
+```
+
+**Continuous** replication subscribes to the source `_changes` feed and keeps
+the target in sync until cancelled. It returns immediately with a
+`replication_id`:
+
+```sh
+curl -X POST http://127.0.0.1:8001/_replicate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"blog","target":"blog_backup","continuous":true}'
+# {"ok":true,"replication_id":"…","continuous":true}
+
+curl http://127.0.0.1:8001/_active_tasks          # list running replications
+
+curl -X POST http://127.0.0.1:8001/_replicate \
+  -H 'Content-Type: application/json' \
+  -d '{"cancel":true,"replication_id":"…"}'
+```
+
+Pull from (or push to) a remote server:
+
+```sh
+# Pull a remote database into a local one
+curl -X POST http://127.0.0.1:8001/_replicate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":{"url":"http://other:8001/blog","token":"secret"},
+       "target":"blog","create_target":true}'
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `source` / `target` | _(required)_ | Local db name, remote URL, or `{"url":…,"token":…,"headers":{…}}` / `{"name":…}` |
+| `continuous` | `false` | Subscribe to the source feed and keep replicating |
+| `create_target` | `false` | Create the target database if it does not exist |
+| `cancel` | `false` | Stop a continuous replication (`replication_id` or same `source`/`target`) |
+| `since_seq` | `0` | Start from this source update sequence |
+
+**Semantics:** revisions in kdb3 are per-database integers (not CouchDB rev
+trees), so replication is **last-writer-wins by document id** and preserves
+document *content*, not the source `_rev` number. Documents whose content
+already matches on the target are skipped (`no_ops`), which also keeps
+bidirectional replications from echoing forever. Checkpoints for continuous
+replications are held in memory (documented limitation: they restart from
+`since_seq` after a server restart). Resurrecting a document that was deleted on
+a **remote** target is not supported because a remote tombstone's revision is
+not observable over HTTP; local targets handle this fully.
 
 ## SQLite durability
 
