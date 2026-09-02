@@ -427,25 +427,18 @@ func (e *remoteEndpoint) getDoc(id string) ([]byte, bool, error) {
 }
 
 func (e *remoteEndpoint) currentVersion(id string) (int, bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	req, err := e.newRequest(ctx, http.MethodHead, e.docURL(id), nil)
-	if err != nil {
-		return 0, false, err
+	// GET (not HEAD): HEAD has no route for _design/ docs, and GET returns the
+	// _rev in the body for both regular and design documents.
+	body, found, err := e.getDoc(id)
+	if err != nil || !found {
+		return 0, found, err
 	}
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return 0, false, err
+	var p fastjson.Parser
+	v, perr := p.ParseBytes(body)
+	if perr != nil {
+		return 0, false, fmt.Errorf("%w: %s", ErrBadJSON, perr.Error())
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return 0, false, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return 0, false, fmt.Errorf("%w: head doc returned %d", ErrInternalError, resp.StatusCode)
-	}
-	version, _ := strconv.Atoi(resp.Header.Get("E-Tag"))
+	version := v.GetInt("_rev")
 	return version, true, nil
 }
 
