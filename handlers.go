@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -289,6 +290,117 @@ func (handler KDBHandler) deleteDocument(db, docid string, w http.ResponseWriter
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, formatDocumentString(outputDoc.ID, outputDoc.Version, outputDoc.Deleted))
+}
+
+func parseDocumentRev(r *http.Request) (int, error) {
+	rev := r.FormValue("rev")
+	if rev == "" {
+		rev = strings.Trim(r.Header.Get("If-Match"), "\" \t")
+	}
+	if rev == "" {
+		return 0, nil
+	}
+	version, err := strconv.Atoi(rev)
+	if err != nil {
+		return 0, ErrDocumentInvalidRev
+	}
+	return version, nil
+}
+
+func writeAttachmentHeaders(w http.ResponseWriter, att *Attachment, doc *Document) {
+	w.Header().Set("Content-Type", att.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(att.Length, 10))
+	w.Header().Set("E-Tag", strconv.Itoa(doc.Version))
+	if md5sum := attachmentContentMD5(att.Digest); md5sum != "" {
+		w.Header().Set("Content-MD5", md5sum)
+	}
+}
+
+func (handler KDBHandler) GetAttachment(w http.ResponseWriter, r *http.Request) {
+	handler.serveAttachment(w, r, true)
+}
+
+func (handler KDBHandler) HeadAttachment(w http.ResponseWriter, r *http.Request) {
+	handler.serveAttachment(w, r, false)
+}
+
+func (handler KDBHandler) serveAttachment(w http.ResponseWriter, r *http.Request, includeBody bool) {
+	vars := mux.Vars(r)
+	db := vars["db"]
+	docid := vars["docid"]
+	attname := vars["attname"]
+
+	att, doc, err := handler.kdb.GetAttachment(db, docid, attname)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	writeAttachmentHeaders(w, att, doc)
+	w.WriteHeader(http.StatusOK)
+	if includeBody {
+		w.Write(att.Data)
+	}
+}
+
+func (handler KDBHandler) PutAttachment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	db := vars["db"]
+	docid := vars["docid"]
+	attname := vars["attname"]
+
+	rev, err := parseDocumentRev(r)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+
+	body, err := readAttachmentBody(r.Body, maxAttachmentSize)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	out, err := handler.kdb.PutAttachment(db, docid, attname, contentType, body, rev)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("E-Tag", strconv.Itoa(out.Version))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(formatDocumentString(out.ID, out.Version, out.Deleted)))
+}
+
+func (handler KDBHandler) DeleteAttachment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	db := vars["db"]
+	docid := vars["docid"]
+	attname := vars["attname"]
+
+	rev, err := parseDocumentRev(r)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	if rev == 0 {
+		NotOK(ErrDocumentInvalidRev, w)
+		return
+	}
+
+	out, err := handler.kdb.DeleteAttachment(db, docid, attname, rev)
+	if err != nil {
+		NotOK(err, w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("E-Tag", strconv.Itoa(out.Version))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(formatDocumentString(out.ID, out.Version, out.Deleted)))
 }
 
 func (handler KDBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -347,5 +348,97 @@ func TestBulkPutPartialSuccessUnchanged(t *testing.T) {
 	}
 	if db.DocumentCount() != countBefore+1 {
 		t.Fatalf("partial bulk should commit first doc, got count %d want %d", db.DocumentCount(), countBefore+1)
+	}
+}
+
+func TestAttachmentCreateGetDelete(t *testing.T) {
+	kdb, _ := testDB(t, "attdb")
+
+	out, err := kdb.PutAttachment("attdb", "doc1", "note.txt", "text/plain", []byte("hello"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Version != 1 {
+		t.Fatalf("expected rev 1, got %d", out.Version)
+	}
+
+	att, doc, err := kdb.GetAttachment("attdb", "doc1", "note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(att.Data) != "hello" || att.ContentType != "text/plain" {
+		t.Fatalf("att %+v", att)
+	}
+	if doc.Version != 1 {
+		t.Fatalf("etag rev %d", doc.Version)
+	}
+
+	got, err := kdb.GetDocument("attdb", &Document{ID: "doc1"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(got.Data, []byte(`"_attachments"`)) {
+		t.Fatalf("missing stubs: %s", got.Data)
+	}
+
+	if _, err := kdb.PutAttachment("attdb", "doc1", "note.txt", "text/plain", []byte("x"), 0); !errors.Is(err, ErrDocumentConflict) {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+
+	out, err = kdb.PutAttachment("attdb", "doc1", "note.txt", "text/plain", []byte("world"), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, _, err = kdb.GetAttachment("attdb", "doc1", "note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(att.Data) != "world" {
+		t.Fatalf("replace: %q", att.Data)
+	}
+
+	if _, err := kdb.DeleteAttachment("attdb", "doc1", "note.txt", out.Version-1); !errors.Is(err, ErrDocumentConflict) {
+		t.Fatalf("stale delete: %v", err)
+	}
+	if _, err := kdb.DeleteAttachment("attdb", "doc1", "note.txt", out.Version); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := kdb.GetAttachment("attdb", "doc1", "note.txt"); !errors.Is(err, ErrAttachmentNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestAttachmentSurvivesDocumentUpdate(t *testing.T) {
+	kdb, _ := testDB(t, "attkeep")
+	if _, err := kdb.PutAttachment("attkeep", "d", "a.bin", "application/octet-stream", []byte{1, 2, 3}, 0); err != nil {
+		t.Fatal(err)
+	}
+	upd, err := ParseDocument([]byte(`{"_id":"d","_rev":1,"n":9,"_attachments":{"gone":{"stub":true}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kdb.PutDocument("attkeep", upd); err != nil {
+		t.Fatal(err)
+	}
+	att, _, err := kdb.GetAttachment("attkeep", "d", "a.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(att.Data, []byte{1, 2, 3}) {
+		t.Fatalf("blob changed: %v", att.Data)
+	}
+}
+
+func TestAttachmentCascadeOnDocumentDelete(t *testing.T) {
+	kdb, _ := testDB(t, "attdel")
+	out, err := kdb.PutAttachment("attdel", "d", "a.bin", "application/octet-stream", []byte("x"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kdb.DeleteDocument("attdel", &Document{ID: "d", Version: out.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := kdb.GetAttachment("attdel", "d", "a.bin"); !errors.Is(err, ErrDocumentNotFound) && !errors.Is(err, ErrAttachmentNotFound) {
+		t.Fatalf("expected missing after doc delete, got %v", err)
 	}
 }

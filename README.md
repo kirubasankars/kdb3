@@ -181,6 +181,7 @@ curl 'http://127.0.0.1:8001/blog/_changes?since=2&limit=100'
 - **Database names:** `[a-z0-9_]`, length 1–50, must not start with `_`
 - **Document IDs:** `[A-Za-z0-9_]`, length ≤ 50, must not start with `_` (except `_design/…`)
 - **Design doc IDs:** `_design/` + same character class, name length ≤ 50
+- **Attachment names:** `[A-Za-z0-9._- ]`, length 1–200 (no `/` or `..`)
 
 ## HTTP API
 
@@ -225,6 +226,33 @@ curl -X DELETE 'http://127.0.0.1:8001/testdb/2?rev=2'
 ```
 
 Request bodies are capped at 1 MiB. Writes require `Content-Type: application/json`.
+
+### Attachments
+
+CouchDB-style standalone files on a document. Binary is stored in SQLite; `GET` document injects `_attachments` stubs. Updating document JSON does **not** remove attachments.
+
+```sh
+# Create empty doc + attachment (no rev) or attach to an existing doc
+curl -X PUT 'http://127.0.0.1:8001/testdb/recipe/photo.jpg' \
+  -H 'Content-Type: image/jpeg' \
+  --data-binary @photo.jpg
+# {"_id":"recipe","_rev":1}
+
+curl -X PUT 'http://127.0.0.1:8001/testdb/recipe/photo.jpg?rev=1' \
+  -H 'Content-Type: image/jpeg' \
+  --data-binary @photo.jpg
+# {"_id":"recipe","_rev":2}
+
+curl -O http://127.0.0.1:8001/testdb/recipe/photo.jpg
+curl -I http://127.0.0.1:8001/testdb/recipe/photo.jpg   # E-Tag = document _rev
+
+curl -X GET http://127.0.0.1:8001/testdb/recipe
+# {"_id":"recipe","_rev":2,"_attachments":{"photo.jpg":{"content_type":"image/jpeg","revpos":2,"digest":"md5-…","length":…,"stub":true}}}
+
+curl -X DELETE 'http://127.0.0.1:8001/testdb/recipe/photo.jpg?rev=2'
+```
+
+Attachment bodies are capped at 16 MiB. `If-Match` is accepted as an alternative to `?rev=`.
 
 ### Bulk
 

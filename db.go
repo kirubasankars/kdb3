@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -20,6 +21,9 @@ type Database interface {
 	PutDocument(doc *Document) (*Document, error)
 	DeleteDocument(doc *Document) (*Document, error)
 	GetDocument(doc *Document, includeData bool) (*Document, error)
+	PutAttachment(docID, name, contentType string, data []byte, rev int) (*Document, error)
+	DeleteAttachment(docID, name string, rev int) (*Document, error)
+	GetAttachment(docID, name string) (*Attachment, *Document, error)
 	GetAllDesignDocuments() ([]Document, error)
 	GetLastUpdateSequence() int64
 	GetChanges(since int64, limit int, order bool) ([]byte, error)
@@ -292,7 +296,202 @@ func (db *DefaultDatabase) putDocumentWithWriter(writer DatabaseWriter, doc *Doc
 		return nil, nil, err
 	}
 
+	if doc.Deleted {
+		if err = writer.DeleteAttachmentsByDocID(doc.ID); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	return &putResult{doc: doc, updateSeq: updateSeq}, currentDoc, nil
+}
+
+func loadDocumentDataForWrite(writer DatabaseWriter, docID string) ([]byte, error) {
+	full, err := writer.GetDocumentByID(docID)
+	if err != nil && !errors.Is(err, ErrDocumentNotFound) {
+		return nil, err
+	}
+	if full == nil || len(full.Data) == 0 {
+		return []byte("{}"), nil
+	}
+	parsed, err := ParseDocument(full.Data)
+	if err != nil {
+		return []byte("{}"), nil
+	}
+	if len(parsed.Data) == 0 {
+		return []byte("{}"), nil
+	}
+	return parsed.Data, nil
+}
+
+func (db *DefaultDatabase) PutAttachment(docID, name, contentType string, data []byte, rev int) (*Document, error) {
+	start := time.Now()
+	defer func() {
+		documentWriteDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		syncDBPoolGauges(db)
+	}()
+
+	writer, ok := <-db.writer
+	if !ok {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(ErrDatabaseNotFound)).Inc()
+		return nil, ErrDatabaseNotFound
+	}
+	defer func() { db.writer <- writer }()
+
+	defer writer.Rollback()
+	if err := writer.Begin(); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	meta, err := writer.GetDocumentMetadataByID(docID)
+	if err != nil && !errors.Is(err, ErrDocumentNotFound) {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	var doc *Document
+	if meta == nil {
+		if rev != 0 {
+			attachmentsWrittenTotal.WithLabelValues(db.Name, "conflict").Inc()
+			return nil, ErrDocumentConflict
+		}
+		doc = &Document{ID: docID, Version: 0, Data: []byte("{}")}
+	} else {
+		if rev == 0 || meta.Version != rev {
+			attachmentsWrittenTotal.WithLabelValues(db.Name, "conflict").Inc()
+			return nil, ErrDocumentConflict
+		}
+		body, lerr := loadDocumentDataForWrite(writer, docID)
+		if lerr != nil {
+			attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(lerr)).Inc()
+			return nil, lerr
+		}
+		doc = &Document{ID: docID, Version: rev, Data: body}
+	}
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	out, currentDoc, err := db.putDocumentWithWriter(writer, doc)
+	if err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	digest := attachmentDigest(data)
+	if err := writer.PutAttachment(docID, name, contentType, digest, int64(len(data)), out.doc.Version, data); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	if err := writer.Commit(); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	db.updateSeq.Store(out.updateSeq)
+	db.applyCountDelta(currentDoc, out.doc)
+	syncDatabaseStatGauges(db)
+	attachmentsWrittenTotal.WithLabelValues(db.Name, "ok").Inc()
+	db.notifyChanges()
+	return out.doc, nil
+}
+
+func (db *DefaultDatabase) DeleteAttachment(docID, name string, rev int) (*Document, error) {
+	start := time.Now()
+	defer func() {
+		documentWriteDuration.WithLabelValues(db.Name).Observe(time.Since(start).Seconds())
+		syncDBPoolGauges(db)
+	}()
+
+	writer, ok := <-db.writer
+	if !ok {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(ErrDatabaseNotFound)).Inc()
+		return nil, ErrDatabaseNotFound
+	}
+	defer func() { db.writer <- writer }()
+
+	defer writer.Rollback()
+	if err := writer.Begin(); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	meta, err := writer.GetDocumentMetadataByID(docID)
+	if err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		if errors.Is(err, ErrDocumentNotFound) {
+			return nil, ErrDocumentNotFound
+		}
+		return nil, err
+	}
+	if rev == 0 || meta.Version != rev {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, "conflict").Inc()
+		return nil, ErrDocumentConflict
+	}
+
+	if _, err := writer.GetAttachment(docID, name); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	body, lerr := loadDocumentDataForWrite(writer, docID)
+	if lerr != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(lerr)).Inc()
+		return nil, lerr
+	}
+	doc := &Document{ID: docID, Version: rev, Data: body}
+
+	out, currentDoc, err := db.putDocumentWithWriter(writer, doc)
+	if err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	if err := writer.DeleteAttachment(docID, name); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	if err := writer.Commit(); err != nil {
+		attachmentsWrittenTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, err
+	}
+
+	db.updateSeq.Store(out.updateSeq)
+	db.applyCountDelta(currentDoc, out.doc)
+	syncDatabaseStatGauges(db)
+	attachmentsWrittenTotal.WithLabelValues(db.Name, "ok").Inc()
+	db.notifyChanges()
+	return out.doc, nil
+}
+
+func (db *DefaultDatabase) GetAttachment(docID, name string) (*Attachment, *Document, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
+	reader, ok := <-db.reader
+	if !ok {
+		attachmentsReadTotal.WithLabelValues(db.Name, metricsResult(ErrDatabaseNotFound)).Inc()
+		return nil, nil, ErrDatabaseNotFound
+	}
+	defer func() { db.reader <- reader }()
+
+	defer reader.Commit()
+	reader.Begin()
+
+	doc, err := reader.GetDocumentMetadataByID(docID)
+	if err != nil {
+		attachmentsReadTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+		return nil, nil, err
+	}
+	att, err := reader.GetAttachment(docID, name)
+	attachmentsReadTotal.WithLabelValues(db.Name, metricsResult(err)).Inc()
+	if err != nil {
+		return nil, nil, err
+	}
+	return att, doc, nil
 }
 
 // BulkPutOptions controls bulk write behavior.
@@ -449,6 +648,14 @@ func (db *DefaultDatabase) getDocumentUnlocked(doc *Document, includeData bool) 
 			out, err = reader.GetDocumentByIDandVersion(doc.ID, doc.Version)
 		} else {
 			out, err = reader.GetDocumentByID(doc.ID)
+		}
+		if err == nil && out != nil {
+			metas, lerr := reader.ListAttachmentMeta(doc.ID)
+			if lerr != nil {
+				err = lerr
+			} else {
+				out.Data = injectAttachmentStubs(out.Data, metas)
+			}
 		}
 	} else if doc.Version > 0 {
 		out, err = reader.GetDocumentMetadataByIDandVersion(doc.ID, doc.Version)

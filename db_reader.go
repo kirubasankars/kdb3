@@ -27,6 +27,9 @@ type DatabaseReader interface {
 
 	GetLastUpdateSequence() int64
 	GetDocumentCount() (int, int)
+
+	GetAttachment(docID, name string) (*Attachment, error)
+	ListAttachmentMeta(docID string) ([]AttachmentMeta, error)
 }
 
 // DefaultDatabaseReader default implementation database interface
@@ -44,6 +47,8 @@ type DefaultDatabaseReader struct {
 	stmtChangesDesc                    *sqlite3.Stmt
 	stmtLastUpdateSequence             *sqlite3.Stmt
 	stmtDocumentCount                  *sqlite3.Stmt
+	stmtGetAttachment                  *sqlite3.Stmt
+	stmtListAttachmentMeta             *sqlite3.Stmt
 }
 
 func applyReaderPragmas(con *sqlite3.Conn) error {
@@ -84,6 +89,12 @@ func (reader *DefaultDatabaseReader) Close() error {
 	reader.stmtChanges.Close()
 	reader.stmtChangesDesc.Close()
 	reader.stmtLastUpdateSequence.Close()
+	if reader.stmtGetAttachment != nil {
+		reader.stmtGetAttachment.Close()
+	}
+	if reader.stmtListAttachmentMeta != nil {
+		reader.stmtListAttachmentMeta.Close()
+	}
 	return reader.conn.Close()
 }
 
@@ -130,6 +141,14 @@ func (reader *DefaultDatabaseReader) Prepare() error {
 	}
 
 	reader.stmtLastUpdateSequence, err = con.Prepare("SELECT IFNULL(update_seq, '') FROM (SELECT MAX(update_seq) as update_seq FROM documents INDEXED BY idx_changes)")
+	if err != nil {
+		return err
+	}
+	reader.stmtGetAttachment, err = con.Prepare("SELECT name, content_type, length, digest, revpos, data FROM attachments WHERE doc_id = ? AND name = ?")
+	if err != nil {
+		return err
+	}
+	reader.stmtListAttachmentMeta, err = con.Prepare("SELECT name, content_type, length, digest, revpos FROM attachments WHERE doc_id = ? ORDER BY name")
 	if err != nil {
 		return err
 	}
@@ -389,4 +408,46 @@ func (reader *DefaultDatabaseReader) GetDocumentCount() (int, int) {
 	}
 
 	return docCount, deletedDocCount
+}
+
+func (reader *DefaultDatabaseReader) GetAttachment(docID, name string) (*Attachment, error) {
+	defer reader.stmtGetAttachment.Reset()
+	if err := reader.stmtGetAttachment.Bind(docID, name); err != nil {
+		return nil, err
+	}
+	hasRow, err := reader.stmtGetAttachment.Step()
+	if err != nil {
+		return nil, err
+	}
+	if !hasRow {
+		return nil, ErrAttachmentNotFound
+	}
+	att := &Attachment{}
+	if err := reader.stmtGetAttachment.Scan(&att.Name, &att.ContentType, &att.Length, &att.Digest, &att.RevPos, &att.Data); err != nil {
+		return nil, err
+	}
+	return att, nil
+}
+
+func (reader *DefaultDatabaseReader) ListAttachmentMeta(docID string) ([]AttachmentMeta, error) {
+	defer reader.stmtListAttachmentMeta.Reset()
+	if err := reader.stmtListAttachmentMeta.Bind(docID); err != nil {
+		return nil, err
+	}
+	var metas []AttachmentMeta
+	for {
+		hasRow, err := reader.stmtListAttachmentMeta.Step()
+		if err != nil {
+			return nil, err
+		}
+		if !hasRow {
+			break
+		}
+		var m AttachmentMeta
+		if err := reader.stmtListAttachmentMeta.Scan(&m.Name, &m.ContentType, &m.Length, &m.Digest, &m.RevPos); err != nil {
+			return nil, err
+		}
+		metas = append(metas, m)
+	}
+	return metas, nil
 }

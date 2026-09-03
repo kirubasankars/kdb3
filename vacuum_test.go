@@ -89,6 +89,20 @@ func TestVacuumPreservesDocuments(t *testing.T) {
 		t.Fatalf("doc_count changed: before %d after %d", statBefore.DocCount, statAfter.DocCount)
 	}
 
+	if _, err := kdb.PutAttachment("vacdb", "keep", "blob.bin", "application/octet-stream", []byte("VAC"), got.Version); err != nil {
+		t.Fatalf("put attachment: %v", err)
+	}
+	if err := kdb.Vacuum("vacdb"); err != nil {
+		t.Fatal(err)
+	}
+	att, _, err := kdb.GetAttachment("vacdb", "keep", "blob.bin")
+	if err != nil {
+		t.Fatalf("attachment after vacuum: %v", err)
+	}
+	if string(att.Data) != "VAC" {
+		t.Fatalf("attachment body after vacuum: %q", att.Data)
+	}
+
 	// Writes must work after vacuum (READONLY_DBMOVED / 1032 regression).
 	doc2, _ := ParseDocument([]byte(`{"_id":"after","val":1}`))
 	if _, err := kdb.PutDocument("vacdb", doc2); err != nil {

@@ -68,6 +68,10 @@ func ParseDocument(value []byte) (*Document, error) {
 		kind = strings.ReplaceAll(v.Get("_kind").String(), "\"", "")
 	}
 
+	if v.Exists("_attachments") {
+		v.Del("_attachments")
+	}
+
 	if id == "" && (version != 0 || deleted) {
 		return &Document{ID: id}, fmt.Errorf("%s: %w", "document missing _id", ErrDocumentInvalidInput)
 	}

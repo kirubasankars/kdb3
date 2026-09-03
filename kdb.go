@@ -196,6 +196,58 @@ func (kdb *KDB) GetDocument(name string, doc *Document, includeDoc bool) (*Docum
 	return db.GetDocument(doc, includeDoc)
 }
 
+func (kdb *KDB) lookupDB(name string) (Database, error) {
+	kdb.rwMutex.RLock()
+	defer kdb.rwMutex.RUnlock()
+	db, ok := kdb.dbs[name]
+	if !ok {
+		return nil, ErrDatabaseNotFound
+	}
+	return db, nil
+}
+
+func (kdb *KDB) PutAttachment(name, docID, attName, contentType string, data []byte, rev int) (*Document, error) {
+	if !ValidateDocumentID(docID) || docID == "" {
+		return nil, ErrDocumentInvalidID
+	}
+	if !ValidateAttachmentName(attName) {
+		return nil, ErrAttachmentInvalidName
+	}
+	db, err := kdb.lookupDB(name)
+	if err != nil {
+		return nil, err
+	}
+	return db.PutAttachment(docID, attName, contentType, data, rev)
+}
+
+func (kdb *KDB) DeleteAttachment(name, docID, attName string, rev int) (*Document, error) {
+	if !ValidateDocumentID(docID) || docID == "" {
+		return nil, ErrDocumentInvalidID
+	}
+	if !ValidateAttachmentName(attName) {
+		return nil, ErrAttachmentInvalidName
+	}
+	db, err := kdb.lookupDB(name)
+	if err != nil {
+		return nil, err
+	}
+	return db.DeleteAttachment(docID, attName, rev)
+}
+
+func (kdb *KDB) GetAttachment(name, docID, attName string) (*Attachment, *Document, error) {
+	if !ValidateDocumentID(docID) || docID == "" {
+		return nil, nil, ErrDocumentInvalidID
+	}
+	if !ValidateAttachmentName(attName) {
+		return nil, nil, ErrAttachmentInvalidName
+	}
+	db, err := kdb.lookupDB(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db.GetAttachment(docID, attName)
+}
+
 // BulkDocuments insert multiple documents
 func (kdb *KDB) BulkDocuments(name string, body []byte) (BulkPutResult, error) {
 	fValues, err := fastjson.ParseBytes(body)
